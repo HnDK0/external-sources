@@ -7,17 +7,17 @@
       "description": "Self-publishing platform for web novels",
       "author": "NovelDokusha Team",
       "version": "1.2.0",
-      "codeUrl": "https://raw.githubusercontent.com/HnDK0/NovelDokushaTT/main/external-sources/en/royalroad.kts",
-      "ico": "https://raw.githubusercontent.com/HnDK0/NovelDokushaTT/main/external-sources/icons/royalroad.png"
+      "codeUrl": "https://raw.githubusercontent.com/HnDK0/external-sources/main/en/royalroad.kts",
+      "ico": "https://raw.githubusercontent.com/HnDK0/external-sources/main/icons/royalroad.png"
     },
     {
       "id": "novelbin",
       "name": "NovelBin",
-      "description": "Popular novel aggregation site",
-      "author": "Community",
+      "description": "Popular novel aggregation site with AJAX chapter loading",
+      "author": "NovelDokusha Team",
       "version": "2.1.0",
-      "codeUrl": "https://raw.githubusercontent.com/HnDK0/NovelDokushaTT/main/external-sources/en/novelbin.kts",
-      "ico": "https://raw.githubusercontent.com/HnDK0/NovelDokushaTT/main/external-sources/icons/novelbin.png"
+      "codeUrl": "https://raw.githubusercontent.com/HnDK0/external-sources/main/en/novelbin.kts",
+      "ico": "https://raw.githubusercontent.com/HnDK0/external-sources/main/icons/novelbin.png"
     },
     {
       "id": "testsource",
@@ -25,8 +25,8 @@
       "description": "Testing external source system",
       "author": "NovelDokusha Dev",
       "version": "1.0.0",
-      "codeUrl": "https://raw.githubusercontent.com/HnDK0/NovelDokushaTT/main/external-sources/en/testsource.kts",
-      "ico": "https://raw.githubusercontent.com/HnDK0/NovelDokushaTT/main/external-sources/icons/test.png"
+      "codeUrl": "https://raw.githubusercontent.com/HnDK0/external-sources/main/en/testsource.kts",
+      "ico": "https://raw.githubusercontent.com/HnDK0/external-sources/main/icons/test.png"
     }
   ]
 }

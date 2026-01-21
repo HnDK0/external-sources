@@ -2,6 +2,8 @@
 
 This repository contains external source configurations for NovelDokushaTT application.
 
+**Repository:** https://github.com/HnDK0/external-sources
+
 ## Structure
 
 ```

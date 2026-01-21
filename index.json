@@ -4,15 +4,15 @@
   "languages": {
     "en": {
       "count": 3,
-      "url": "https://raw.githubusercontent.com/HnDK0/NovelDokushaTT/main/external-sources/en/index.json"
+      "url": "https://raw.githubusercontent.com/HnDK0/external-sources/main/en/index.json"
     },
     "ru": {
       "count": 2,
-      "url": "https://raw.githubusercontent.com/HnDK0/NovelDokushaTT/main/external-sources/ru/index.json"
+      "url": "https://raw.githubusercontent.com/HnDK0/external-sources/main/ru/index.json"
     },
     "zh": {
       "count": 1,
-      "url": "https://raw.githubusercontent.com/HnDK0/NovelDokushaTT/main/external-sources/zh/index.json"
+      "url": "https://raw.githubusercontent.com/HnDK0/external-sources/main/zh/index.json"
     }
   }
 }

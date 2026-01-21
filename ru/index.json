@@ -7,8 +7,8 @@
       "description": "Popular Russian novel library",
       "author": "Community",
       "version": "1.0.0",
-      "codeUrl": "https://raw.githubusercontent.com/HnDK0/NovelDokushaTT/main/external-sources/ru/ranobelib.kts",
-      "ico": "https://raw.githubusercontent.com/HnDK0/NovelDokushaTT/main/external-sources/icons/ranobelib.png"
+      "codeUrl": "https://raw.githubusercontent.com/HnDK0/external-sources/main/ru/ranobelib.kts",
+      "ico": "https://raw.githubusercontent.com/HnDK0/external-sources/main/icons/ranobelib.png"
     },
     {
       "id": "ranobehub",
@@ -16,8 +16,8 @@
       "description": "Russian light novel hub",
       "author": "Community",
       "version": "1.0.0",
-      "codeUrl": "https://raw.githubusercontent.com/HnDK0/NovelDokushaTT/main/external-sources/ru/ranobehub.kts",
-      "ico": "https://raw.githubusercontent.com/HnDK0/NovelDokushaTT/main/external-sources/icons/ranobehub.png"
+      "codeUrl": "https://raw.githubusercontent.com/HnDK0/external-sources/main/ru/ranobehub.kts",
+      "ico": "https://raw.githubusercontent.com/HnDK0/external-sources/main/icons/ranobehub.png"
     }
   ]
 }
