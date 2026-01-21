@@ -1,0 +1,18 @@
+{
+  "version": "1.0",
+  "lastUpdated": "2024-01-21",
+  "languages": {
+    "en": {
+      "count": 3,
+      "url": "https://raw.githubusercontent.com/HnDK0/NovelDokushaTT/main/external-sources/en/index.json"
+    },
+    "ru": {
+      "count": 2,
+      "url": "https://raw.githubusercontent.com/HnDK0/NovelDokushaTT/main/external-sources/ru/index.json"
+    },
+    "zh": {
+      "count": 1,
+      "url": "https://raw.githubusercontent.com/HnDK0/NovelDokushaTT/main/external-sources/zh/index.json"
+    }
+  }
+}

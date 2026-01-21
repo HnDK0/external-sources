@@ -1,0 +1,32 @@
+{
+  "language": "en",
+  "sources": [
+    {
+      "id": "royalroad",
+      "name": "Royal Road",
+      "description": "Self-publishing platform for web novels",
+      "author": "NovelDokusha Team",
+      "version": "1.2.0",
+      "codeUrl": "https://raw.githubusercontent.com/HnDK0/NovelDokushaTT/main/external-sources/en/royalroad.kts",
+      "ico": "https://raw.githubusercontent.com/HnDK0/NovelDokushaTT/main/external-sources/icons/royalroad.png"
+    },
+    {
+      "id": "novelbin",
+      "name": "NovelBin",
+      "description": "Popular novel aggregation site",
+      "author": "Community",
+      "version": "2.1.0",
+      "codeUrl": "https://raw.githubusercontent.com/HnDK0/NovelDokushaTT/main/external-sources/en/novelbin.kts",
+      "ico": "https://raw.githubusercontent.com/HnDK0/NovelDokushaTT/main/external-sources/icons/novelbin.png"
+    },
+    {
+      "id": "testsource",
+      "name": "Test Source",
+      "description": "Testing external source system",
+      "author": "NovelDokusha Dev",
+      "version": "1.0.0",
+      "codeUrl": "https://raw.githubusercontent.com/HnDK0/NovelDokushaTT/main/external-sources/en/testsource.kts",
+      "ico": "https://raw.githubusercontent.com/HnDK0/NovelDokushaTT/main/external-sources/icons/test.png"
+    }
+  ]
+}

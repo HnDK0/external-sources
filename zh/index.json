@@ -1,0 +1,14 @@
+{
+  "language": "zh",
+  "sources": [
+    {
+      "id": "novelfull",
+      "name": "NovelFull",
+      "description": "Popular Chinese novel site",
+      "author": "Community",
+      "version": "1.0.0",
+      "codeUrl": "https://raw.githubusercontent.com/HnDK0/NovelDokushaTT/main/external-sources/zh/novelfull.kts",
+      "ico": "https://raw.githubusercontent.com/HnDK0/NovelDokushaTT/main/external-sources/icons/novelfull.png"
+    }
+  ]
+}
