@@ -1,17 +1,14 @@
 {
   "version": "1.0",
-  "lastUpdated": "2024-01-21",
+  "lastUpdated": "2026-01-22",
   "languages": {
     "en": {
-      "count": 3,
       "url": "https://raw.githubusercontent.com/HnDK0/external-sources/main/en/index.json"
     },
     "ru": {
-      "count": 2,
       "url": "https://raw.githubusercontent.com/HnDK0/external-sources/main/ru/index.json"
     },
     "zh": {
-      "count": 1,
       "url": "https://raw.githubusercontent.com/HnDK0/external-sources/main/zh/index.json"
     }
   }

@@ -7,8 +7,8 @@
       "description": "Self-publishing platform for web novels",
       "author": "NovelDokusha Team",
       "version": "1.2.0",
-      "codeUrl": "https://raw.githubusercontent.com/HnDK0/external-sources/main/en/royalroad.kts",
-      "ico": "https://raw.githubusercontent.com/HnDK0/external-sources/main/icons/royalroad.png"
+      "jarUrl": "https://github.com/HnDK0/external-sources/releases/download/v1.2.0/royalroad.jar",
+      "iconUrl": "https://raw.githubusercontent.com/HnDK0/external-sources/main/icons/royalroad.png"
     },
     {
       "id": "novelbin",
@@ -16,8 +16,8 @@
       "description": "Popular novel aggregation site with AJAX chapter loading",
       "author": "NovelDokusha Team",
       "version": "2.1.0",
-      "codeUrl": "https://raw.githubusercontent.com/HnDK0/external-sources/main/en/novelbin.kts",
-      "ico": "https://raw.githubusercontent.com/HnDK0/external-sources/main/icons/novelbin.png"
+      "jarUrl": "https://github.com/HnDK0/external-sources/releases/download/v2.1.0/novelbin.jar",
+      "iconUrl": "https://raw.githubusercontent.com/HnDK0/external-sources/main/icons/novelbin.png"
     },
     {
       "id": "testsource",
@@ -25,8 +25,8 @@
       "description": "Testing external source system",
       "author": "NovelDokusha Dev",
       "version": "1.0.0",
-      "codeUrl": "https://raw.githubusercontent.com/HnDK0/external-sources/main/en/testsource.kts",
-      "ico": "https://raw.githubusercontent.com/HnDK0/external-sources/main/icons/test.png"
+      "jarUrl": "https://github.com/HnDK0/external-sources/releases/download/v1.0.0/testsource.jar",
+      "iconUrl": "https://raw.githubusercontent.com/HnDK0/external-sources/main/icons/test.png"
     }
   ]
 }

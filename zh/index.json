@@ -7,8 +7,8 @@
       "description": "Popular Chinese novel site",
       "author": "Community",
       "version": "1.0.0",
-      "codeUrl": "https://raw.githubusercontent.com/HnDK0/external-sources/main/zh/novelfull.kts",
-      "ico": "https://raw.githubusercontent.com/HnDK0/external-sources/main/icons/novelfull.png"
+      "jarUrl": "https://github.com/HnDK0/external-sources/releases/download/v1.0.0/novelfull-1.0.0.jar",
+      "iconUrl": "https://raw.githubusercontent.com/HnDK0/external-sources/main/icons/novelfull.png"
     }
   ]
 }
