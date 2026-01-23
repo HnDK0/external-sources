@@ -6,7 +6,7 @@
       "name": "AllNovel",
       "description": "Popular novel aggregation site",
       "author": "NovelDokusha Team",
-      "version": "1.0.0",
+      "version": "1.0.1",
       "jarUrl": "https://raw.githubusercontent.com/HnDK0/external-sources/refs/heads/main/en/allnovel-1.0.0.jar",
       "iconUrl": "https://raw.githubusercontent.com/HnDK0/external-sources/main/icons/allnovel.png"
     },
