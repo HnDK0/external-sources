@@ -1,23 +1,6 @@
 {
   "language": "ru",
   "sources": [
-    {
-      "id": "ranobelib",
-      "name": "RanobeLib",
-      "description": "Popular Russian novel library",
-      "author": "Community",
-      "version": "1.0.0",
-      "jarUrl": "https://github.com/HnDK0/external-sources/releases/download/v1.0.0/ranobelib-1.0.0.jar",
-      "iconUrl": "https://raw.githubusercontent.com/HnDK0/external-sources/main/icons/ranobelib.png"
-    },
-    {
-      "id": "ranobehub",
-      "name": "RanobeHub",
-      "description": "Russian light novel hub",
-      "author": "Community",
-      "version": "1.0.0",
-      "jarUrl": "https://github.com/HnDK0/external-sources/releases/download/v1.0.0/ranobehub-1.0.0.jar",
-      "iconUrl": "https://raw.githubusercontent.com/HnDK0/external-sources/main/icons/ranobehub.png"
-    }
+
   ]
 }
