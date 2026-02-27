@@ -1,0 +1,10 @@
+language: "ru"
+name: "Русский"
+sources:
+  - id: "ranobehub_advanced"
+    name: "RanobeHub (Advanced)"
+    version: "2.0.0"
+    description: "Русский источник ранобэ с API и томами"
+    url: "https://raw.githubusercontent.com/HnDK0/lua-sources/main/ru/ranobehub_advanced.lua"
+    icon: "https://raw.githubusercontent.com/HnDK0/lua-sources/main/icons/ranobehub.png"
+    language: "ru"

@@ -1,0 +1,10 @@
+language: "en"
+name: "English"
+sources:
+  - id: "freewebnovel_advanced"
+    name: "FreeWebNovel (Advanced)"
+    version: "2.0.0"
+    description: "English novel source with POST search and pagination"
+    url: "https://raw.githubusercontent.com/HnDK0/lua-sources/main/en/freewebnovel_advanced.lua"
+    icon: "https://raw.githubusercontent.com/HnDK0/lua-sources/main/icons/freewebnovel.png"
+    language: "en"
