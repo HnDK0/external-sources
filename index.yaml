@@ -1,9 +1,9 @@
 version: "1.0.0"
-lastUpdated: "2024-02-27T12:00:00Z"
+lastUpdated: "2024-02-28T17:50:00Z"
 languages:
   en:
     name: "English"
-    count: 1
+    count: 2
     url: "https://raw.githubusercontent.com/HnDK0/lua-sources/main/en/index.yaml"
   ru:
     name: "Русский"
@@ -13,4 +13,4 @@ languages:
     name: "Multilanguage"
     count: 1
     url: "https://raw.githubusercontent.com/HnDK0/lua-sources/main/multi/index.yaml"
-totalSources: 3
+totalSources: 4
