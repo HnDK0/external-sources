@@ -4,13 +4,13 @@ languages:
   en:
     name: "English"
     count: 2
-    url: "https://raw.githubusercontent.com/HnDK0/lua-sources/main/en/index.yaml"
+    url: "https://raw.githubusercontent.com/HnDK0/external-sources/main/en/index.yaml"
   ru:
     name: "Русский"
     count: 1
-    url: "https://raw.githubusercontent.com/HnDK0/lua-sources/main/ru/index.yaml"
+    url: "https://raw.githubusercontent.com/HnDK0/external-sources/main/ru/index.yaml"
   multi:
     name: "Multilanguage"
     count: 1
-    url: "https://raw.githubusercontent.com/HnDK0/lua-sources/main/multi/index.yaml"
+    url: "https://raw.githubusercontent.com/HnDK0/external-sources/main/multi/index.yaml"
 totalSources: 4

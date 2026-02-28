@@ -5,6 +5,6 @@ sources:
     name: "WTR-Lab (Advanced)"
     version: "2.0.0"
     description: "Multilanguage source with translation support and API"
-    url: "https://raw.githubusercontent.com/HnDK0/lua-sources/main/multi/wtrlab_advanced.lua"
-    icon: "https://raw.githubusercontent.com/HnDK0/lua-sources/main/icons/wtr-lab.png"
+    url: "https://raw.githubusercontent.com/HnDK0/external-sources/main/multi/wtrlab_advanced.lua"
+    icon: "https://raw.githubusercontent.com/HnDK0/external-sources/main/icons/wtr-lab.png"
     language: "multi"
