@@ -31,7 +31,7 @@ sources:
     language: "zh"
   - id: "shuba69"
     name: "69Shuba"
-    version: "1.0.0"
+    version: "1.0.1"
     description: "Chinese novel source (GBK, POST)"
     url: "https://raw.githubusercontent.com/HnDK0/external-sources/main/zh/shuba69.lua"
     icon: "https://raw.githubusercontent.com/HnDK0/external-sources/main/icons/69shuba.png"
