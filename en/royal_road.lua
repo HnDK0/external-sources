@@ -1,32 +1,32 @@
--- FreeWebNovel Lua Plugin
--- Migrated from Kotlin hardcoded source
+-- RoyalRoad Lua Plugin
+-- Migrated from Kotlin native source
 
 return {
-    id = "freewebnovel",
-    name = "FreeWebNovel",
+    id = "royal_road",
+    name = "RoyalRoad",
     version = "1.0.0",
     language = "en",
-    baseUrl = "https://freewebnovel.com",
+    baseUrl = "https://www.royalroad.com",
     -- icon will be loaded from yaml config
 
-    -- Catalog: Completed Novels
+    -- Catalog: Best Rated
     getCatalogList = function(index)
-        local page = index + 1
-        local url = "https://freewebnovel.com/completed-novel/" .. page
-        
-        local response = http_get(url)
-        if not response.success then
-            return { items = {}, hasNext = false, error = "HTTP failed with code " .. response.code }
+        local url = "https://www.royalroad.com/fictions/best-rated"
+        if index > 0 then
+            url = url .. "?page=" .. (index + 1)
         end
         
-        local doc = html_parse(response.body)
-        local items = html_select(doc, ".ul-list1 .li-row")
+        local res = http_get(url)
+        if not res.success then return { items = {}, hasNext = false } end
+        
+        local doc = html_parse(res.body)
+        local items = html_select(doc, ".fiction-list-item")
         local books = {}
         
         for i = 1, #items do
             local item = items[i]
-            local titleElem = html_select(item, ".tit a")[1]
-            local coverElem = html_select(item, ".pic img")[1]
+            local titleElem = html_select(item, "h2 a")[1]
+            local coverElem = html_select(item, "img")[1]
             
             if titleElem then
                 table.insert(books, {
@@ -45,26 +45,22 @@ return {
 
     -- Search
     getCatalogSearch = function(index, input)
-        if index > 0 or input == "" then return { items = {}, hasNext = false } end
+        local url = "https://www.royalroad.com/fictions/search?title=" .. url_encode(input)
+        if index > 0 then
+            url = url .. "&page=" .. (index + 1)
+        end
         
-        local url = "https://freewebnovel.com/search"
-        local data = "searchkey=" .. url_encode(input)
+        local res = http_get(url)
+        if not res.success then return { items = {}, hasNext = false } end
         
-        local response = http_post(url, data, {
-            ["Content-Type"] = "application/x-www-form-urlencoded",
-            ["Referer"] = "https://freewebnovel.com/"
-        })
-        
-        if not response.success then return { items = {}, hasNext = false } end
-        
-        local doc = html_parse(response.body)
-        local items = html_select(doc, ".serach-result .li-row")
+        local doc = html_parse(res.body)
+        local items = html_select(doc, ".fiction-list-item")
         local books = {}
         
         for i = 1, #items do
             local item = items[i]
-            local titleElem = html_select(item, ".tit a")[1]
-            local coverElem = html_select(item, ".pic img")[1]
+            local titleElem = html_select(item, "h2 a")[1]
+            local coverElem = html_select(item, "img")[1]
             
             if titleElem then
                 table.insert(books, {
@@ -75,7 +71,10 @@ return {
             end
         end
         
-        return { items = books, hasNext = false }
+        return {
+            items = books,
+            hasNext = #books > 0
+        }
     end,
 
     -- Book Details
@@ -83,7 +82,7 @@ return {
         local res = http_get(url)
         if not res.success then return nil end
         local doc = html_parse(res.body)
-        local title = html_select(doc, "h1.tit")[1]
+        local title = html_select(doc, "h1.font-white")[1]
         return title and title:get_text() or nil
     end,
 
@@ -91,7 +90,7 @@ return {
         local res = http_get(url)
         if not res.success then return nil end
         local doc = html_parse(res.body)
-        local img = html_select(doc, ".pic img")[1]
+        local img = html_select(doc, ".cover-art-container img[src]")[1]
         return img and img.src or nil
     end,
 
@@ -99,8 +98,8 @@ return {
         local res = http_get(url)
         if not res.success then return nil end
         local doc = html_parse(res.body)
-        local desc = html_select(doc, ".m-desc .txt")[1]
-        return desc and html_text(desc) or nil
+        local desc = html_select(doc, ".description")[1]
+        return desc and desc:get_text() or nil
     end,
 
     -- Chapters
@@ -108,7 +107,7 @@ return {
         local res = http_get(url)
         if not res.success then return {} end
         local doc = html_parse(res.body)
-        local links = html_select(doc, "#idData li a")
+        local links = html_select(doc, "tr.chapter-row td:first-child a[href]")
         local chapters = {}
         
         for i = 1, #links do
@@ -122,10 +121,21 @@ return {
 
     getChapterText = function(html)
         local doc = html_parse(html)
-        local content = html_select(doc, "div.txt")[1]
+        local content = html_select(doc, ".chapter-content")[1]
         if content then
+            content:remove("script")
+            content:remove("a")
+            content:remove(".ads-title")
             return html_text(content)
         end
         return ""
+    end,
+
+    getChapterListHash = function(url)
+        local res = http_get(url)
+        if not res.success then return nil end
+        local doc = html_parse(res.body)
+        local last = html_select(doc, ".portlet-title .actions .label")[1]
+        return last and last:get_text() or nil
     end
 }

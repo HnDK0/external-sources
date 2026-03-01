@@ -7,7 +7,7 @@ return {
     version = "1.0.0",
     language = "ru",
     baseUrl = "https://ranobehub.org",
-    icon = "icons/ranobehub.png",
+    -- icon will be loaded from yaml config
 
     -- Catalog: Search by rating
     getCatalogList = function(index)

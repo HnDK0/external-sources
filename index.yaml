@@ -3,14 +3,22 @@ lastUpdated: "2024-02-28T17:50:00Z"
 languages:
   en:
     name: "English"
-    count: 3
+    count: 13
     url: "https://raw.githubusercontent.com/HnDK0/external-sources/main/en/index.yaml"
   ru:
     name: "Русский"
-    count: 2
+    count: 6
     url: "https://raw.githubusercontent.com/HnDK0/external-sources/main/ru/index.yaml"
+  id:
+    name: "Indonesian"
+    count: 2
+    url: "https://raw.githubusercontent.com/HnDK0/external-sources/main/id/index.yaml"
+  zh:
+    name: "Chinese"
+    count: 6
+    url: "https://raw.githubusercontent.com/HnDK0/external-sources/main/zh/index.yaml"
   multi:
     name: "Multilanguage"
     count: 1
     url: "https://raw.githubusercontent.com/HnDK0/external-sources/main/multi/index.yaml"
-totalSources: 6
+totalSources: 28
