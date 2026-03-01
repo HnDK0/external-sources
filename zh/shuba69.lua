@@ -2,7 +2,7 @@
 -- Compatible with LuaJ (Lua 5.1) — strict top-level functions
 
 id       = "shuba69"
-name     = "69Shuba"
+name     = "Shuba69"
 version  = "1.0.4"
 baseUrl  = "https://www.69shuba.com/"
 language = "zh"

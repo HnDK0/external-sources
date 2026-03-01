@@ -30,7 +30,7 @@ sources:
     icon: "https://raw.githubusercontent.com/HnDK0/external-sources/main/icons/quanben5.png"
     language: "zh"
   - id: "shuba69"
-    name: "69Shuba"
+    name: "Shuba69"
     version: "1.0.4"
     description: "Chinese novel source (GBK, POST)"
     url: "https://raw.githubusercontent.com/HnDK0/external-sources/main/zh/shuba69.lua"
