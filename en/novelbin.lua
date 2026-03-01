@@ -2,20 +2,23 @@
 -- Compatible with LuaJ (Lua 5.1) — no goto, no colon methods on table fields
 
 id       = "NovelBin"
-name     = "NovelBin"
-version  = "1.0.7"
+name     = "Novel Bin"
+version  = "1.0.8"
 baseUrl  = "https://novelbin.com/"
 language = "en"
 icon     = "https://raw.githubusercontent.com/HnDK0/external-sources/main/icons/novelbin.png"
 
 -- ── Helpers ───────────────────────────────────────────────────────────────────
-
 local function transformCoverUrl(coverUrl)
-  -- NovelBin использует thumbnail в URL, заменяем на полные обложки
-  if coverUrl:find("novel_200_89") then
-    return coverUrl:gsub("novel_200_89", "novel")
+  -- Принудительно приводим к строке, чтобы gsub точно отработал
+  local url = tostring(coverUrl or "")
+  if url:find("novel_200_89") then
+    -- Используем plain-поиск (true), чтобы исключить проблемы с экранированием
+    local newUrl = url:gsub("novel_200_89", "novel")
+    return newUrl
   end
-  return coverUrl
+  
+  return url
 end
 
 local function buildCatalogUrl(index)
@@ -46,14 +49,10 @@ local function parseCatalogItems(body)
       if cover == "" then
         cover = html_attr(row.html, "img[src]", "src")
       end
-      -- Применяем трансформер к обложке
-      if cover ~= "" then
-        cover = transformCoverUrl(cover)
-      end
       table.insert(items, {
         title = string_trim(titleEls[1].text),
         url   = titleEls[1].href,
-        cover = cover
+        cover = transformCoverUrl(cover)
       })
     end
   end
@@ -86,14 +85,10 @@ function getCatalogSearch(index, query)
     local titleEls = html_select(row.html, ".novel-title a")
     if titleEls[1] then
       local cover = html_attr(row.html, "img[src]", "src")
-      -- Применяем трансформер к обложке
-      if cover ~= "" then
-        cover = transformCoverUrl(cover)
-      end
       table.insert(items, {
         title = string_trim(titleEls[1].text),
         url   = titleEls[1].href,
-        cover = cover
+        cover = transformCoverUrl(cover)
       })
     end
   end
@@ -114,9 +109,7 @@ function getBookCoverImageUrl(bookUrl)
   local r = http_get(bookUrl)
   if not r.success then return nil end
   local url = html_attr(r.body, "meta[property='og:image']", "content")
-  if url ~= "" then 
-    return transformCoverUrl(url) 
-  end
+  if url ~= "" then return url end
   return nil
 end
 
@@ -151,7 +144,7 @@ function getChapterList(bookUrl)
     return {}
   end
 
-  local m = regex_match(ogUrl, "/([^/?#]+)/*$")
+  local m = regex_match(ogUrl, "([^/?#]+)/*$")
   if not m[1] then
     log_error("getChapterList: cannot extract novelId from " .. ogUrl)
     return {}
