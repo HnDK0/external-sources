@@ -3,7 +3,7 @@
 
 id       = "NovelBin"
 name     = "Novel Bin"
-version  = "1.0.9"
+version  = "1.1.0"
 baseUrl  = "https://novelbin.com/"
 language = "en"
 icon     = "https://raw.githubusercontent.com/HnDK0/external-sources/main/icons/novelbin.png"
@@ -49,7 +49,7 @@ local function parseCatalogItems(body)
       table.insert(items, {
         title = string_trim(titleEls[1].text),
         url   = titleEls[1].href,
-        cover = transformCoverUrl(cover)
+        cover = transformCoverUrl(cover, bookUrl)
       })
     end
   end
@@ -85,7 +85,7 @@ function getCatalogSearch(index, query)
       table.insert(items, {
         title = string_trim(titleEls[1].text),
         url   = titleEls[1].href,
-        cover = transformCoverUrl(cover)
+        cover = transformCoverUrl(cover, bookUrl)
       })
     end
   end

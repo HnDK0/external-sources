@@ -45,7 +45,7 @@ sources:
     language: "en"
   - id: "novelbin"
     name: "NovelBin"
-    version: "1.0.9"
+    version: "1.1.0"
     description: "English novel source with AJAX chapters"
     url: "https://raw.githubusercontent.com/HnDK0/external-sources/main/en/novelbin.lua"
     icon: "https://raw.githubusercontent.com/HnDK0/external-sources/main/icons/novelbin.png"
