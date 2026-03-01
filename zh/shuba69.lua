@@ -1,125 +1,142 @@
--- Shuba69 Lua Plugin
--- Fixed for LuaJ top-level visibility
+-- 69shuba source plugin
+-- Compatible with LuaJ (Lua 5.1) — strict top-level functions
 
 id       = "shuba69"
 name     = "69Shuba"
-version  = "1.0.2"
+version  = "1.0.3"
+baseUrl  = "https://www.69shuba.com/"
 language = "zh"
-baseUrl  = "https://www.69shuba.com"
+icon     = "https://raw.githubusercontent.com/HnDK0/external-sources/main/icons/69shuba.png"
 
--- ── Каталог ──────────────────────────────────────────────────────────────────
+-- ── Helpers ───────────────────────────────────────────────────────────────────
+
+local function buildCatalogUrl(index)
+  return baseUrl .. "novels/monthvisit_0_0_" .. tostring(index + 1) .. ".htm"
+end
+
+-- ── Catalog ───────────────────────────────────────────────────────────────────
 
 function getCatalogList(index)
-    local url = "https://www.69shuba.com/novels/monthvisit_0_0_" .. tostring(index + 1) .. ".htm"
-    local res = http_get(url, { charset = "GBK" })
-    if not res.success then return { items = {}, hasNext = false } end
-    
-    local books = {}
-    local items = html_select(res.body, "ul#article_list_content li")
-    
-    for _, item in ipairs(items) do
-        local titleElem = html_select_first(item.html, "div.newnav h3 a")
-        local urlElem   = html_select_first(item.html, "a.imgbox")
-        
-        if titleElem and urlElem then
-            table.insert(books, {
-                title = string_trim(titleElem.text),
-                url   = urlElem.href,
-                cover = html_attr(item.html, "img", "data-src")
-            })
-        end
+  local url = buildCatalogUrl(index)
+  -- В твоем API кодировка передается строкой вторым аргументом в http_get
+  local r = http_get(url, "GBK")
+  
+  if not r.success then
+    log_error("getCatalogList failed: " .. url .. " code=" .. tostring(r.code))
+    return { items = {}, hasNext = false }
+  end
+
+  local items = {}
+  local rows = html_select(r.body, "ul#article_list_content li")
+  for _, row in ipairs(rows) do
+    local titleEls = html_select(row.html, "div.newnav h3 a")
+    if titleEls[1] then
+      local cover = html_attr(row.html, "a.imgbox img", "data-src")
+      table.insert(items, {
+        title = string_trim(titleEls[1].text),
+        url   = titleEls[1].href,
+        cover = cover
+      })
     end
-    
-    return { items = books, hasNext = #books > 0 }
+  end
+  return { items = items, hasNext = #items > 0 }
 end
 
--- ── Поиск ────────────────────────────────────────────────────────────────────
+function getCatalogSearch(index, query)
+  if index > 0 then return { items = {}, hasNext = false } end
 
-function getCatalogSearch(index, input)
-    if index > 0 then return { items = {}, hasNext = false } end
-    
-    local searchUrl = "https://www.69shuba.com/modules/article/search.php"
-    local encodedQuery = url_encode_charset(input, "GBK")
-    local body = "searchkey=" .. encodedQuery .. "&searchtype=all"
-    
-    local res = http_post(searchUrl, body, {
-        charset = "GBK",
-        headers = { ["Content-Type"] = "application/x-www-form-urlencoded" }
+  local searchUrl = "https://www.69shuba.com/modules/article/search.php"
+  -- Используем стандартный url_encode, так как спец. функции для GBK в примере нет
+  local payload = "searchkey=" .. url_encode(query) .. "&searchtype=all"
+  
+  local r = http_post(searchUrl, payload, {
+    headers = { ["Content-Type"] = "application/x-www-form-urlencoded" },
+    charset = "GBK"
+  })
+
+  if not r.success then
+    log_error("getCatalogSearch failed")
+    return { items = {}, hasNext = false }
+  end
+
+  local items = {}
+  local rows = html_select(r.body, "div.newbox ul li")
+  for _, row in ipairs(rows) do
+    local titleEls = html_select(row.html, "h3 a:last-child")
+    if titleEls[1] then
+      local cover = html_attr(row.html, "a.imgbox img", "data-src")
+      table.insert(items, {
+        title = string_trim(titleEls[1].text),
+        url   = titleEls[1].href,
+        cover = cover
+      })
+    end
+  end
+  return { items = items, hasNext = false }
+end
+
+-- ── Book metadata ─────────────────────────────────────────────────────────────
+
+function getBookTitle(bookUrl)
+  local r = http_get(bookUrl, "GBK")
+  if not r.success then return nil end
+  local el = html_select_first(r.body, "div.booknav2 h1 a")
+  if el then return string_trim(el.text) end
+  return nil
+end
+
+function getBookCoverImageUrl(bookUrl)
+  local r = http_get(bookUrl, "GBK")
+  if not r.success then return nil end
+  local url = html_attr(r.body, "div.bookimg2 img", "src")
+  if url ~= "" then return url end
+  return nil
+end
+
+function getBookDescription(bookUrl)
+  local r = http_get(bookUrl, "GBK")
+  if not r.success then return nil end
+  local el = html_select_first(r.body, "div.navtxt")
+  if el then return string_trim(el.text) end
+  return nil
+end
+
+function getChapterListHash(bookUrl)
+  local r = http_get(bookUrl, "GBK")
+  if not r.success then return nil end
+  local el = html_select_first(r.body, ".infolist li:nth-child(2)")
+  if el then return string_trim(el.text) end
+  return nil
+end
+
+-- ── Chapter list ──────────────────────────────────────────────────────────────
+
+function getChapterList(bookUrl)
+  -- Трансформация URL через gsub (как в твоем примере с NovelBin)
+  local listUrl = bookUrl:gsub("/txt/", "/"):gsub("%.htm", "/")
+  
+  local r = http_get(listUrl, "GBK")
+  if not r.success then return {} end
+
+  local chapters = {}
+  local links = html_select(r.body, "div#catalog ul li a")
+  
+  -- На сайте новые главы в начале, инвертируем
+  for i = #links, 1, -1 do
+    local a = links[i]
+    table.insert(chapters, {
+      title = string_trim(a.text),
+      url   = a.href
     })
-    
-    if not res.success then return { items = {}, hasNext = false } end
-    
-    local books = {}
-    local items = html_select(res.body, "div.newbox ul li")
-    
-    for _, item in ipairs(items) do
-        local titleElem = html_select_first(item.html, "h3 a:last-child")
-        local urlElem   = html_select_first(item.html, "a.imgbox")
-        
-        if titleElem and urlElem then
-            table.insert(books, {
-                title = string_trim(titleElem.text),
-                url   = urlElem.href,
-                cover = html_attr(item.html, "img", "data-src")
-            })
-        end
-    end
-    
-    return { items = books, hasNext = false }
+  end
+  return chapters
 end
 
--- ── Детали книги ─────────────────────────────────────────────────────────────
-
-function getBookTitle(url)
-    local res = http_get(url, { charset = "GBK" })
-    if not res.success then return nil end
-    local el = html_select_first(res.body, "div.booknav2 h1 a")
-    return el and string_trim(el.text) or nil
-end
-
-function getBookCoverImageUrl(url)
-    local res = http_get(url, { charset = "GBK" })
-    if not res.success then return nil end
-    return html_attr(res.body, "div.bookimg2 img", "src")
-end
-
-function getBookDescription(url)
-    local res = http_get(url, { charset = "GBK" })
-    if not res.success then return nil end
-    local el = html_select_first(res.body, "div.navtxt")
-    return el and string_trim(el.text) or nil
-end
-
--- ── Главы ────────────────────────────────────────────────────────────────────
-
-function getChapterList(url)
-    local listUrl = regex_replace(url, "/txt/", "/")
-    listUrl = regex_replace(listUrl, "%.htm", "/")
-
-    local res = http_get(listUrl, { charset = "GBK" })
-    if not res.success then return {} end
-    
-    local links = html_select(res.body, "div#catalog ul li a")
-    local chapters = {}
-    
-    for i = #links, 1, -1 do
-        table.insert(chapters, {
-            title = string_trim(links[i].text),
-            url   = links[i].href
-        })
-    end
-    return chapters
-end
+-- ── Chapter text ──────────────────────────────────────────────────────────────
 
 function getChapterText(html)
-    local cleaned = html_remove(html, "h1", "div.txtinfo", "div.bottom-ad", "div.bottem2", ".visible-xs", "script")
-    local content = html_select_first(cleaned, "div.txtnav")
-    return content and html_text(content.html) or ""
-end
-
-function getChapterListHash(url)
-    local res = http_get(url, { charset = "GBK" })
-    if not res.success then return nil end
-    local el = html_select_first(res.body, ".infolist li:nth-child(2)")
-    return el and string_trim(el.text) or nil
+  local cleaned = html_remove(html, "h1", "div.txtinfo", "div.bottom-ad", "div.bottem2", ".visible-xs", "script")
+  local el = html_select_first(cleaned, "div.txtnav")
+  if el then return html_text(el.html) end
+  return ""
 end
