@@ -1,17 +1,16 @@
-﻿languages:
+languages:
   en:
     name: "English"
     url: "https://raw.githubusercontent.com/HnDK0/external-sources/main/en/index.yaml"
-  ru:
-    name: "Russian"
-    url: "https://raw.githubusercontent.com/HnDK0/external-sources/main/ru/index.yaml"
   id:
     name: "Indonesian"
     url: "https://raw.githubusercontent.com/HnDK0/external-sources/main/id/index.yaml"
+  mtl:
+    name: "Mtl"
+    url: "https://raw.githubusercontent.com/HnDK0/external-sources/main/mtl/index.yaml"
+  ru:
+    name: "Russian"
+    url: "https://raw.githubusercontent.com/HnDK0/external-sources/main/ru/index.yaml"
   zh:
     name: "Chinese"
     url: "https://raw.githubusercontent.com/HnDK0/external-sources/main/zh/index.yaml"
-  mtl:
-    name: "MTL"
-    url: "https://raw.githubusercontent.com/HnDK0/external-sources/main/mtl/index.yaml"
-

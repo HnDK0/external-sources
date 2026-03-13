@@ -1,10 +1,9 @@
-﻿language: "Mtl"
+language: "Mtl"
 name: "Mtl"
 sources:
   - id: "wtrlab"
     name: "WTR-LAB"
-    version: "1.0.1"
-    description: "MTL source with AES decryption and AI translation"
+    version: "1.0.2"
     url: "https://raw.githubusercontent.com/HnDK0/external-sources/main/mtl/wtrlab.lua"
     icon: "https://raw.githubusercontent.com/HnDK0/external-sources/main/icons/wtr-lab.png"
     language: "Mtl"
