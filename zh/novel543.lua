@@ -1,7 +1,7 @@
 ﻿-- ── Метаданные ────────────────────────────────────────────────────────────────
 id       = "novel543"
 name     = "Novel543"
-version  = "1.0.0"
+version  = "1.0.1"
 baseUrl  = "https://www.novel543.com/"
 language = "zh"
 icon     = "https://raw.githubusercontent.com/HnDK0/external-sources/main/icons/novel543.png"
@@ -127,25 +127,25 @@ end
 -- ── Текст главы (многостраничный) ────────────────────────────────────────────
 
 function getChapterText(html, url)
-  -- Извлекаем имя файла: "https://.../8096_1.html" → "8096_1"
   local chapterFile = string.match(url, "/([^/]+)%.html$") or ""
-  local baseDir     = string.match(url, "^(.+/)") or ""
 
-  -- Получаем текст первой страницы
-  local cleaned = html_remove(html, "div.gadBlock", "script", "ins", ".ads", ".ad", "p:contains(溫馨提示)")
-  local el = html_select_first(cleaned, "div.content")
+  local function extractPage(pageHtml)
+    local cleaned = html_remove(pageHtml, "div.gadBlock", "div.adBlock", "script", "ins", ".ads", ".ad", "p:contains(溫馨提示)")
+    local el = html_select_first(cleaned, "div.content")
+    if not el then return "" end
+    return html_text("<div>" .. el.html .. "</div>")
+  end
+
   local parts = {}
-  if el then table.insert(parts, html_text(el.html)) end
+  local first = extractPage(html)
+  if first ~= "" then table.insert(parts, first) end
 
-  -- Ищем подстраницы: {chapterFile}_2.html, _3.html, ...
   local currentHtml = html
   for _ = 1, 20 do
-    -- Ищем ссылку вида {chapterFile}_N.html
     local subUrl = nil
     for _, a in ipairs(html_select(currentHtml, "a[href]")) do
       local href = a.href
       local fname = string.match(href, "/([^/]+)$") or ""
-      -- паттерн: chapterFile + "_" + цифры + ".html"
       if string.match(fname, "^" .. chapterFile:gsub("%-", "%%-") .. "_%d+%.html$") then
         subUrl = absUrl(href)
         break
@@ -157,12 +157,11 @@ function getChapterText(html, url)
     local pr = http_get(subUrl)
     if not pr.success then break end
 
-    local subCleaned = html_remove(pr.body, "div.gadBlock", "script", "ins", ".ads", ".ad", "p:contains(溫馨提示)")
-    local subEl = html_select_first(subCleaned, "div.content")
-    if subEl then table.insert(parts, html_text(subEl.html)) end
+    local sub = extractPage(pr.body)
+    if sub ~= "" then table.insert(parts, sub) end
 
     currentHtml = pr.body
   end
 
-  return table.concat(parts, "\n\n")
+  return string_trim(table.concat(parts, "\n\n"))
 end
