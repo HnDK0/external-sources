@@ -21,7 +21,7 @@ sources:
     language: "en"
   - id: "NovelBin"
     name: "Novel Bin"
-    version: "1.0.4"
+    version: "1.0.5"
     url: "https://raw.githubusercontent.com/HnDK0/external-sources/main/en/novelbin.lua"
     icon: "https://raw.githubusercontent.com/HnDK0/external-sources/main/icons/novelbin.png"
     language: "en"
