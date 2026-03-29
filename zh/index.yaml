@@ -21,7 +21,7 @@ sources:
     language: "zh"
   - id: "shuba69"
     name: "69shuba"
-    version: "1.0.0"
+    version: "1.0.1"
     url: "https://raw.githubusercontent.com/HnDK0/external-sources/main/zh/shuba69.lua"
     icon: "https://raw.githubusercontent.com/HnDK0/external-sources/main/icons/69shuba.png"
     language: "zh"
