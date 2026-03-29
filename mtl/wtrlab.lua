@@ -1,7 +1,7 @@
 ﻿-- ── Метаданные ───────────────────────────────────────────────────────────────
 id       = "wtrlab"
 name     = "WTR-LAB"
-version  = "1.0.7"
+version  = "1.0.8"
 baseUrl  = "https://wtr-lab.com/"
 language = "MTL"
 icon     = "https://raw.githubusercontent.com/HnDK0/external-sources/main/icons/wtr-lab.png"
@@ -432,12 +432,7 @@ function getChapterText(html, chapterUrl)
 
     log_info("wtrlab: parsed " .. tostring(#paragraphs) .. " paragraphs")
 
-    local parts = {}
-    for _, para in ipairs(paragraphs) do
-        table.insert(parts, "<p>" .. para .. "</p>")
-    end
-
-    return table.concat(parts, "\n")
+    return table.concat(paragraphs, "\n\n")
 end
 
 -- ── Settings schema ───────────────────────────────────────────────────────────

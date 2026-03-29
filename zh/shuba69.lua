@@ -1,7 +1,7 @@
 ﻿-- ── Метаданные ───────────────────────────────────────────────────────────────
 id       = "shuba69"
 name     = "69shuba"
-version  = "1.0.0"
+version  = "1.0.1"
 baseUrl  = "https://www.69shuba.com/"
 language = "zh"
 icon     = "https://raw.githubusercontent.com/HnDK0/external-sources/main/icons/69shuba.png"
@@ -14,6 +14,17 @@ local function absUrl(href)
     if string_starts_with(href, "http") then return href end
     if string_starts_with(href, "//") then return "https:" .. href end
     return url_resolve(baseUrl, href)
+end
+
+local function applyStandardContentTransforms(text)
+    if not text or text == "" then return "" end
+    text = string_normalize(text)
+    local domain = baseUrl:gsub("https?://", ""):gsub("^www%.", ""):gsub("/$", "")
+    text = regex_replace(text, "(?i)" .. domain .. ".*?\\n", "")
+    text = regex_replace(text, "(?i)\\A[\\s\\p{Z}\\uFEFF]*((第[\\d一二三四五六七八九十百]+[章节]|Chapter\\s+\\d+)[^\\n\\r]*[\\n\\r\\s]*)+", "")
+    text = regex_replace(text, "(?im)^\\s*\\(本章完\\)\\s*$", "")
+    text = string_trim(text)
+    return text
 end
 
 -- ── Каталог ──────────────────────────────────────────────────────────────────
@@ -147,5 +158,5 @@ function getChapterText(html)
     local el = html_select_first(cleaned, "div.txtnav")
     if not el then return "" end
 
-    return html_text(el.html)
-end 
+    return applyStandardContentTransforms(html_text(el.html))
+end

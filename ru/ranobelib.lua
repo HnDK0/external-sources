@@ -1,7 +1,7 @@
 ﻿-- ── Метаданные ────────────────────────────────────────────────────────────────
 id       = "ranobelib"
 name     = "RanobeLib"
-version  = "1.0.4"
+version  = "1.0.5"
 baseUrl  = "https://ranobelib.me/"
 language = "ru"
 icon     = "https://raw.githubusercontent.com/HnDK0/external-sources/main/icons/ranobelib.png"
@@ -401,10 +401,6 @@ function getChapterText(html, chapterUrl)
   if resultHtml == "" then return "" end
 
   -- Парсим получившийся HTML и извлекаем текст с абзацами
-  local el = html_select_first(resultHtml, "p, div, body")
-  if el then
-    return applyStandardContentTransforms(html_text(resultHtml))
-  end
   return applyStandardContentTransforms(html_text(resultHtml))
 end
 -- ── Список фильтров ───────────────────────────────────────────────────────────
