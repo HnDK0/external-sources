@@ -1,7 +1,7 @@
 ﻿-- ── Метаданные ───────────────────────────────────────────────────────────────
 id       = "wtrlab"
 name     = "WTR-LAB"
-version  = "1.0.8"
+version  = "1.0.9"
 baseUrl  = "https://wtr-lab.com/"
 language = "MTL"
 icon     = "https://raw.githubusercontent.com/HnDK0/external-sources/main/icons/wtr-lab.png"
@@ -331,9 +331,10 @@ function getChapterText(html, chapterUrl)
 
     local resolvedBody = decryptBody(rawBody)
 
-    -- ── v2 глоссарий (правильные имена с сайта) ──────────────────────────────
-    -- Строим обратный словарь: любой вариант → правильное имя (translations[1])
-    local v2Lookup = {}  -- [variant] = correct name
+    -- ── v2 глоссарий ──────────────────────────────────────────────────────────
+    -- Строим словарь: zh_variant → correct_en_name (translations[1])
+    -- v2 структура: term[1] = [correct_name, variant2, variant3, ...]
+    local v2Lookup = {}  -- [zh_variant] = correct_en_name
     local v2Url = baseUrl .. "api/v2/reader/terms/" .. novelId .. ".json"
     local v2r = http_get(v2Url, {
         headers = {
@@ -351,17 +352,7 @@ function getChapterText(html, chapterUrl)
             end
         end
         if termsArray then
-            -- Первый проход: собираем все правильные имена (translations[1])
-            -- чтобы не перезаписать их во втором проходе
-            local correctNames = {}
-            for _, term in ipairs(termsArray) do
-                local translations = term[1]
-                if type(translations) == "table" and translations[1] and translations[1] ~= "" then
-                    correctNames[translations[1]] = true
-                end
-            end
-            -- Второй проход: маппим все варианты (translations[2..n]),
-            -- но пропускаем те что являются чьим-то правильным именем (correctNames)
+            -- Маппим все варианты (translations[2..n]) → правильное имя (translations[1])
             local count = 0
             for _, term in ipairs(termsArray) do
                 local translations = term[1]
@@ -369,7 +360,7 @@ function getChapterText(html, chapterUrl)
                     local correct = translations[1]
                     for i = 2, #translations do
                         local variant = translations[i]
-                        if variant ~= "" and not correctNames[variant] then
+                        if variant and variant ~= "" then
                             v2Lookup[variant] = correct
                             count = count + 1
                         end
@@ -385,8 +376,11 @@ function getChapterText(html, chapterUrl)
     end
 
     -- ── Глоссарий ─────────────────────────────────────────────────────────────
-    -- Берём termEntry[1] из glossary_data, затем ищем в v2Lookup —
-    -- если этот вариант известен v2, подставляем правильное имя оттуда.
+    -- glossary_data.terms[i] структура: { [1]=zh_source, [2]=en_translation, ... }
+    -- Маркеры ※idx⛬ в тексте должны заменяться на EN перевод (termEntry[2]).
+    -- v2Lookup строился из translations[1] (правильное имя) vs translations[2+] (варианты).
+    -- Логика: берём en_translation как базу, затем ищем zh_source в v2 чтобы получить
+    -- точное правильное имя (translations[1]) если оно есть.
     local glossary = {}
     if data.glossary_data and data.glossary_data.terms then
         local terms = data.glossary_data.terms
@@ -395,13 +389,21 @@ function getChapterText(html, chapterUrl)
             local termEntry = terms[i]
             if type(termEntry) == "table" then
                 local idx = i - 1  -- 0-based, совпадает с маркерами ※idx⛬
-                local raw = termEntry[1] or ""
-                if raw ~= "" then
-                    local termValue = v2Lookup[raw] or raw
-                    glossary[idx] = termValue
-                    if v2Lookup[raw] then
-                        log_info("wtrlab: glossary[" .. idx .. "] '" .. raw .. "' -> '" .. termValue .. "' (v2 corrected)")
+                local zh  = termEntry[1] or ""  -- исходный текст (zh)
+                local en  = termEntry[2] or ""  -- EN перевод из ответа API
+                if en ~= "" or zh ~= "" then
+                    -- Ищем zh в v2Lookup — если он там есть как вариант,
+                    -- подставляем правильное каноническое имя из v2
+                    local termValue
+                    if zh ~= "" and v2Lookup[zh] then
+                        termValue = v2Lookup[zh]
+                        log_info("wtrlab: glossary[" .. idx .. "] zh='" .. zh .. "' -> '" .. termValue .. "' (v2 corrected)")
+                    elseif en ~= "" then
+                        termValue = en
+                    else
+                        termValue = zh
                     end
+                    glossary[idx] = termValue
                 end
             end
         end
