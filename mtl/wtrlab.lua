@@ -1,13 +1,16 @@
 ﻿-- ── Метаданные ───────────────────────────────────────────────────────────────
 id       = "wtrlab"
 name     = "WTR-LAB"
-version  = "1.0.8"
+version  = "1.1.0"
 baseUrl  = "https://wtr-lab.com/"
 language = "MTL"
 icon     = "https://raw.githubusercontent.com/HnDK0/external-sources/main/icons/wtr-lab.png"
 
 -- ── Настройки ────────────────────────────────────────────────────────────────
 local PREF_MODE = "wtrlab_mode"  -- "ai" | "raw"
+
+-- Кеш терминов: один запрос на книгу, живёт до перезапуска приложения
+local termCache = {} -- [novelId] = { termByOriginal }
 
 local function getMode()
     local v = get_preference(PREF_MODE)
@@ -331,82 +334,88 @@ function getChapterText(html, chapterUrl)
 
     local resolvedBody = decryptBody(rawBody)
 
-    -- ── v2 глоссарий (правильные имена с сайта) ──────────────────────────────
-    -- Строим обратный словарь: любой вариант → правильное имя (translations[1])
-    local v2Lookup = {}  -- [variant] = correct name
-    local v2Url = baseUrl .. "api/v2/reader/terms/" .. novelId .. ".json"
-    local v2r = http_get(v2Url, {
-        headers = {
-            ["Referer"] = chapterUrl,
-            ["Origin"]  = regex_replace(baseUrl, "/$", "")
-        }
-    })
-    if v2r.success then
-        local v2data = json_parse(v2r.body)
-        local termsArray = nil
-        if v2data and type(v2data) == "table" then
-            if v2data.glossaries and v2data.glossaries[1] and
-               v2data.glossaries[1].data and v2data.glossaries[1].data.terms then
-                termsArray = v2data.glossaries[1].data.terms
+    -- ── v2 глоссарий книги ────────────────────────────────────────────────────
+    -- Ключ: китайский оригинал (term[2])
+    -- Значение: первый вариант из массива (сервер уже отсортировал)
+    local termByOriginal = {}
+
+    if mode ~= "raw" then
+        local cache = termCache[novelId]
+
+        if cache then
+            termByOriginal = cache.termByOriginal
+            log_info("wtrlab: terms cache hit for novelId=" .. novelId)
+        else
+            local v2Url = baseUrl .. "api/v2/reader/terms/" .. novelId .. ".json"
+            local v2r = http_get(v2Url, {
+                headers = {
+                    ["Referer"] = chapterUrl,
+                    ["Origin"]  = regex_replace(baseUrl, "/$", "")
+                }
+            })
+            if v2r.success then
+                local v2data = json_parse(v2r.body)
+                local termsArray = nil
+                if v2data and type(v2data) == "table" then
+                    if v2data.glossaries then
+                        for _, glossary in ipairs(v2data.glossaries) do
+                            if glossary.data and glossary.data.terms then
+                                termsArray = glossary.data.terms
+                                break
+                            end
+                        end
+                    end
+                end
+                if termsArray then
+                    for _, term in ipairs(termsArray) do
+                        local original     = term[2]
+                        local translations = term[1]
+                        if original and original ~= "" and type(translations) == "table" and translations[1] then
+                            termByOriginal[original] = translations[1]
+                        end
+                    end
+                    log_info("wtrlab: v2 glossary loaded, " .. tostring(#termsArray) .. " terms")
+                    termCache[novelId] = { termByOriginal = termByOriginal }
+                else
+                    log_info("wtrlab: v2 glossary: unexpected structure")
+                end
+            else
+                log_info("wtrlab: v2 glossary fetch failed code=" .. tostring(v2r.code))
             end
         end
-        if termsArray then
-            -- Первый проход: собираем все правильные имена (translations[1])
-            -- чтобы не перезаписать их во втором проходе
-            local correctNames = {}
-            for _, term in ipairs(termsArray) do
-                local translations = term[1]
-                if type(translations) == "table" and translations[1] and translations[1] ~= "" then
-                    correctNames[translations[1]] = true
-                end
-            end
-            -- Второй проход: маппим все варианты (translations[2..n]),
-            -- но пропускаем те что являются чьим-то правильным именем (correctNames)
-            local count = 0
-            for _, term in ipairs(termsArray) do
-                local translations = term[1]
-                if type(translations) == "table" and translations[1] and translations[1] ~= "" then
-                    local correct = translations[1]
-                    for i = 2, #translations do
-                        local variant = translations[i]
-                        if variant ~= "" and not correctNames[variant] then
-                            v2Lookup[variant] = correct
-                            count = count + 1
+    else
+        log_info("wtrlab: raw mode, terms skipped")
+    end
+
+    -- ── Глоссарий главы ───────────────────────────────────────────────────────
+    -- В raw моде текст китайский, маркеров ※idx⛬ нет — глоссарий не нужен.
+    -- В ai моде: ищем по китайскому оригиналу, нашли → v2 вариант, нет → raw от нейросети.
+    local glossary = {}
+    if mode ~= "raw" then
+        if data.glossary_data and data.glossary_data.terms then
+            local terms = data.glossary_data.terms
+            log_info("wtrlab: glossary terms count=" .. tostring(#terms))
+            for i = 1, #terms do
+                local termEntry = terms[i]
+                if type(termEntry) == "table" then
+                    local idx      = i - 1  -- 0-based, совпадает с маркерами ※idx⛬
+                    local raw      = termEntry[1] or ""
+                    local original = termEntry[2] or ""
+                    local matched  = original ~= "" and termByOriginal[original]
+                    local termValue = matched or raw
+                    if termValue ~= "" then
+                        glossary[idx] = termValue
+                        if matched then
+                            log_info("wtrlab: glossary[" .. idx .. "] '" .. original .. "' (raw: '" .. raw .. "') -> '" .. termValue .. "'")
+                        else
+                            log_info("wtrlab: glossary[" .. idx .. "] '" .. original .. "' (raw: '" .. raw .. "') -> no match, kept raw")
                         end
                     end
                 end
             end
-            log_info("wtrlab: v2 lookup built, " .. tostring(count) .. " variants mapped")
         else
-            log_info("wtrlab: v2 glossary: unexpected structure")
+            log_info("wtrlab: no glossary_data in response")
         end
-    else
-        log_info("wtrlab: v2 glossary fetch failed code=" .. tostring(v2r.code) .. ", will use glossary_data as-is")
-    end
-
-    -- ── Глоссарий ─────────────────────────────────────────────────────────────
-    -- Берём termEntry[1] из glossary_data, затем ищем в v2Lookup —
-    -- если этот вариант известен v2, подставляем правильное имя оттуда.
-    local glossary = {}
-    if data.glossary_data and data.glossary_data.terms then
-        local terms = data.glossary_data.terms
-        log_info("wtrlab: glossary terms count=" .. tostring(#terms))
-        for i = 1, #terms do
-            local termEntry = terms[i]
-            if type(termEntry) == "table" then
-                local idx = i - 1  -- 0-based, совпадает с маркерами ※idx⛬
-                local raw = termEntry[1] or ""
-                if raw ~= "" then
-                    local termValue = v2Lookup[raw] or raw
-                    glossary[idx] = termValue
-                    if v2Lookup[raw] then
-                        log_info("wtrlab: glossary[" .. idx .. "] '" .. raw .. "' -> '" .. termValue .. "' (v2 corrected)")
-                    end
-                end
-            end
-        end
-    else
-        log_info("wtrlab: no glossary_data in response")
     end
 
     -- ── Патчи ─────────────────────────────────────────────────────────────────
