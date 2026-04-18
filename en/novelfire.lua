@@ -1,6 +1,6 @@
 ﻿id       = "novelfire"
 name     = "NovelFire"
-version  = "1.0.1"
+version  = "1.0.2"
 baseUrl  = "https://novelfire.net"
 language = "en"
 icon     = "https://raw.githubusercontent.com/HnDK0/external-sources/main/icons/novelfire.png"
@@ -131,10 +131,17 @@ function getChapterList(bookUrl)
     if maxPage > 1 then
         local urls = {}
         for p = 2, maxPage do table.insert(urls, baseUrl .. "/book/" .. bookSlug .. "/chapters?page=" .. p) end
-        local results = http_get_batch(urls)
-        for _, res in ipairs(results) do
-            if res.success then
-                for _, ch in ipairs(parsePage(res.body)) do table.insert(allChapters, ch) end
+        local CHUNK = 20
+        for i = 1, #urls, CHUNK do
+            local chunk = {}
+            for j = i, math.min(i + CHUNK - 1, #urls) do
+                table.insert(chunk, urls[j])
+            end
+            local results = http_get_batch(chunk)
+            for _, res in ipairs(results) do
+                if res.success then
+                    for _, ch in ipairs(parsePage(res.body)) do table.insert(allChapters, ch) end
+                end
             end
         end
     end
