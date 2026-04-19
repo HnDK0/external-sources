@@ -1,13 +1,13 @@
 ﻿id       = "novelfire"
 name     = "NovelFire"
-version  = "1.0.1"
+version  = "1.0.3"
 baseUrl  = "https://novelfire.net"
 language = "en"
 icon     = "https://raw.githubusercontent.com/HnDK0/external-sources/main/icons/novelfire.png"
 
 -- ── Хелперы ───────────────────────────────────────────────────────────────────
 
-local function absUrl(href) 
+local function absUrl(href)
     if not href or href == "" then return "" end
     if string_starts_with(href, "http") then return href end
     if string_starts_with(href, "//") then return "https:" .. href end
