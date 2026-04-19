@@ -27,7 +27,7 @@ sources:
     language: "en"
   - id: "novelbuddy"
     name: "NovelBuddy"
-    version: "1.0.3"
+    version: "1.0.4"
     url: "https://raw.githubusercontent.com/HnDK0/external-sources/main/en/novelbuddy.lua"
     icon: "https://raw.githubusercontent.com/HnDK0/external-sources/main/icons/novelbuddy.png"
     language: "en"
