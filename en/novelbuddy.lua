@@ -6,7 +6,7 @@ baseUrl  = "https://novelbuddy.com"
 language = "en"
 icon     = "https://raw.githubusercontent.com/HnDK0/external-sources/main/icons/novelbuddy.png"
 
--- ── Хелперы ───────────────────────────────────────────────────────────────────
+-- ── Хелперы ──────────────────────────────────────────────────────────────────
 
 local domains = { "https://novelbuddy.io", "https://novelbuddy.com" }
 
