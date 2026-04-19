@@ -1,6 +1,6 @@
 ﻿id       = "novelfire"
 name     = "NovelFire"
-version  = "1.0.2"
+version  = "1.0.1"
 baseUrl  = "https://novelfire.net"
 language = "en"
 icon     = "https://raw.githubusercontent.com/HnDK0/external-sources/main/icons/novelfire.png"
@@ -129,20 +129,29 @@ function getChapterList(bookUrl)
     local allChapters = parsePage(r.body)
 
     if maxPage > 1 then
-        local urls = {}
-        for p = 2, maxPage do table.insert(urls, baseUrl .. "/book/" .. bookSlug .. "/chapters?page=" .. p) end
         local CHUNK = 20
-        for i = 1, #urls, CHUNK do
-            local chunk = {}
-            for j = i, math.min(i + CHUNK - 1, #urls) do
-                table.insert(chunk, urls[j])
+        for chunkStart = 2, maxPage, CHUNK do
+            local chunkEnd = math.min(chunkStart + CHUNK - 1, maxPage)
+            local urls = {}
+            for p = chunkStart, chunkEnd do
+                table.insert(urls, baseUrl .. "/book/" .. bookSlug .. "/chapters?page=" .. p)
             end
-            local results = http_get_batch(chunk)
+            local results = http_get_batch(urls)
+            -- Восстанавливаем порядок по номеру страницы из URL
+            local sorted = {}
             for _, res in ipairs(results) do
                 if res.success then
-                    for _, ch in ipairs(parsePage(res.body)) do table.insert(allChapters, ch) end
+                    local p = tonumber(res.url and res.url:match("page=(%d+)")) or 0
+                    table.insert(sorted, { page = p, body = res.body })
                 end
             end
+            table.sort(sorted, function(a, b) return a.page < b.page end)
+            for _, item in ipairs(sorted) do
+                for _, ch in ipairs(parsePage(item.body)) do
+                    table.insert(allChapters, ch)
+                end
+            end
+            if chunkEnd < maxPage then sleep(1000) end
         end
     end
     return allChapters

@@ -1,36 +1,18 @@
 ﻿-- ── Метаданные ────────────────────────────────────────────────────────────────
-id       = "novelbuddy"
-name     = "NovelBuddy"
-version  = "1.0.4"
+id       = "novelbuddy_com"
+name     = "NovelBuddy (COM)"
+version  = "1.0.2"
 baseUrl  = "https://novelbuddy.com"
 language = "en"
 icon     = "https://raw.githubusercontent.com/HnDK0/external-sources/main/icons/novelbuddy.png"
 
--- ── Хелперы ──────────────────────────────────────────────────────────────────
-
-local domains = { "https://novelbuddy.io", "https://novelbuddy.com" }
-
-local function http_get_fb(url)
-  for _, domain in ipairs(domains) do
-    local r = http_get(url:gsub("https?://novelbuddy%.[a-z]+", domain))
-    if r.success then return r end
-  end
-  return { success = false }
-end
+-- ── Хелперы ───────────────────────────────────────────────────────────────────
 
 local function absUrl(href)
   if not href or href == "" then return "" end
   if string_starts_with(href, "http") then return href end
   if string_starts_with(href, "//") then return "https:" .. href end
   return url_resolve(baseUrl, href)
-end
-
--- Нормализует URL книги: заменяет любой домен на baseUrl и /novel/ на /book/
-local function normalizeBookUrl(bookUrl)
-  if not bookUrl or bookUrl == "" then return bookUrl end
-  bookUrl = bookUrl:gsub("https?://novelbuddy%.[a-z]+", baseUrl)
-  bookUrl = bookUrl:gsub("/novel/", "/book/")
-  return bookUrl
 end
 
 local function applyStandardContentTransforms(text)
@@ -68,7 +50,7 @@ function getCatalogList(index)
   local url = baseUrl .. "/search?sort=views"
   if index > 0 then url = url .. "&page=" .. tostring(index + 1) end
 
-  local r = http_get_fb(url)
+  local r = http_get(url)
   if not r.success then return { items = {}, hasNext = false } end
 
   local items = parseCatalogItems(r.body)
@@ -81,7 +63,7 @@ function getCatalogSearch(index, query)
   local url = baseUrl .. "/search?q=" .. url_encode(query)
   if index > 0 then url = url .. "&page=" .. tostring(index + 1) end
 
-  local r = http_get_fb(url)
+  local r = http_get(url)
   if not r.success then return { items = {}, hasNext = false } end
 
   local items = parseCatalogItems(r.body)
@@ -91,7 +73,7 @@ end
 -- ── Детали книги ──────────────────────────────────────────────────────────────
 
 function getBookTitle(bookUrl)
-  local r = http_get_fb(normalizeBookUrl(bookUrl))
+  local r = http_get(bookUrl)
   if not r.success then return nil end
   local el = html_select_first(r.body, "h1")
   if el then return string_clean(el.text) end
@@ -99,7 +81,7 @@ function getBookTitle(bookUrl)
 end
 
 function getBookCoverImageUrl(bookUrl)
-  local r = http_get_fb(normalizeBookUrl(bookUrl))
+  local r = http_get(bookUrl)
   if not r.success then return nil end
   local cover = html_attr(r.body, ".img-cover img", "data-src")
   if cover == "" then cover = html_attr(r.body, ".img-cover img", "src") end
@@ -108,7 +90,7 @@ function getBookCoverImageUrl(bookUrl)
 end
 
 function getBookDescription(bookUrl)
-  local r = http_get_fb(normalizeBookUrl(bookUrl))
+  local r = http_get(bookUrl)
   if not r.success then return nil end
   local cleaned = html_remove(r.body, "h3")
   local el = html_select_first(cleaned, ".section-body.summary .content")
@@ -119,10 +101,10 @@ end
 -- ── Список глав (AJAX GET /api/manga/{bookId}/chapters) ───────────────────────
 
 function getChapterList(bookUrl)
-  bookUrl = normalizeBookUrl(bookUrl)
-  local r = http_get_fb(bookUrl)
+  local r = http_get(bookUrl)
   if not r.success then return {} end
 
+  -- Ищем bookId в скриптах страницы
   local bookId = nil
   for _, script in ipairs(html_select(r.body, "script")) do
     local t = script.html
@@ -136,7 +118,7 @@ function getChapterList(bookUrl)
   end
 
   local ajaxUrl = baseUrl .. "/api/manga/" .. bookId .. "/chapters?source=detail"
-  local ar = http_get_fb(ajaxUrl)
+  local ar = http_get(ajaxUrl)
   if not ar.success then
     log_error("NovelBuddy: AJAX failed " .. tostring(ar.code))
     return {}
@@ -155,6 +137,7 @@ function getChapterList(bookUrl)
     end
   end
 
+  -- API отдаёт newest-first → разворачиваем
   local reversed = {}
   for i = #chapters, 1, -1 do table.insert(reversed, chapters[i]) end
   return reversed
@@ -163,7 +146,7 @@ end
 -- ── Хэш для обновлений ────────────────────────────────────────────────────────
 
 function getChapterListHash(bookUrl)
-  local r = http_get_fb(normalizeBookUrl(bookUrl))
+  local r = http_get(bookUrl)
   if not r.success then return nil end
   local el = html_select_first(r.body, ".meta p:has(strong:contains(Chapters)) span")
   if el then return string_clean(el.text) end
@@ -179,11 +162,10 @@ function getChapterText(html, url)
   if not el then return "" end
   return applyStandardContentTransforms(html_text(el.html))
 end
-
 -- ── Жанры на странице книги ───────────────────────────────────────────────────
 
 function getBookGenres(bookUrl)
-  local r = http_get_fb(normalizeBookUrl(bookUrl))
+  local r = http_get(bookUrl)
   if not r.success then return {} end
 
   local genres = {}
@@ -304,7 +286,7 @@ function getCatalogFiltered(index, filters)
 
   url = url .. "&page=" .. tostring(page)
 
-  local r = http_get_fb(url)
+  local r = http_get(url)
   if not r.success then return { items = {}, hasNext = false } end
 
   local items = {}
