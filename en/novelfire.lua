@@ -106,9 +106,72 @@ end
 -- ── Список глав ───────────────────────────────────────────────────────────────
 
 function getChapterList(bookUrl)
+    -- ── Шаг 1: получаем post_id со страницы книги ──────────────────────────
+    local r = http_get(bookUrl)
+    if not r.success then return {} end
+
+    local postId = html_attr(r.body, "#novel-report", "report-post_id")
+    if not postId or postId == "" then return {} end
+
+    -- ── Шаг 2: один AJAX запрос — все главы сразу ──────────────────────────
+    local ajaxUrl = baseUrl .. "/ajax/listChapterDataAjax"
+    local params = "draw=1"
+        .. "&columns%5B0%5D%5Bdata%5D=n_sort"
+        .. "&columns%5B0%5D%5Bname%5D=cmm_posts_detail.n_sort"
+        .. "&columns%5B0%5D%5Bsearchable%5D=true"
+        .. "&columns%5B0%5D%5Borderable%5D=true"
+        .. "&columns%5B0%5D%5Bsearch%5D%5Bvalue%5D="
+        .. "&columns%5B0%5D%5Bsearch%5D%5Bregex%5D=false"
+        .. "&columns%5B1%5D%5Bdata%5D=bookmark_created_at"
+        .. "&columns%5B1%5D%5Bname%5D=bookmark_chapters.created_at"
+        .. "&columns%5B1%5D%5Bsearchable%5D=false"
+        .. "&columns%5B1%5D%5Borderable%5D=true"
+        .. "&columns%5B1%5D%5Bsearch%5D%5Bvalue%5D="
+        .. "&columns%5B1%5D%5Bsearch%5D%5Bregex%5D=false"
+        .. "&order%5B0%5D%5Bcolumn%5D=0"
+        .. "&order%5B0%5D%5Bdir%5D=asc"
+        .. "&order%5B0%5D%5Bname%5D=cmm_posts_detail.n_sort"
+        .. "&start=0"
+        .. "&length=-1"
+        .. "&search%5Bvalue%5D="
+        .. "&search%5Bregex%5D=false"
+        .. "&post_id=" .. postId
+        .. "&only_bookmark=false"
+
+    local bookSlug = bookUrl:match("/([^/]+)$")
+    local ar = http_get(ajaxUrl .. "?" .. params)
+    if not ar.success then return {} end
+
+    -- ── Шаг 3: парсим JSON ─────────────────────────────────────────────────
+    local json = json_parse(ar.body)
+    if not json or not json.data then return {} end
+
+    local chapters = {}
+    for _, item in ipairs(json.data) do
+        local nSort = item.n_sort
+        if nSort then
+            local title = item.title or ("Chapter " .. tostring(nSort))
+            local cleanTitle = string_clean(regex_replace(title, "<[^>]+>", ""))
+            local chUrl = baseUrl .. "/book/" .. bookSlug .. "/chapter-" .. tostring(nSort)
+            table.insert(chapters, { title = cleanTitle, url = chUrl })
+        end
+    end
+
+    table.sort(chapters, function(a, b)
+        local na = tonumber(a.url:match("chapter%-(%d+)$")) or 0
+        local nb = tonumber(b.url:match("chapter%-(%d+)$")) or 0
+        return na < nb
+    end)
+
+    return chapters
+end
+
+--[[ Старый способ через HTML пагинацию (на случай если AJAX сломается)
+
+function getChapterList(bookUrl)
     local bookSlug = bookUrl:match("/([^/]+)$")
     local firstPageUrl = baseUrl .. "/book/" .. bookSlug .. "/chapters?page=1"
-    
+
     local r = http_get(firstPageUrl)
     if not r.success then return {} end
 
@@ -137,7 +200,6 @@ function getChapterList(bookUrl)
                 table.insert(urls, baseUrl .. "/book/" .. bookSlug .. "/chapters?page=" .. p)
             end
             local results = http_get_batch(urls)
-            -- Восстанавливаем порядок по номеру страницы из URL
             local sorted = {}
             for _, res in ipairs(results) do
                 if res.success then
@@ -156,6 +218,7 @@ function getChapterList(bookUrl)
     end
     return allChapters
 end
+]]
 
 function getChapterListHash(bookUrl)
     local r = http_get(bookUrl)
