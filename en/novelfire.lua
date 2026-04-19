@@ -7,7 +7,7 @@ icon     = "https://raw.githubusercontent.com/HnDK0/external-sources/main/icons/
 
 -- ── Хелперы ───────────────────────────────────────────────────────────────────
 
-local function absUrl(href)
+local function absUrl(href) 
     if not href or href == "" then return "" end
     if string_starts_with(href, "http") then return href end
     if string_starts_with(href, "//") then return "https:" .. href end
