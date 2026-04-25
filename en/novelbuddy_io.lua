@@ -1,7 +1,7 @@
 ﻿-- -- Метаданные ----------------------------------------------------------------
 id       = "novelbuddy"
 name     = "NovelBuddy"
-version  = "2.2.8"
+version  = "2.2.9"
 baseUrl  = "https://novelbuddy.com"
 language = "en"
 icon     = "https://raw.githubusercontent.com/HnDK0/external-sources/main/icons/novelbuddy.png"
@@ -281,12 +281,13 @@ function getChapterList(bookUrl)
       if apiData.success ~= false then
         local rawChapters = (apiData.data and apiData.data.chapters) or apiData.chapters or {}
         for _, ch in ipairs(rawChapters) do
-          local slug  = ch.slug or ch.id or ""
-          -- absUrl применяем к ch.url — он может быть как относительным, так и абсолютным
-          local chUrl = ch.url and absUrl(ch.url)
-                        or (slug ~= "" and absUrl("/" .. (mangaSlug or "") .. "/" .. slug))
-                        or ""
-          local title = ch.name or ch.title or slug
+          local chSlug = ch.slug or ch.id or ""
+          -- Используем API URL чтобы приложение не лезло на novelbuddy.com (CF блокирует)
+          local chUrl = ""
+          if chSlug ~= "" then
+            chUrl = "https://api.novelbuddy.com/titles/" .. url_encode(mangaId) .. "/chapters/" .. url_encode(chSlug)
+          end
+          local title = ch.name or ch.title or chSlug
           if chUrl ~= "" then
             table.insert(chapters, { title = string_clean(title), url = chUrl })
           end
@@ -308,11 +309,12 @@ function getChapterList(bookUrl)
       local ddata = json_parse(dr.body)
       local rawChapters = ddata and ddata.data and ddata.data.chapters or {}
       for _, ch in ipairs(rawChapters) do
-        local slug  = ch.slug or ch.id or ""
-        local chUrl = ch.url and absUrl(ch.url)
-                      or (slug ~= "" and absUrl("/" .. (mangaSlug or "") .. "/" .. slug))
-                      or ""
-        local title = ch.name or ch.title or slug
+        local chSlug = ch.slug or ch.id or ""
+        local chUrl = ""
+        if chSlug ~= "" then
+          chUrl = "https://api.novelbuddy.com/titles/" .. url_encode(mangaId) .. "/chapters/" .. url_encode(chSlug)
+        end
+        local title = ch.name or ch.title or chSlug
         if chUrl ~= "" then
           table.insert(chapters, { title = string_clean(title), url = chUrl })
         end
@@ -339,6 +341,24 @@ end
 -- -- Текст главы ---------------------------------------------------------------
 
 function getChapterText(html, url)
+  -- Если URL указывает на API — загружаем контент главы напрямую через API
+  if url and string_starts_with(url, "https://api.novelbuddy.com/") then
+    local r = http_get(url)
+    if r.success then
+      local apiData = json_parse(r.body)
+      if apiData then
+        local ch = (apiData.data and apiData.data.chapter) or apiData.chapter or apiData.data or {}
+        local content = ch.content or ch.text or ""
+        if content ~= "" then
+          return applyStandardContentTransforms(content)
+        end
+      end
+    end
+    log_error("NovelBuddy: chapter API failed for " .. url)
+    return ""
+  end
+
+  -- Стандартный путь: HTML уже загружен приложением
   local data = extractNextData(html)
   if data then
     local pp = data.props and data.props.pageProps
