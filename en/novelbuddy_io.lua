@@ -1,22 +1,17 @@
 ﻿-- -- Метаданные ----------------------------------------------------------------
 id       = "novelbuddy"
 name     = "NovelBuddy"
-version  = "2.3.4"
+version  = "2.4.0"
 baseUrl  = "https://novelbuddy.com"
 language = "en"
 icon     = "https://raw.githubusercontent.com/HnDK0/external-sources/main/icons/novelbuddy.png"
 
-disable_cloudflare_detection = true
-
-function onBeforeRequest(url)
-  return {
-    headers = {
-      ["Referer"] = baseUrl
-    }
-  }
-end
+-- CF/Turnstile всегда на сайте — НЕ включаем обход CF (disable_cloudflare_detection = true уже убрано)
+-- Весь контент грузим через API, сайт не трогаем вообще
 
 -- -- Хелперы -------------------------------------------------------------------
+
+local API_BASE = "https://api.novelbuddy.com/"
 
 local function absUrl(href)
   if not href or href == "" then return "" end
@@ -45,6 +40,9 @@ local function applyStandardContentTransforms(text)
   text = regex_replace(text, "(?i)" .. domain .. ".*?\\n", "")
   text = regex_replace(text, "(?i)\\A[\\s\\p{Z}\\uFEFF]*((Глава\\s+\\d+|Chapter\\s+\\d+)[^\\n\\r]*[\\n\\r\\s]*)+", "")
   text = regex_replace(text, "(?im)^\\s*(Translator|Editor|Proofreader|Read\\s+(at|on|latest))[:\\s][^\\n\\r]{0,70}(\\r?\\n|$)", "")
+  -- Убираем вотермарки Webnovel / freewebnovel
+  text = regex_replace(text, "(?i)Find authorized novels in Webnovel.*?Please click www\\.webnovel\\.com for visiting\\.", "")
+  text = regex_replace(text, "(?i)free.{0,10}novel\\.com", "")
   text = string_trim(text)
   return text
 end
@@ -73,22 +71,10 @@ local function stripHtml(content)
   return string_trim(content)
 end
 
-local function extractNextData(body)
-  if not body then return nil end
-  local startPos = body:find('<script id="__NEXT_DATA__" type="application/json">', 1, true)
-  if not startPos then return nil end
-  local contentStart = startPos + string.len('<script id="__NEXT_DATA__" type="application/json">')
-  local endPos = body:find('</script>', contentStart, true)
-  if not endPos then return nil end
-  local jsonStr = body:sub(contentStart, endPos - 1)
-  return json_parse(jsonStr)
-end
-
 local function slugFromUrl(bookUrl)
   return bookUrl:match("/([^/]+)$") or ""
 end
 
--- Нормализует жанры — принимает строку или таблицу, возвращает строку через запятую
 local function resolveGenreStr(genres)
   if not genres then return "" end
   if type(genres) == "string" then return genres end
@@ -96,36 +82,46 @@ local function resolveGenreStr(genres)
   return ""
 end
 
+-- -- API запросы ---------------------------------------------------------------
+
+local function apiGet(path)
+  local url = API_BASE .. path
+  local r = http_get(url)
+  if not r.success then
+    log_error("NovelBuddy: API GET failed: " .. url)
+    return nil
+  end
+  local data = json_parse(r.body)
+  if not data then
+    log_error("NovelBuddy: JSON parse failed for: " .. url)
+    return nil
+  end
+  return data
+end
+
 local function searchBySlug(slug)
   if slug == "" then return nil end
-  local searchUrl = "https://api.novelbuddy.com/titles/search?q=" .. url_encode(slug) .. "&limit=1"
-  local sr = http_get(searchUrl)
-  if not sr.success then return nil end
-  local sdata = json_parse(sr.body)
-  if not sdata then return nil end
-  local items = (sdata.data and sdata.data.items) or sdata.items or {}
+  local data = apiGet("titles/search?q=" .. url_encode(slug) .. "&limit=1")
+  if not data then return nil end
+  local items = (data.data and data.data.items) or data.items or {}
   if #items == 0 or not items[1].id then return nil end
   return items[1]
 end
 
 local function fetchDetailById(mangaId, fallback)
-  local detailUrl = "https://api.novelbuddy.com/titles/" .. url_encode(mangaId)
-  local dr = http_get(detailUrl)
-  if dr.success then
-    local ddata = json_parse(dr.body)
-    if ddata and ddata.data then
-      local full = ddata.data
-      full.id      = full.id      or mangaId
-      full.slug    = full.slug    or (fallback and fallback.slug) or ""
-      full.name    = full.name    or (fallback and fallback.name)
-      full.cover   = full.cover   or (fallback and fallback.cover)
-      full.summary = full.summary or full.description or ""
-      full.genres  = full.genres  or {}
-      full.stats   = full.stats   or (fallback and fallback.stats) or {}
-      full.updated_at = full.updated_at or (fallback and fallback.updated_at)
-      full.updatedAt  = full.updatedAt  or full.updated_at
-      return full
-    end
+  local data = apiGet("titles/" .. url_encode(mangaId))
+  if data and data.data then
+    local full = data.data
+    full.id         = full.id         or mangaId
+    full.slug       = full.slug       or (fallback and fallback.slug) or ""
+    full.name       = full.name       or (fallback and fallback.name)
+    full.cover      = full.cover      or (fallback and fallback.cover)
+    full.summary    = full.summary    or full.description or ""
+    full.genres     = full.genres     or {}
+    full.stats      = full.stats      or (fallback and fallback.stats) or {}
+    full.updated_at = full.updated_at or (fallback and fallback.updated_at)
+    full.updatedAt  = full.updatedAt  or full.updated_at
+    return full
   end
   if fallback then
     return {
@@ -166,32 +162,45 @@ function getCatalogList(index, filters)
   local sort   = "popular"
   local status = "all"
   local genres = ""
+  local exclude = ""
+  local min_ch = ""
+  local max_ch = ""
+
   if type(filters) == "table" then
-    sort   = filters["sort"]   or sort
-    status = filters["status"] or status
-    genres = resolveGenreStr(filters["genre"])
+    sort    = filters["sort"]    or sort
+    status  = filters["status"]  or status
+    genres  = resolveGenreStr(filters["genre"])
+    exclude = resolveGenreStr(filters["exclude"])
+    min_ch  = filters["min_ch"]  or ""
+    max_ch  = filters["max_ch"]  or ""
   end
 
-  local apiUrl = "https://api.novelbuddy.com/titles/search?sort=" .. url_encode(sort)
+  local apiUrl = "titles/search?sort=" .. url_encode(sort)
                  .. "&page=" .. tostring(page) .. "&limit=24"
 
   if status ~= "all" and status ~= "" then
     apiUrl = apiUrl .. "&status=" .. url_encode(status)
   end
-
   if genres ~= "" then
     apiUrl = apiUrl .. "&genres=" .. genres
   end
+  if exclude ~= "" then
+    apiUrl = apiUrl .. "&exclude=" .. exclude
+  end
+  if min_ch ~= "" then
+    apiUrl = apiUrl .. "&min_ch=" .. url_encode(min_ch)
+  end
+  if max_ch ~= "" then
+    apiUrl = apiUrl .. "&max_ch=" .. url_encode(max_ch)
+  end
 
-  local r = http_get(apiUrl)
-  if not r.success then return { items = {}, hasNext = false } end
-
-  local data = json_parse(r.body)
+  local data = apiGet(apiUrl)
   if not data then return { items = {}, hasNext = false } end
 
   local inner    = data.data or {}
   local rawItems = inner.items or {}
   local items    = {}
+
   for _, novel in ipairs(rawItems) do
     local slug    = novel.slug or ""
     local bookUrl = absUrl("/" .. slug)
@@ -212,19 +221,15 @@ end
 -- -- Поиск ---------------------------------------------------------------------
 
 function getCatalogSearch(index, query)
-  local page   = index + 1
-  local apiUrl = "https://api.novelbuddy.com/titles/search?q=" .. url_encode(query)
-                 .. "&page=" .. tostring(page) .. "&limit=24"
-
-  local r = http_get(apiUrl)
-  if not r.success then return { items = {}, hasNext = false } end
-
-  local data = json_parse(r.body)
+  local page = index + 1
+  local data = apiGet("titles/search?q=" .. url_encode(query)
+                      .. "&page=" .. tostring(page) .. "&limit=24")
   if not data then return { items = {}, hasNext = false } end
 
   local inner    = data.data or {}
   local rawItems = inner.items or data.items or data.results or {}
   local items    = {}
+
   for _, novel in ipairs(rawItems) do
     local slug    = novel.slug or ""
     local bookUrl = absUrl("/" .. slug)
@@ -252,9 +257,7 @@ end
 
 function getBookCoverImageUrl(bookUrl)
   local manga = fetchBookData(bookUrl)
-  if manga then
-    return resolveCover(manga.cover, manga.slug)
-  end
+  if manga then return resolveCover(manga.cover, manga.slug) end
   return nil
 end
 
@@ -276,16 +279,19 @@ function getBookGenres(bookUrl)
   local genres = {}
   local seen   = {}
   for _, g in ipairs(manga.genres or {}) do
-    local name = type(g) == "string" and g or (g.name or "")
-    if name ~= "" and not seen[name] then
-      seen[name] = true
-      table.insert(genres, name)
+    local gname = type(g) == "string" and g or (g.name or "")
+    if gname ~= "" and not seen[gname] then
+      seen[gname] = true
+      table.insert(genres, gname)
     end
   end
   return genres
 end
 
 -- -- Список глав ---------------------------------------------------------------
+-- URL главы = API endpoint напрямую, без хаков через #api=
+-- Формат: https://api.novelbuddy.com/titles/{mangaId}/chapters/{chapterId}
+-- В поле url мы сохраняем этот API URL, в поле title — название главы
 
 function getChapterList(bookUrl)
   local mangaId, mangaSlug = resolveMangaId(bookUrl)
@@ -295,65 +301,54 @@ function getChapterList(bookUrl)
     return {}
   end
 
+  local chaptersData = apiGet("titles/" .. url_encode(mangaId) .. "/chapters")
+  local rawChapters = {}
+
+  if chaptersData then
+    if chaptersData.success ~= false then
+      rawChapters = (chaptersData.data and chaptersData.data.chapters) or chaptersData.chapters or {}
+    else
+      log_error("NovelBuddy: chapters API success=false for id=" .. tostring(mangaId))
+    end
+  end
+
+  -- Фолбэк: detail endpoint
+  if #rawChapters == 0 then
+    log_error("NovelBuddy: chapters empty, trying detail for id=" .. tostring(mangaId))
+    local detail = apiGet("titles/" .. url_encode(mangaId))
+    if detail and detail.data then
+      rawChapters = detail.data.chapters or {}
+    end
+  end
+
   local chapters = {}
+  for _, ch in ipairs(rawChapters) do
+    local chId   = tostring(ch.id or "")
+    local chSlug = ch.slug or chId
+    local title  = ch.name or ch.title or chSlug
 
-  local apiUrl = "https://api.novelbuddy.com/titles/" .. url_encode(mangaId) .. "/chapters"
-  local ar = http_get(apiUrl)
-
-  if ar.success then
-    local apiData = json_parse(ar.body)
-    if apiData then
-      if apiData.success ~= false then
-        local rawChapters = (apiData.data and apiData.data.chapters) or apiData.chapters or {}
-        for _, ch in ipairs(rawChapters) do
-          local chId   = ch.id   or ""
-          local chSlug = ch.slug or chId
-          -- URL для WebView — реальный сайт
-          local chWebUrl = absUrl("/" .. mangaSlug .. "/" .. chSlug)
-          -- URL для загрузки текста — API
-          local chApiUrl = ""
-          if chId ~= "" then
-            chApiUrl = "https://api.novelbuddy.com/titles/" .. url_encode(mangaId) .. "/chapters/" .. url_encode(chId)
-          end
-          local title = ch.name or ch.title or chSlug
-          if chWebUrl ~= "" then
-            -- Передаём WebView URL как основной, API URL кодируем в него через #
-            table.insert(chapters, { title = string_clean(title), url = chWebUrl .. "#api=" .. chApiUrl })
-          end
-        end
-      else
-        log_error("NovelBuddy: chapters API returned success=false for id=" .. tostring(mangaId))
-      end
+    -- URL = прямой API endpoint для загрузки контента главы
+    -- НЕ используем URL сайта — там CF/Turnstile блокирует
+    local chApiUrl = ""
+    if chId ~= "" then
+      chApiUrl = API_BASE .. "titles/" .. url_encode(mangaId) .. "/chapters/" .. url_encode(chId)
+    elseif chSlug ~= "" then
+      chApiUrl = API_BASE .. "titles/" .. url_encode(mangaId) .. "/chapters/" .. url_encode(chSlug)
     end
-  else
-    log_error("NovelBuddy: chapters API request failed for id=" .. tostring(mangaId))
-  end
 
-  if #chapters == 0 then
-    log_error("NovelBuddy: chapters API empty, trying detail endpoint for id=" .. tostring(mangaId))
-    local detailUrl = "https://api.novelbuddy.com/titles/" .. url_encode(mangaId)
-    local dr = http_get(detailUrl)
-    if dr.success then
-      local ddata = json_parse(dr.body)
-      local rawChapters = ddata and ddata.data and ddata.data.chapters or {}
-      for _, ch in ipairs(rawChapters) do
-        local chId   = ch.id   or ""
-        local chSlug = ch.slug or chId
-        local chWebUrl = absUrl("/" .. mangaSlug .. "/" .. chSlug)
-        local chApiUrl = ""
-        if chId ~= "" then
-          chApiUrl = "https://api.novelbuddy.com/titles/" .. url_encode(mangaId) .. "/chapters/" .. url_encode(chId)
-        end
-        local title = ch.name or ch.title or chSlug
-        if chWebUrl ~= "" then
-          table.insert(chapters, { title = string_clean(title), url = chWebUrl .. "#api=" .. chApiUrl })
-        end
-      end
+    if chApiUrl ~= "" then
+      table.insert(chapters, {
+        title = string_clean(title),
+        url   = chApiUrl,
+      })
     end
   end
 
+  -- API возвращает главы от новых к старым — переворачиваем
   local reversed = {}
-  for i = #chapters, 1, -1 do table.insert(reversed, chapters[i]) end
+  for i = #chapters, 1, -1 do
+    table.insert(reversed, chapters[i])
+  end
   return reversed
 end
 
@@ -369,71 +364,72 @@ function getChapterListHash(bookUrl)
 end
 
 -- -- Текст главы ---------------------------------------------------------------
+-- url — это API URL вида https://api.novelbuddy.com/titles/{id}/chapters/{id}
+-- html — приложение может передать тело ответа или пустую строку
+-- Мы всегда грузим через API URL напрямую
 
 function getChapterText(html, url)
-  -- Логируем первые 300 символов html для диагностики
-  if html and html ~= "" then
-    log_error("NovelBuddy: getChapterText html[:300]=" .. html:sub(1, 300))
-  end
-
-  -- Извлекаем API URL из якоря #api=... в url
-  local apiUrl = nil
-  if url then
-    apiUrl = url:match("#api=(.+)$")
-  end
-
-  -- Пробуем распарсить html как JSON (приложение может передать тело ответа)
+  -- Пробуем распарсить html как JSON ответ от API
+  -- (некоторые приложения передают тело уже загруженного запроса)
   if html and html ~= "" then
     local ok, apiData = pcall(json_parse, html)
-    if ok and apiData and apiData.success and apiData.data and apiData.data.chapter then
-      local content = apiData.data.chapter.content or apiData.data.chapter.text or ""
-      if content ~= "" then
-        content = stripHtml(content)
-        return applyStandardContentTransforms(content)
-      end
-    end
-  end
-
-  -- Загружаем через API URL
-  if apiUrl and apiUrl ~= "" then
-    local r = http_get(apiUrl)
-    if r.success then
-      local apiData = json_parse(r.body)
-      if apiData and apiData.data and apiData.data.chapter then
-        local content = apiData.data.chapter.content or apiData.data.chapter.text or ""
+    if ok and type(apiData) == "table" then
+      -- Структура: { success=true, data={ chapter={ content=... } } }
+      local chapter = apiData.data and apiData.data.chapter
+      if chapter then
+        local content = chapter.content or chapter.text or ""
         if content ~= "" then
           content = stripHtml(content)
           return applyStandardContentTransforms(content)
         end
       end
-    end
-    log_error("NovelBuddy: chapter API failed for " .. apiUrl)
-  end
-
-  -- Фолбэк: __NEXT_DATA__
-  local data = extractNextData(html)
-  if data then
-    local pp = data.props and data.props.pageProps
-    local chapter = pp and pp.initialChapter
-    if chapter and chapter.content and chapter.content ~= "" then
-      local content = stripHtml(chapter.content)
-      return applyStandardContentTransforms(content)
+      -- Альтернативная структура: { data={ content=... } }
+      if apiData.data and type(apiData.data.content) == "string" and apiData.data.content ~= "" then
+        local content = stripHtml(apiData.data.content)
+        return applyStandardContentTransforms(content)
+      end
     end
   end
 
-  -- Фолбэк: CSS-селекторы
-  local cleaned = html_remove(html, "script", "style",
-    "#listen-chapter", "#google_translate_element", ".ads", ".advertisement",
-    "[class*='ad-']", "[id*='ad-']")
+  -- Грузим через API URL напрямую
+  -- url уже является API endpoint — https://api.novelbuddy.com/titles/.../chapters/...
+  if url and url ~= "" then
+    -- Убираем якорь если вдруг попал
+    local cleanUrl = url:match("^([^#]+)") or url
 
-  local el = html_select_first(cleaned, ".chapter-content")
-  if not el then el = html_select_first(cleaned, "#chapter-content") end
-  if not el then el = html_select_first(cleaned, ".content-inner") end
-  if not el then el = html_select_first(cleaned, ".reading-content") end
-  if not el then el = html_select_first(cleaned, "article") end
-  if not el then return "" end
+    local r = http_get(cleanUrl)
+    if r.success then
+      local apiData = json_parse(r.body)
+      if apiData then
+        -- Структура: { success=true, data={ chapter={ content=... } } }
+        local chapter = apiData.data and apiData.data.chapter
+        if chapter then
+          local content = chapter.content or chapter.text or ""
+          if content ~= "" then
+            content = stripHtml(content)
+            return applyStandardContentTransforms(content)
+          end
+        end
+        -- Альтернативная структура: { data={ content=... } }
+        if apiData.data and type(apiData.data.content) == "string" and apiData.data.content ~= "" then
+          local content = stripHtml(apiData.data.content)
+          return applyStandardContentTransforms(content)
+        end
+        -- Структура без обёртки: { content=... }
+        if type(apiData.content) == "string" and apiData.content ~= "" then
+          local content = stripHtml(apiData.content)
+          return applyStandardContentTransforms(content)
+        end
+      end
+      log_error("NovelBuddy: unexpected API response structure for " .. cleanUrl
+                .. " | body[:200]=" .. (r.body or ""):sub(1, 200))
+    else
+      log_error("NovelBuddy: chapter API HTTP failed for " .. cleanUrl)
+    end
+  end
 
-  return applyStandardContentTransforms(html_text(el.html))
+  log_error("NovelBuddy: getChapterText failed, url=" .. tostring(url))
+  return ""
 end
 
 -- -- Список фильтров -----------------------------------------------------------
@@ -446,11 +442,13 @@ function getFilterList()
       label        = "Order by",
       defaultValue = "popular",
       options = {
-        { value = "popular",  label = "Popular"       },
-        { value = "latest",   label = "Latest Update" },
-        { value = "rating",   label = "Rating"        },
-        { value = "views",    label = "Most Viewed"   },
-        { value = "chapters", label = "Most Chapters" },
+        { value = "",            label = "Default"       },
+        { value = "views",       label = "Most Viewed"   },
+        { value = "latest",      label = "Latest Update" },
+        { value = "popular",     label = "Popular"       },
+        { value = "alphabetical",label = "A-Z"           },
+        { value = "rating",      label = "Rating"        },
+        { value = "chapters",    label = "Most Chapters" },
       }
     },
     {
@@ -462,64 +460,138 @@ function getFilterList()
         { value = "all",       label = "All"       },
         { value = "ongoing",   label = "Ongoing"   },
         { value = "completed", label = "Completed" },
+        { value = "hiatus",    label = "Hiatus"    },
+        { value = "cancelled", label = "Cancelled" },
       }
     },
     {
+      type  = "text",
+      key   = "min_ch",
+      label = "Minimum Chapters",
+    },
+    {
+      type  = "text",
+      key   = "max_ch",
+      label = "Maximum Chapters",
+    },
+    -- Жанры Include
+    {
       type  = "checkbox",
       key   = "genre",
-      label = "Genres (OR)",
+      label = "Genres (include)",
       options = {
-        { value = "action",           label = "Action"           },
-        { value = "action-adventure", label = "Action Adventure" },
-        { value = "adult",            label = "Adult"            },
-        { value = "adventure",        label = "Adventure"        },
-        { value = "comedy",           label = "Comedy"           },
-        { value = "cultivation",      label = "Cultivation"      },
-        { value = "drama",            label = "Drama"            },
-        { value = "eastern",          label = "Eastern"          },
-        { value = "ecchi",            label = "Ecchi"            },
-        { value = "fan-fiction",      label = "Fan Fiction"      },
-        { value = "fantasy",          label = "Fantasy"          },
-        { value = "game",             label = "Game"             },
-        { value = "gender-bender",    label = "Gender Bender"    },
-        { value = "harem",            label = "Harem"            },
-        { value = "historical",       label = "Historical"       },
-        { value = "horror",           label = "Horror"           },
-        { value = "isekai",           label = "Isekai"           },
-        { value = "josei",            label = "Josei"            },
-        { value = "light-novel",      label = "Light Novel"      },
-        { value = "litrpg",           label = "LitRPG"           },
-        { value = "lolicon",          label = "Lolicon"          },
-        { value = "magic",            label = "Magic"            },
-        { value = "martial-arts",     label = "Martial Arts"     },
-        { value = "mature",           label = "Mature"           },
-        { value = "mecha",            label = "Mecha"            },
-        { value = "military",         label = "Military"         },
-        { value = "modern-life",      label = "Modern Life"      },
-        { value = "mystery",          label = "Mystery"          },
-        { value = "psychological",    label = "Psychological"    },
-        { value = "reincarnation",    label = "Reincarnation"    },
-        { value = "romance",          label = "Romance"          },
-        { value = "school-life",      label = "School Life"      },
-        { value = "sci-fi",           label = "Sci-fi"           },
-        { value = "seinen",           label = "Seinen"           },
-        { value = "shoujo",           label = "Shoujo"           },
-        { value = "shoujo-ai",        label = "Shoujo Ai"        },
-        { value = "shounen",          label = "Shounen"          },
-        { value = "shounen-ai",       label = "Shounen Ai"       },
-        { value = "slice-of-life",    label = "Slice of Life"    },
-        { value = "smut",             label = "Smut"             },
-        { value = "sports",           label = "Sports"           },
-        { value = "supernatural",     label = "Supernatural"     },
-        { value = "system",           label = "System"           },
-        { value = "tragedy",          label = "Tragedy"          },
-        { value = "urban",            label = "Urban"            },
-        { value = "urban-life",       label = "Urban Life"       },
-        { value = "wuxia",            label = "Wuxia"            },
-        { value = "xianxia",          label = "Xianxia"          },
-        { value = "xuanhuan",         label = "Xuanhuan"         },
-        { value = "yaoi",             label = "Yaoi"             },
-        { value = "yuri",             label = "Yuri"             },
+        { value = "action",            label = "Action"            },
+        { value = "action-adventure",  label = "Action Adventure"  },
+        { value = "adult",             label = "Adult"             },
+        { value = "adventure",         label = "Adventure"         },
+        { value = "comedy",            label = "Comedy"            },
+        { value = "cultivation",       label = "Cultivation"       },
+        { value = "drama",             label = "Drama"             },
+        { value = "eastern",           label = "Eastern"           },
+        { value = "ecchi",             label = "Ecchi"             },
+        { value = "fan-fiction",       label = "Fan Fiction"       },
+        { value = "fantasy",           label = "Fantasy"           },
+        { value = "game",              label = "Game"              },
+        { value = "gender-bender",     label = "Gender Bender"     },
+        { value = "harem",             label = "Harem"             },
+        { value = "historical",        label = "Historical"        },
+        { value = "horror",            label = "Horror"            },
+        { value = "isekai",            label = "Isekai"            },
+        { value = "josei",             label = "Josei"             },
+        { value = "light-novel",       label = "Light Novel"       },
+        { value = "litrpg",            label = "LitRPG"            },
+        { value = "lolicon",           label = "Lolicon"           },
+        { value = "magic",             label = "Magic"             },
+        { value = "martial-arts",      label = "Martial Arts"      },
+        { value = "mature",            label = "Mature"            },
+        { value = "mecha",             label = "Mecha"             },
+        { value = "military",          label = "Military"          },
+        { value = "modern-life",       label = "Modern Life"       },
+        { value = "mystery",           label = "Mystery"           },
+        { value = "psychological",     label = "Psychological"     },
+        { value = "reincarnation",     label = "Reincarnation"     },
+        { value = "romance",           label = "Romance"           },
+        { value = "school-life",       label = "School Life"       },
+        { value = "sci-fi",            label = "Sci-fi"            },
+        { value = "seinen",            label = "Seinen"            },
+        { value = "shoujo",            label = "Shoujo"            },
+        { value = "shoujo-ai",         label = "Shoujo Ai"         },
+        { value = "shounen",           label = "Shounen"           },
+        { value = "shounen-ai",        label = "Shounen Ai"        },
+        { value = "slice-of-life",     label = "Slice of Life"     },
+        { value = "smut",              label = "Smut"              },
+        { value = "sports",            label = "Sports"            },
+        { value = "supernatural",      label = "Supernatural"      },
+        { value = "system",            label = "System"            },
+        { value = "thriller",          label = "Thriller"          },
+        { value = "tragedy",           label = "Tragedy"           },
+        { value = "urban",             label = "Urban"             },
+        { value = "urban-life",        label = "Urban Life"        },
+        { value = "wuxia",             label = "Wuxia"             },
+        { value = "xianxia",           label = "Xianxia"           },
+        { value = "xuanhuan",          label = "Xuanhuan"          },
+        { value = "yaoi",              label = "Yaoi"              },
+        { value = "yuri",              label = "Yuri"              },
+      }
+    },
+    -- Жанры Exclude
+    {
+      type  = "checkbox",
+      key   = "exclude",
+      label = "Genres (exclude)",
+      options = {
+        { value = "action",            label = "Action"            },
+        { value = "action-adventure",  label = "Action Adventure"  },
+        { value = "adult",             label = "Adult"             },
+        { value = "adventure",         label = "Adventure"         },
+        { value = "comedy",            label = "Comedy"            },
+        { value = "cultivation",       label = "Cultivation"       },
+        { value = "drama",             label = "Drama"             },
+        { value = "eastern",           label = "Eastern"           },
+        { value = "ecchi",             label = "Ecchi"             },
+        { value = "fan-fiction",       label = "Fan Fiction"       },
+        { value = "fantasy",           label = "Fantasy"           },
+        { value = "game",              label = "Game"              },
+        { value = "gender-bender",     label = "Gender Bender"     },
+        { value = "harem",             label = "Harem"             },
+        { value = "historical",        label = "Historical"        },
+        { value = "horror",            label = "Horror"            },
+        { value = "isekai",            label = "Isekai"            },
+        { value = "josei",             label = "Josei"             },
+        { value = "light-novel",       label = "Light Novel"       },
+        { value = "litrpg",            label = "LitRPG"            },
+        { value = "lolicon",           label = "Lolicon"           },
+        { value = "magic",             label = "Magic"             },
+        { value = "martial-arts",      label = "Martial Arts"      },
+        { value = "mature",            label = "Mature"            },
+        { value = "mecha",             label = "Mecha"             },
+        { value = "military",          label = "Military"          },
+        { value = "modern-life",       label = "Modern Life"       },
+        { value = "mystery",           label = "Mystery"           },
+        { value = "psychological",     label = "Psychological"     },
+        { value = "reincarnation",     label = "Reincarnation"     },
+        { value = "romance",           label = "Romance"           },
+        { value = "school-life",       label = "School Life"       },
+        { value = "sci-fi",            label = "Sci-fi"            },
+        { value = "seinen",            label = "Seinen"            },
+        { value = "shoujo",            label = "Shoujo"            },
+        { value = "shoujo-ai",         label = "Shoujo Ai"         },
+        { value = "shounen",           label = "Shounen"           },
+        { value = "shounen-ai",        label = "Shounen Ai"        },
+        { value = "slice-of-life",     label = "Slice of Life"     },
+        { value = "smut",              label = "Smut"              },
+        { value = "sports",            label = "Sports"            },
+        { value = "supernatural",      label = "Supernatural"      },
+        { value = "system",            label = "System"            },
+        { value = "thriller",          label = "Thriller"          },
+        { value = "tragedy",           label = "Tragedy"           },
+        { value = "urban",             label = "Urban"             },
+        { value = "urban-life",        label = "Urban Life"        },
+        { value = "wuxia",             label = "Wuxia"             },
+        { value = "xianxia",           label = "Xianxia"           },
+        { value = "xuanhuan",          label = "Xuanhuan"          },
+        { value = "yaoi",              label = "Yaoi"              },
+        { value = "yuri",              label = "Yuri"              },
       }
     },
   }
@@ -528,45 +600,6 @@ end
 -- -- Каталог с фильтрами -------------------------------------------------------
 
 function getCatalogFiltered(index, filters)
-  local page   = index + 1
-  local sort   = filters["sort"]   or "popular"
-  local status = filters["status"] or "all"
-  local genres = resolveGenreStr(filters["genre"])
-
-  local apiUrl = "https://api.novelbuddy.com/titles/search?sort=" .. url_encode(sort)
-                 .. "&page=" .. tostring(page)
-                 .. "&limit=24"
-
-  if status ~= "all" and status ~= "" then
-    apiUrl = apiUrl .. "&status=" .. url_encode(status)
-  end
-
-  if genres ~= "" then
-    apiUrl = apiUrl .. "&genres=" .. genres
-  end
-
-  local r = http_get(apiUrl)
-  if not r.success then return { items = {}, hasNext = false } end
-
-  local data = json_parse(r.body)
-  if not data then return { items = {}, hasNext = false } end
-
-  local inner    = data.data or {}
-  local rawItems = inner.items or data.items or data.results or {}
-  local items    = {}
-  for _, novel in ipairs(rawItems) do
-    local slug    = novel.slug or ""
-    local bookUrl = absUrl("/" .. slug)
-    local cover   = resolveCover(novel.cover, slug)
-    local title   = novel.name or novel.title or ""
-    if slug ~= "" and title ~= "" then
-      table.insert(items, { title = title, url = bookUrl, cover = cover })
-    end
-  end
-
-  local pagination = inner.pagination or data.pagination or data.meta or {}
-  local hasNext    = pagination.has_next
-  if hasNext == nil then hasNext = #items >= 24 end
-
-  return { items = items, hasNext = hasNext }
+  -- Делегируем в getCatalogList — логика там одинаковая
+  return getCatalogList(index, filters)
 end
