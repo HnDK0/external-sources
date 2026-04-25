@@ -1,7 +1,7 @@
 ﻿-- ── Метаданные ────────────────────────────────────────────────────────────────
 id       = "novelbuddy_io"
 name     = "NovelBuddy (IO)"
-version  = "2.2.2"
+version  = "2.2.3"
 baseUrl  = "https://novelbuddy.io"
 language = "en"
 icon     = "https://raw.githubusercontent.com/HnDK0/external-sources/main/icons/novelbuddy.png"
@@ -26,11 +26,16 @@ local function applyStandardContentTransforms(text)
   return text
 end
 
--- Извлекает JSON из тега <script id="__NEXT_DATA__">
+-- Извлекает JSON из тега <script id="__NEXT_DATA__"> (string-based, не через HTML-парсер)
 local function extractNextData(body)
-  local el = html_select_first(body, "script#__NEXT_DATA__")
-  if not el then return nil end
-  return json_parse(el.text)
+  if not body then return nil end
+  local startPos = body:find('<script id="__NEXT_DATA__" type="application/json">', 1, true)
+  if not startPos then return nil end
+  local contentStart = startPos + string.len('<script id="__NEXT_DATA__" type="application/json">')
+  local endPos = body:find('</script>', contentStart, true)
+  if not endPos then return nil end
+  local jsonStr = body:sub(contentStart, endPos - 1)
+  return json_parse(jsonStr)
 end
 
 -- Пытаемся получить manga id через HTML, иначе — через API поиска по slug
@@ -234,11 +239,15 @@ function getBookDescription(bookUrl)
   if not manga then return nil end
   local summary = manga.summary or manga.description or ""
   if summary ~= "" then
+    -- Удаляем HTML-теги
     summary = regex_replace(summary, "<[^>]+>", "")
-    summary = regex_replace(summary, "<", "<")
-    summary = regex_replace(summary, ">", ">")
-    summary = regex_replace(summary, "&", "&")
-    summary = regex_replace(summary, "&nbsp;", " ")
+    -- Декодируем HTML entities через string.gsub (литеральная замена)
+    summary = summary:gsub("&nbsp;", " ")
+    summary = summary:gsub("&", "&")
+    summary = summary:gsub("<", "<")
+    summary = summary:gsub(">", ">")
+    summary = summary:gsub(""", '"')
+    summary = summary:gsub("&#(%d+);", function(n) return string.char(tonumber(n)) end)
     return string_trim(summary)
   end
   return nil
@@ -368,10 +377,11 @@ function getFilterList()
       label        = "Order by",
       defaultValue = "popular",
       options = {
-        { value = "popular", label = "Popular"     },
-        { value = "rating",  label = "Rating"      },
-        { value = "views",   label = "Most Viewed" },
-        { value = "chapters",label = "Chapters"    },
+        { value = "popular", label = "Popular"      },
+        { value = "latest",  label = "Latest Update"},
+        { value = "rating",  label = "Rating"       },
+        { value = "views",   label = "Most Viewed"  },
+        { value = "chapters",label = "Most Chapters"},
       }
     },
     {
