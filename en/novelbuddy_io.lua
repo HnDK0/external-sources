@@ -1,15 +1,13 @@
 ﻿-- -- Метаданные ----------------------------------------------------------------
 id       = "novelbuddy"
 name     = "NovelBuddy"
-version  = "2.3.3"
+version  = "2.3.4"
 baseUrl  = "https://novelbuddy.com"
 language = "en"
 icon     = "https://raw.githubusercontent.com/HnDK0/external-sources/main/icons/novelbuddy.png"
 
--- Отключаем ложное срабатывание CloudflareInterceptor
 disable_cloudflare_detection = true
 
--- Добавляем обязательный заголовок Referer ко всем запросам
 function onBeforeRequest(url)
   return {
     headers = {
@@ -90,6 +88,14 @@ local function slugFromUrl(bookUrl)
   return bookUrl:match("/([^/]+)$") or ""
 end
 
+-- Нормализует жанры — принимает строку или таблицу, возвращает строку через запятую
+local function resolveGenreStr(genres)
+  if not genres then return "" end
+  if type(genres) == "string" then return genres end
+  if type(genres) == "table" then return table.concat(genres, ",") end
+  return ""
+end
+
 local function searchBySlug(slug)
   if slug == "" then return nil end
   local searchUrl = "https://api.novelbuddy.com/titles/search?q=" .. url_encode(slug) .. "&limit=1"
@@ -159,11 +165,11 @@ function getCatalogList(index, filters)
   local page   = index + 1
   local sort   = "popular"
   local status = "all"
-  local genres = {}
+  local genres = ""
   if type(filters) == "table" then
     sort   = filters["sort"]   or sort
     status = filters["status"] or status
-    genres = filters["genre"]  or genres
+    genres = resolveGenreStr(filters["genre"])
   end
 
   local apiUrl = "https://api.novelbuddy.com/titles/search?sort=" .. url_encode(sort)
@@ -173,9 +179,8 @@ function getCatalogList(index, filters)
     apiUrl = apiUrl .. "&status=" .. url_encode(status)
   end
 
-  local genreStr = table.concat(genres, ",")
-  if genreStr ~= "" then
-    apiUrl = apiUrl .. "&genres=" .. genreStr
+  if genres ~= "" then
+    apiUrl = apiUrl .. "&genres=" .. genres
   end
 
   local r = http_get(apiUrl)
@@ -303,13 +308,17 @@ function getChapterList(bookUrl)
         for _, ch in ipairs(rawChapters) do
           local chId   = ch.id   or ""
           local chSlug = ch.slug or chId
-          local chUrl  = ""
+          -- URL для WebView — реальный сайт
+          local chWebUrl = absUrl("/" .. mangaSlug .. "/" .. chSlug)
+          -- URL для загрузки текста — API
+          local chApiUrl = ""
           if chId ~= "" then
-            chUrl = "https://api.novelbuddy.com/titles/" .. url_encode(mangaId) .. "/chapters/" .. url_encode(chId)
+            chApiUrl = "https://api.novelbuddy.com/titles/" .. url_encode(mangaId) .. "/chapters/" .. url_encode(chId)
           end
           local title = ch.name or ch.title or chSlug
-          if chUrl ~= "" then
-            table.insert(chapters, { title = string_clean(title), url = chUrl })
+          if chWebUrl ~= "" then
+            -- Передаём WebView URL как основной, API URL кодируем в него через #
+            table.insert(chapters, { title = string_clean(title), url = chWebUrl .. "#api=" .. chApiUrl })
           end
         end
       else
@@ -330,13 +339,14 @@ function getChapterList(bookUrl)
       for _, ch in ipairs(rawChapters) do
         local chId   = ch.id   or ""
         local chSlug = ch.slug or chId
-        local chUrl  = ""
+        local chWebUrl = absUrl("/" .. mangaSlug .. "/" .. chSlug)
+        local chApiUrl = ""
         if chId ~= "" then
-          chUrl = "https://api.novelbuddy.com/titles/" .. url_encode(mangaId) .. "/chapters/" .. url_encode(chId)
+          chApiUrl = "https://api.novelbuddy.com/titles/" .. url_encode(mangaId) .. "/chapters/" .. url_encode(chId)
         end
         local title = ch.name or ch.title or chSlug
-        if chUrl ~= "" then
-          table.insert(chapters, { title = string_clean(title), url = chUrl })
+        if chWebUrl ~= "" then
+          table.insert(chapters, { title = string_clean(title), url = chWebUrl .. "#api=" .. chApiUrl })
         end
       end
     end
@@ -361,10 +371,21 @@ end
 -- -- Текст главы ---------------------------------------------------------------
 
 function getChapterText(html, url)
-  -- Приложение передаёт в html готовый JSON-ответ API — парсим напрямую
+  -- Логируем первые 300 символов html для диагностики
   if html and html ~= "" then
-    local apiData = json_parse(html)
-    if apiData and apiData.success and apiData.data and apiData.data.chapter then
+    log_error("NovelBuddy: getChapterText html[:300]=" .. html:sub(1, 300))
+  end
+
+  -- Извлекаем API URL из якоря #api=... в url
+  local apiUrl = nil
+  if url then
+    apiUrl = url:match("#api=(.+)$")
+  end
+
+  -- Пробуем распарсить html как JSON (приложение может передать тело ответа)
+  if html and html ~= "" then
+    local ok, apiData = pcall(json_parse, html)
+    if ok and apiData and apiData.success and apiData.data and apiData.data.chapter then
       local content = apiData.data.chapter.content or apiData.data.chapter.text or ""
       if content ~= "" then
         content = stripHtml(content)
@@ -373,7 +394,23 @@ function getChapterText(html, url)
     end
   end
 
-  -- Фолбэк 1: __NEXT_DATA__ в HTML-странице
+  -- Загружаем через API URL
+  if apiUrl and apiUrl ~= "" then
+    local r = http_get(apiUrl)
+    if r.success then
+      local apiData = json_parse(r.body)
+      if apiData and apiData.data and apiData.data.chapter then
+        local content = apiData.data.chapter.content or apiData.data.chapter.text or ""
+        if content ~= "" then
+          content = stripHtml(content)
+          return applyStandardContentTransforms(content)
+        end
+      end
+    end
+    log_error("NovelBuddy: chapter API failed for " .. apiUrl)
+  end
+
+  -- Фолбэк: __NEXT_DATA__
   local data = extractNextData(html)
   if data then
     local pp = data.props and data.props.pageProps
@@ -384,7 +421,7 @@ function getChapterText(html, url)
     end
   end
 
-  -- Фолбэк 2: CSS-селекторы
+  -- Фолбэк: CSS-селекторы
   local cleaned = html_remove(html, "script", "style",
     "#listen-chapter", "#google_translate_element", ".ads", ".advertisement",
     "[class*='ad-']", "[id*='ad-']")
@@ -494,7 +531,7 @@ function getCatalogFiltered(index, filters)
   local page   = index + 1
   local sort   = filters["sort"]   or "popular"
   local status = filters["status"] or "all"
-  local genres = filters["genre"]  or {}
+  local genres = resolveGenreStr(filters["genre"])
 
   local apiUrl = "https://api.novelbuddy.com/titles/search?sort=" .. url_encode(sort)
                  .. "&page=" .. tostring(page)
@@ -504,9 +541,8 @@ function getCatalogFiltered(index, filters)
     apiUrl = apiUrl .. "&status=" .. url_encode(status)
   end
 
-  local genreStr = table.concat(genres, ",")
-  if genreStr ~= "" then
-    apiUrl = apiUrl .. "&genres=" .. genreStr
+  if genres ~= "" then
+    apiUrl = apiUrl .. "&genres=" .. genres
   end
 
   local r = http_get(apiUrl)
