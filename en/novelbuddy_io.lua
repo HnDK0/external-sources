@@ -1,7 +1,7 @@
 ﻿-- -- Метаданные ----------------------------------------------------------------
 id       = "novelbuddy"
 name     = "NovelBuddy"
-version  = "2.2.9"
+version  = "2.3.0"
 baseUrl  = "https://novelbuddy.com"
 language = "en"
 icon     = "https://raw.githubusercontent.com/HnDK0/external-sources/main/icons/novelbuddy.png"
@@ -281,11 +281,13 @@ function getChapterList(bookUrl)
       if apiData.success ~= false then
         local rawChapters = (apiData.data and apiData.data.chapters) or apiData.chapters or {}
         for _, ch in ipairs(rawChapters) do
-          local chSlug = ch.slug or ch.id or ""
-          -- Используем API URL чтобы приложение не лезло на novelbuddy.com (CF блокирует)
-          local chUrl = ""
-          if chSlug ~= "" then
-            chUrl = "https://api.novelbuddy.com/titles/" .. url_encode(mangaId) .. "/chapters/" .. url_encode(chSlug)
+          -- ch.id — числовой/строковый id главы, ch.slug — читаемый slug
+          -- API эндпоинт /chapters/{id} работает только с id, не slug
+          local chId   = ch.id   or ""
+          local chSlug = ch.slug or chId
+          local chUrl  = ""
+          if chId ~= "" then
+            chUrl = "https://api.novelbuddy.com/titles/" .. url_encode(mangaId) .. "/chapters/" .. url_encode(chId)
           end
           local title = ch.name or ch.title or chSlug
           if chUrl ~= "" then
@@ -309,10 +311,11 @@ function getChapterList(bookUrl)
       local ddata = json_parse(dr.body)
       local rawChapters = ddata and ddata.data and ddata.data.chapters or {}
       for _, ch in ipairs(rawChapters) do
-        local chSlug = ch.slug or ch.id or ""
-        local chUrl = ""
-        if chSlug ~= "" then
-          chUrl = "https://api.novelbuddy.com/titles/" .. url_encode(mangaId) .. "/chapters/" .. url_encode(chSlug)
+        local chId   = ch.id   or ""
+        local chSlug = ch.slug or chId
+        local chUrl  = ""
+        if chId ~= "" then
+          chUrl = "https://api.novelbuddy.com/titles/" .. url_encode(mangaId) .. "/chapters/" .. url_encode(chId)
         end
         local title = ch.name or ch.title or chSlug
         if chUrl ~= "" then
