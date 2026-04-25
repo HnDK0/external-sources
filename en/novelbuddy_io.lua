@@ -61,13 +61,34 @@ end
 
 local function stripHtml(content)
   if not content or content == "" then return "" end
-  content = regex_replace(content, "<p[^>]*>", "\n")
-  content = regex_replace(content, "</p>", "")
-  content = regex_replace(content, "<br[^>]*>", "\n")
+
+  -- 1. Вырезаем рекламные div-блоки (вставки между параграфами с margin-top/margin-bottom)
+  content = regex_replace(content, "<div[^>]+style=\"[^\"]*margin[^\"]*\"[^>]*>(?:<div[^>]*>)?(?:</div>)?</div>", "")
+
+  -- 2. Novelbuddy дублирует название главы первым параграфом — убираем через Lua gsub
+  content = content:gsub("(<p[^>]*>)(.-)(</?p>)", function(open, txt, close)
+    local plain = txt:gsub("<[^>]+>", ""):gsub("^%s+", ""):gsub("%s+$", "")
+    if #plain <= 150 then
+      return ""
+    end
+    return open .. txt .. close
+  end, 1)
+
+  -- 3. <p> → перенос строки
+  content = regex_replace(content, "<p[^>]*>\\s*", "\n")
+  content = regex_replace(content, "\\s*</p>", "")
+  content = regex_replace(content, "<br[^>]*/?>", "\n")
+
+  -- 4. Убираем оставшиеся теги
   content = regex_replace(content, "<[^>]+>", "")
+
   content = decodeHtmlEntities(content)
-  content = regex_replace(content, "\n\n\n+", "\n\n")
+
+  -- 5. Убираем строки из одних пробелов, схлопываем переносы
+  content = regex_replace(content, "(?m)^[ \\t]+$", "")
+  content = regex_replace(content, "\n{3,}", "\n\n")
   content = regex_replace(content, "(?m)^[ \t]+", "")
+
   return string_trim(content)
 end
 
@@ -465,14 +486,35 @@ function getFilterList()
       }
     },
     {
-      type  = "text",
-      key   = "min_ch",
-      label = "Minimum Chapters",
+      type         = "select",
+      key          = "min_ch",
+      label        = "Minimum Chapters",
+      defaultValue = "",
+      options = {
+        { value = "",     label = "Any"    },
+        { value = "1",    label = "1+"     },
+        { value = "50",   label = "50+"    },
+        { value = "100",  label = "100+"   },
+        { value = "200",  label = "200+"   },
+        { value = "500",  label = "500+"   },
+        { value = "1000", label = "1000+"  },
+        { value = "2000", label = "2000+"  },
+      }
     },
     {
-      type  = "text",
-      key   = "max_ch",
-      label = "Maximum Chapters",
+      type         = "select",
+      key          = "max_ch",
+      label        = "Maximum Chapters",
+      defaultValue = "",
+      options = {
+        { value = "",     label = "Any"    },
+        { value = "50",   label = "≤ 50"   },
+        { value = "100",  label = "≤ 100"  },
+        { value = "200",  label = "≤ 200"  },
+        { value = "500",  label = "≤ 500"  },
+        { value = "1000", label = "≤ 1000" },
+        { value = "2000", label = "≤ 2000" },
+      }
     },
     -- Жанры Include
     {
