@@ -33,7 +33,7 @@ sources:
     language: "en"
   - id: "novelbuddy_io"
     name: "NovelBuddy (IO)"
-    version: "1.0.2"
+    version: "2.1.0"
     url: "https://raw.githubusercontent.com/HnDK0/external-sources/refs/heads/main/en/novelbuddy_io.lua"
     icon: "https://raw.githubusercontent.com/HnDK0/external-sources/main/icons/novelbuddy.png"
     language: "en"
