@@ -9,6 +9,15 @@ icon     = "https://raw.githubusercontent.com/HnDK0/external-sources/main/icons/
 -- Отключаем ложное срабатывание CloudflareInterceptor
 disable_cloudflare_detection = true
 
+-- Добавляем обязательный заголовок Referer ко всем запросам
+function onBeforeRequest(url)
+  return {
+    headers = {
+      ["Referer"] = baseUrl
+    }
+  }
+end
+
 -- -- Хелперы -------------------------------------------------------------------
 
 local function absUrl(href)
@@ -479,3 +488,4 @@ function getCatalogFiltered(index, filters)
 
   return { items = items, hasNext = hasNext }
 end
+
