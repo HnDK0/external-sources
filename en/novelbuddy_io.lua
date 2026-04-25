@@ -1,10 +1,13 @@
 ﻿-- ── Метаданные ────────────────────────────────────────────────────────────────
 id       = "novelbuddy"
 name     = "NovelBuddy"
-version  = "2.2.4"
-baseUrl  = "https://novelbuddy.com"
+version  = "2.2.5"
+baseUrl  = "https://novelbuddy.io"
 language = "en"
 icon     = "https://raw.githubusercontent.com/HnDK0/external-sources/main/icons/novelbuddy.png"
+
+-- Отключаем ложное срабатывание CloudflareInterceptor
+disable_cloudflare_detection = true
 
 -- ── Хелперы ───────────────────────────────────────────────────────────────────
 
@@ -55,7 +58,7 @@ local function resolveMangaId(bookUrl)
   end
 
   if slug ~= "" then
-    local searchUrl = "https://api.novelbuddy.com/titles/search?q=" .. url_encode(slug) .. "&limit=1"
+    local searchUrl = "https://api.novelbuddy.io/titles/search?q=" .. url_encode(slug) .. "&limit=1"
     local sr = http_get(searchUrl)
     if sr.success then
       local sdata = json_parse(sr.body)
@@ -87,7 +90,7 @@ local function fetchBookData(bookUrl)
   local slug = bookUrl:match("/([^/]+)$") or ""
   if slug == "" then return nil end
 
-  local searchUrl = "https://api.novelbuddy.com/titles/search?q=" .. url_encode(slug) .. "&limit=1"
+  local searchUrl = "https://api.novelbuddy.io/titles/search?q=" .. url_encode(slug) .. "&limit=1"
   local sr = http_get(searchUrl)
   if not sr.success then return nil end
 
@@ -101,7 +104,7 @@ local function fetchBookData(bookUrl)
   local mangaId = manga.id
   if not mangaId then return nil end
 
-  local detailUrl = "https://api.novelbuddy.com/titles/" .. url_encode(mangaId)
+  local detailUrl = "https://api.novelbuddy.io/titles/" .. url_encode(mangaId)
   local dr = http_get(detailUrl)
   if dr.success then
     local ddata = json_parse(dr.body)
@@ -137,7 +140,7 @@ end
 
 function getCatalogList(index)
   local page   = index + 1
-  local apiUrl = "https://api.novelbuddy.com/titles/search?sort=popular&page=" .. tostring(page) .. "&limit=24"
+  local apiUrl = "https://api.novelbuddy.io/titles/search?sort=popular&page=" .. tostring(page) .. "&limit=24"
 
   local r = http_get(apiUrl)
   if not r.success then return { items = {}, hasNext = false } end
@@ -169,7 +172,7 @@ end
 
 function getCatalogSearch(index, query)
   local page   = index + 1
-  local apiUrl = "https://api.novelbuddy.com/titles/search?q=" .. url_encode(query)
+  local apiUrl = "https://api.novelbuddy.io/titles/search?q=" .. url_encode(query)
                  .. "&page=" .. tostring(page) .. "&limit=24"
 
   local r = http_get(apiUrl)
@@ -184,7 +187,7 @@ function getCatalogSearch(index, query)
   for _, novel in ipairs(rawItems) do
     local slug    = novel.slug or ""
     local bookUrl = absUrl("/" .. slug)
-    local cover   = novel.cover or ("https://static.novelbuddy.com/thumb/" .. slug .. ".png")
+    local cover   = novel.cover or ("https://static.novelbuddy.io/thumb/" .. slug .. ".png")
     local title   = novel.name or novel.title or ""
     if slug ~= "" and title ~= "" then
       table.insert(items, { title = title, url = bookUrl, cover = cover })
@@ -213,7 +216,7 @@ function getBookCoverImageUrl(bookUrl)
     if cover ~= "" then return cover end
     local slug = manga.slug or ""
     if slug ~= "" then
-      return "https://static.novelbuddy.com/thumb/" .. slug .. ".png"
+      return "https://static.novelbuddy.io/thumb/" .. slug .. ".png"
     end
   end
   return nil
@@ -258,7 +261,7 @@ function getChapterList(bookUrl)
 
   local chapters = {}
 
-  local apiUrl = "https://api.novelbuddy.com/titles/" .. url_encode(mangaId) .. "/chapters"
+  local apiUrl = "https://api.novelbuddy.io/titles/" .. url_encode(mangaId) .. "/chapters"
   local ar = http_get(apiUrl)
 
   if ar.success then
@@ -439,7 +442,7 @@ function getCatalogFiltered(index, filters)
 
   local genreStr = table.concat(genres, ",")
 
-  local apiUrl = "https://api.novelbuddy.com/titles/search?sort=" .. url_encode(sort)
+  local apiUrl = "https://api.novelbuddy.io/titles/search?sort=" .. url_encode(sort)
                  .. "&page=" .. tostring(page)
                  .. "&limit=24"
 
@@ -463,7 +466,7 @@ function getCatalogFiltered(index, filters)
   for _, novel in ipairs(rawItems) do
     local slug    = novel.slug or ""
     local bookUrl = absUrl("/" .. slug)
-    local cover   = novel.cover or ("https://static.novelbuddy.com/thumb/" .. slug .. ".png")
+    local cover   = novel.cover or ("https://static.novelbuddy.io/thumb/" .. slug .. ".png")
     local title   = novel.name or novel.title or ""
     if slug ~= "" and title ~= "" then
       table.insert(items, { title = title, url = bookUrl, cover = cover })
