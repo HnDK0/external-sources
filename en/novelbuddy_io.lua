@@ -1,7 +1,7 @@
 ﻿-- -- Метаданные ----------------------------------------------------------------
 id       = "novelbuddy"
 name     = "NovelBuddy"
-version  = "2.3.0"
+version  = "2.3.1"
 baseUrl  = "https://novelbuddy.com"
 language = "en"
 icon     = "https://raw.githubusercontent.com/HnDK0/external-sources/main/icons/novelbuddy.png"
@@ -151,9 +151,30 @@ end
 
 -- -- Каталог -------------------------------------------------------------------
 
-function getCatalogList(index)
+function getCatalogList(index, filters)
   local page   = index + 1
-  local apiUrl = "https://api.novelbuddy.com/titles/search?sort=popular&page=" .. tostring(page) .. "&limit=24"
+
+  -- Если переданы фильтры — применяем их (приложение может вызвать getCatalogList с фильтрами)
+  local sort   = "popular"
+  local status = "all"
+  local genres = {}
+  if type(filters) == "table" then
+    sort   = filters["sort"]   or sort
+    status = filters["status"] or status
+    genres = filters["genre"]  or genres
+  end
+
+  local apiUrl = "https://api.novelbuddy.com/titles/search?sort=" .. url_encode(sort)
+                 .. "&page=" .. tostring(page) .. "&limit=24"
+
+  if status ~= "all" and status ~= "" then
+    apiUrl = apiUrl .. "&status=" .. url_encode(status)
+  end
+
+  local genreStr = table.concat(genres, ",")
+  if genreStr ~= "" then
+    apiUrl = apiUrl .. "&genres=" .. url_encode(genreStr)
+  end
 
   local r = http_get(apiUrl)
   if not r.success then return { items = {}, hasNext = false } end
@@ -350,8 +371,17 @@ function getChapterText(html, url)
     if r.success then
       local apiData = json_parse(r.body)
       if apiData then
-        local ch = (apiData.data and apiData.data.chapter) or apiData.chapter or apiData.data or {}
-        local content = ch.content or ch.text or ""
+        -- Структура: {"success":true,"data":{"chapter":{"content":"..."}}}
+        local ch = (apiData.data and apiData.data.chapter)
+                   or (apiData.data and apiData.data.content and apiData.data)
+                   or apiData.chapter
+                   or {}
+        local content = ch.content or ch.text or
+                        (apiData.data and type(apiData.data) == "string" and apiData.data) or ""
+        -- Убираем JSON-мусор если content случайно пустой но есть вложенные данные
+        if content == "" and apiData.data and apiData.data.chapter then
+          content = apiData.data.chapter.content or apiData.data.chapter.text or ""
+        end""
         if content ~= "" then
           return applyStandardContentTransforms(content)
         end
