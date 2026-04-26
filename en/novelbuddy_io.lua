@@ -1,7 +1,7 @@
 ﻿-- -- Метаданные ----------------------------------------------------------------
 id       = "novelbuddy"
 name     = "NovelBuddy"
-version  = "2.5.3"
+version  = "2.5.4"
 baseUrl  = "https://novelbuddy.com"
 language = "en"
 icon     = "https://raw.githubusercontent.com/HnDK0/external-sources/main/icons/novelbuddy.png"
@@ -460,10 +460,9 @@ function getChapterText(html, url)
   end
 
   -- json_parse в этом приложении не делает unescape — чистим вручную
-  content = content:gsub('\"', '"')
-  content = content:gsub('\n', '
-')
-  content = content:gsub('\r', '')
+  content = content:gsub('\\"', '"')
+  content = content:gsub("\\n", "\n")
+  content = content:gsub("\\r", "")
 
   content = stripHtml(content)
   content = removeChapterTitleDuplicate(content, ch.name or "")
