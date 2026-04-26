@@ -1,7 +1,7 @@
 ﻿-- -- Метаданные ----------------------------------------------------------------
 id       = "novelbuddy"
 name     = "NovelBuddy"
-version  = "2.5.9"
+version  = "2.6.0"
 baseUrl  = "https://novelbuddy.com"
 language = "en"
 icon     = "https://raw.githubusercontent.com/HnDK0/external-sources/main/icons/novelbuddy.png"
@@ -44,6 +44,9 @@ local function applyStandardContentTransforms(text)
   text = regex_replace(text, "(?i)Find authorized novels in Webnovel.*?Please click www\\.webnovel\\.com for visiting\\.", "")
   text = regex_replace(text, "(?i)free.{0,10}novel\\.com", "")
   text = string_trim(text)
+  -- Убираем литеральные \n и \" которые API отдаёт как escape-последовательности
+  text = text:gsub("\n", "")
+  text = text:gsub('\"', '"')
   return text
 end
 
@@ -439,7 +442,6 @@ function getChapterText(html, url)
   --   <br> → "\n"
   --   <hr> → "\n\n"
   --   TextNode → child.text() (без лишних escape-артефактов)
-  -- Именно так работают ranobehub и ranobelib.
   local text = html_text(content)
 
   text = removeChapterTitleDuplicate(text, ch.name or "")
