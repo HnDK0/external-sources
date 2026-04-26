@@ -1,7 +1,7 @@
 ﻿-- -- Метаданные ----------------------------------------------------------------
 id       = "novelbuddy"
 name     = "NovelBuddy"
-version  = "2.6.3"
+version  = "2.6.4"
 baseUrl  = "https://novelbuddy.com"
 language = "en"
 icon     = "https://raw.githubusercontent.com/HnDK0/external-sources/main/icons/novelbuddy.png"
@@ -59,7 +59,6 @@ local function decodeHtmlEntities(text)
   return text
 end
 
--- Убирает дублирующиеся строки с названием главы в начале контента.
 local function removeChapterTitleDuplicate(text, chapterName)
   if not text or text == "" or not chapterName or chapterName == "" then return text end
 
@@ -112,9 +111,17 @@ local function apiGet(path)
 end
 
 -- Поиск по slug, возвращает первый элемент или nil
+-- Обрезаем slug до первых 4 сегментов чтобы не получить 400 от API
 local function searchBySlug(slug)
   if not slug or slug == "" then return nil end
-  local data = apiGet("titles/search?q=" .. url_encode(slug) .. "&limit=1")
+  local parts = {}
+  for part in slug:gmatch("[^-]+") do
+    table.insert(parts, part)
+    if #parts >= 4 then break end
+  end
+  local shortSlug = table.concat(parts, "-")
+  log_info("NovelBuddy: searchBySlug slug=" .. slug .. " shortSlug=" .. shortSlug)
+  local data = apiGet("titles/search?q=" .. url_encode(shortSlug) .. "&limit=1")
   if not data then return nil end
   local items = (data.data and data.data.items) or data.items or {}
   if #items == 0 then return nil end
@@ -356,12 +363,6 @@ function getChapterListHash(bookUrl)
 end
 
 -- -- Текст главы ---------------------------------------------------------------
---
--- API отдаёт контент как HTML-строку внутри JSON.
--- Передаём её напрямую в html_text() — встроенную функцию приложения,
--- которая использует Jsoup/TextExtractor и правильно обрабатывает
--- <p>, <br>, <hr> без лишних \n и артефактов.
--- Никакого самодельного stripHtml — он и был источником мусора.
 
 function getChapterText(html, url)
   log_info("NovelBuddy: getChapterText called, url=" .. tostring(url))
@@ -387,7 +388,6 @@ function getChapterText(html, url)
 
   local apiData = nil
 
-  -- Путь 1: пробуем распарсить тело html если Jsoup уже загрузил API URL
   local bodyContent = html and (html:match("<body[^>]*>(.-)</body>") or html:match("<body>(.-)</body>"))
   if bodyContent and bodyContent ~= "" then
     bodyContent = bodyContent:gsub("&quot;", '"'):gsub("&amp;", "&"):gsub("&lt;", "<"):gsub("&gt;", ">")
@@ -402,7 +402,6 @@ function getChapterText(html, url)
     log_info("NovelBuddy: html body empty or not parseable")
   end
 
-  -- Путь 2: грузим напрямую по API URL
   if not apiData then
     log_info("NovelBuddy: fetching " .. apiUrl)
     local r = http_get(apiUrl)
@@ -434,12 +433,12 @@ function getChapterText(html, url)
     return ""
   end
 
-  -- html_text() — встроенная функция приложения (TextExtractor.get).
-  -- Принимает HTML-строку, обходит DOM через Jsoup:
-  --   <p>  → текст абзаца + "\n\n"
-  --   <br> → "\n"
-  --   <hr> → "\n\n"
-  --   TextNode → child.text() (без лишних escape-артефактов)
+  -- Если контент не HTML а plain text с escape-символами — чистим до html_text()
+  if not content:find("<[a-zA-Z]") then
+    content = content:gsub('\\"', '"')
+    content = content:gsub('\\n', '\n')
+  end
+
   local text = html_text(content)
 
   text = removeChapterTitleDuplicate(text, ch.name or "")

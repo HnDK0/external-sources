@@ -4,7 +4,7 @@ name     = "Jaomix"
 version  = "1.0.2"
 baseUrl  = "https://jaomix.ru/"
 language = "ru"
-icon     = "https://jaomix.ru/wp-content/uploads/2026/02/logo-150x150.png"
+icon     = "https://raw.githubusercontent.com/HnDK0/external-sources/main/icons/jaomix.png"
 
 -- ── Хелперы ───────────────────────────────────────────────────────────────────
 
