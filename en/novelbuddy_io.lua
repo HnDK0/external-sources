@@ -1,7 +1,7 @@
 ﻿-- -- Метаданные ----------------------------------------------------------------
 id       = "novelbuddy"
 name     = "NovelBuddy"
-version  = "2.6.7"
+version  = "2.6.8"
 baseUrl  = "https://novelbuddy.com"
 language = "en"
 icon     = "https://raw.githubusercontent.com/HnDK0/external-sources/main/icons/novelbuddy.png"
@@ -372,46 +372,33 @@ function getChapterText(html, url)
     return ""
   end
 
-  local apiUrl = url:match("^([^#]+)") or url
-
-  if not apiUrl:find("api%.novelbuddy", 1, true) then
-    log_error("NovelBuddy: not API URL: " .. apiUrl)
-    return ""
-  end
-
-  log_info("NovelBuddy: fetching " .. apiUrl)
-  local r = http_get(apiUrl)
-  log_info("NovelBuddy: success=" .. tostring(r and r.success)
-           .. " bodyLen=" .. tostring(r and r.body and #r.body or 0))
-
+  log_info("NovelBuddy: fetching " .. url)
+  local r = http_get(url)
   if not r or not r.success or not r.body or r.body == "" then
-    log_error("NovelBuddy: HTTP failed for " .. apiUrl)
-    return ""
+    log_error("NovelBuddy: HTTP failed, trying html body")
+    -- fallback: парсим html который передало приложение
+  else
+    local ok, apiData = pcall(json_parse, r.body)
+    if ok and apiData and apiData.data and apiData.data.chapter then
+      local ch = apiData.data.chapter
+      local content = ch.content or ch.text or ""
+      log_info("NovelBuddy: content[:200]=" .. content:sub(1, 200))
+      if content ~= "" then
+        local text = html_text(content)
+        text = text:gsub("\\n", "")
+        text = text:gsub('\\"', '"')
+        text = removeChapterTitleDuplicate(text, ch.name or "")
+        text = applyStandardContentTransforms(text)
+        return text
+      end
+    end
   end
 
-  local ok, apiData = pcall(json_parse, r.body)
-  if not ok or not apiData then
-    log_error("NovelBuddy: JSON parse failed")
-    return ""
-  end
-
-  local ch = apiData.data and apiData.data.chapter
-  if not ch then
-    log_error("NovelBuddy: no chapter object")
-    return ""
-  end
-
-  local content = ch.content or ch.text or ""
-  log_info("NovelBuddy: raw content[:300]=" .. content:sub(1, 300))
-  if content == "" then
-    log_error("NovelBuddy: empty content")
-    return ""
-  end
-
-  local text = html_text(content)
+  -- fallback: html уже загружен приложением как Jsoup документ
+  log_info("NovelBuddy: using html fallback")
+  local text = html_text(html)
   text = text:gsub("\\n", "")
   text = text:gsub('\\"', '"')
-  text = removeChapterTitleDuplicate(text, ch.name or "")
   text = applyStandardContentTransforms(text)
   return text
 end
