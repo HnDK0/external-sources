@@ -1,7 +1,7 @@
 ﻿-- -- Метаданные ----------------------------------------------------------------
 id       = "novelbuddy"
 name     = "NovelBuddy"
-version  = "2.5.4"
+version  = "2.5.5"
 baseUrl  = "https://novelbuddy.com"
 language = "en"
 icon     = "https://raw.githubusercontent.com/HnDK0/external-sources/main/icons/novelbuddy.png"
@@ -370,12 +370,15 @@ function getChapterList(bookUrl)
     local title = ch.name or ch.title or ch.slug or chId
 
     if chId ~= "" then
-      local chSlug = ch.slug or chId
-      -- URL сайта — приложение откроет его в WebView и передаст в getChapterText
-      local chSiteUrl = baseUrl .. "/" .. mangaSlug .. "/" .. chSlug
+      local chSlug   = ch.slug or chId
+      local apiUrl   = API_BASE .. "titles/" .. url_encode(mangaId)
+                       .. "/chapters/" .. url_encode(chId)
+      -- URL сайта для WebView, API URL в fragment для getChapterText
+      local siteUrl  = baseUrl .. "/" .. mangaSlug .. "/" .. chSlug
+                       .. "#api=" .. apiUrl
       table.insert(allChapters, {
         title = string_clean(title),
-        url   = chSiteUrl,
+        url   = siteUrl,
       })
     end
   end
@@ -400,9 +403,8 @@ function getChapterListHash(bookUrl)
 end
 
 -- -- Текст главы ---------------------------------------------------------------
--- html = doc.outerHtml() — HTML страницы сайта загруженный Jsoup, ИГНОРИРУЕМ полностью
--- url  = doc.location()  — URL сайта: https://novelbuddy.com/{novel-slug}/{chapter-slug}
--- Строим API URL сами из slug'ов, грузим напрямую через API
+-- html = doc.outerHtml() — игнорируем, приложение грузит API URL напрямую
+-- url  = прямой API URL: https://api.novelbuddy.com/titles/{id}/chapters/{id}
 
 function getChapterText(html, url)
   if not url or url == "" then
@@ -410,30 +412,12 @@ function getChapterText(html, url)
     return ""
   end
 
-  -- Извлекаем slug романа и slug главы из URL сайта
-  -- Формат: https://novelbuddy.com/novel-slug/chapter-slug
-  local novelSlug, chapterSlug = url:match("novelbuddy%.com/([^/?#]+)/([^/?#]+)")
-  if not novelSlug or not chapterSlug then
-    log_error("NovelBuddy: cannot parse slugs from url=" .. url)
-    return ""
+  -- Извлекаем API URL из fragment (#api=...) или используем url напрямую если это уже API URL
+  local apiUrl = url:match("#api=(.+)$")
+  if not apiUrl or apiUrl == "" then
+    -- Фолбэк: если вдруг url это прямой API URL без fragment
+    apiUrl = url:match("^([^#]+)") or url
   end
-
-  -- Получаем ID романа через поиск по slug
-  local searchData = apiGet("titles/search?q=" .. url_encode(novelSlug) .. "&limit=1")
-  if not searchData then
-    log_error("NovelBuddy: search failed for slug=" .. novelSlug)
-    return ""
-  end
-  local items = (searchData.data and searchData.data.items) or {}
-  if #items == 0 or not items[1] or not items[1].id then
-    log_error("NovelBuddy: novel not found for slug=" .. novelSlug)
-    return ""
-  end
-  local novelId = items[1].id
-
-  -- Строим API URL и грузим главу
-  local apiUrl = API_BASE .. "titles/" .. url_encode(novelId)
-                 .. "/chapters/" .. url_encode(chapterSlug)
 
   local r = http_get(apiUrl)
   if not r or not r.success or not r.body or r.body == "" then
