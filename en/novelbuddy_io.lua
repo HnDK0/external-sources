@@ -1,7 +1,7 @@
 ﻿-- -- Метаданные ----------------------------------------------------------------
 id       = "novelbuddy"
 name     = "NovelBuddy"
-version  = "2.5.1"
+version  = "2.5.2"
 baseUrl  = "https://novelbuddy.com"
 language = "en"
 icon     = "https://raw.githubusercontent.com/HnDK0/external-sources/main/icons/novelbuddy.png"
@@ -83,11 +83,6 @@ local function stripHtml(content)
   content = regex_replace(content, "(?m)^[ \\t]+$", "")
   content = regex_replace(content, "\n{3,}", "\n\n")
   content = regex_replace(content, "(?m)^[ \t]+", "")
-
-  -- Убираем escaped кавычки и переносы которые остаются после JSON парсинга
-  content = content:gsub('\\"', '"')
-  content = content:gsub('\\n', '\n')
-  content = content:gsub('\\r', '')
 
   return string_trim(content)
 end
@@ -462,6 +457,12 @@ function getChapterText(html, url)
     log_error("NovelBuddy: empty content for " .. apiUrl)
     return ""
   end
+
+  -- json_parse в этом приложении не делает unescape — чистим вручную
+  content = content:gsub('\"', '"')
+  content = content:gsub('\n', '
+')
+  content = content:gsub('\r', '')
 
   content = stripHtml(content)
   content = removeChapterTitleDuplicate(content, ch.name or "")
