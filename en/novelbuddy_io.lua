@@ -1,7 +1,7 @@
 ﻿-- -- Метаданные ----------------------------------------------------------------
 id       = "novelbuddy"
 name     = "NovelBuddy"
-version  = "2.6.5"
+version  = "2.6.6"
 baseUrl  = "https://novelbuddy.com"
 language = "en"
 icon     = "https://raw.githubusercontent.com/HnDK0/external-sources/main/icons/novelbuddy.png"
@@ -440,6 +440,7 @@ function getChapterText(html, url)
   end
 
   local text = html_text(content)
+  log_info("NovelBuddy: text after html_text[:200]=" .. text:sub(1, 200))
   -- Убираем литеральные \n и \" которые остаются из TextNode после Jsoup
   text = text:gsub("\\n", "")
   text = text:gsub('\\"', '"')
