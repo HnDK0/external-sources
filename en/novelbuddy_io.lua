@@ -1,7 +1,7 @@
 ﻿-- -- Метаданные ----------------------------------------------------------------
 id       = "novelbuddy"
 name     = "NovelBuddy"
-version  = "2.5.2"
+version  = "2.5.3"
 baseUrl  = "https://novelbuddy.com"
 language = "en"
 icon     = "https://raw.githubusercontent.com/HnDK0/external-sources/main/icons/novelbuddy.png"
@@ -370,11 +370,12 @@ function getChapterList(bookUrl)
     local title = ch.name or ch.title or ch.slug or chId
 
     if chId ~= "" then
-      local chApiUrl = API_BASE .. "titles/" .. url_encode(mangaId)
-                       .. "/chapters/" .. url_encode(chId)
+      local chSlug = ch.slug or chId
+      -- URL сайта — приложение откроет его в WebView и передаст в getChapterText
+      local chSiteUrl = baseUrl .. "/" .. mangaSlug .. "/" .. chSlug
       table.insert(allChapters, {
         title = string_clean(title),
-        url   = chApiUrl,
+        url   = chSiteUrl,
       })
     end
   end
