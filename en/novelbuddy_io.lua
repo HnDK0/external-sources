@@ -217,12 +217,13 @@ function getCatalogList(index, filters)
   local max_ch  = ""
 
   if type(filters) == "table" then
-    sort    = filters["sort"]    or ""
-    status  = filters["status"]  or ""
-    genres  = resolveGenreStr(filters["genre"])
-    exclude = resolveGenreStr(filters["exclude"])
-    min_ch  = filters["min_ch"]  or ""
-    max_ch  = filters["max_ch"]  or ""
+    sort    = filters["sort"]              or ""
+    status  = filters["status"]            or ""
+    -- Kotlin передаёт checkbox как filters["genre_included"] (суффикс _included)
+    genres  = resolveGenreStr(filters["genre_included"])
+    exclude = resolveGenreStr(filters["exclude_included"])
+    min_ch  = filters["min_ch"]            or ""
+    max_ch  = filters["max_ch"]            or ""
   end
 
   local params = "page=" .. tostring(page) .. "&limit=24"
@@ -393,69 +394,69 @@ function getChapterListHash(bookUrl)
 end
 
 -- -- Текст главы ---------------------------------------------------------------
--- url = прямой API endpoint: https://api.novelbuddy.com/titles/{id}/chapters/{id}
--- html = тело ответа если приложение его уже загрузило (может быть пустым)
+-- html = doc.outerHtml() — HTML страницы сайта загруженный Jsoup, ИГНОРИРУЕМ полностью
+-- url  = doc.location()  — URL сайта: https://novelbuddy.com/{novel-slug}/{chapter-slug}
+-- Строим API URL сами из slug'ов, грузим напрямую через API
 
 function getChapterText(html, url)
-  -- Хелпер: извлечь контент из распарсенного API-ответа
-  local function extractContent(apiData)
-    if type(apiData) ~= "table" then return nil end
-    -- Структура: { success=true, data={ chapter={ content=... } } }
-    local ch = apiData.data and apiData.data.chapter
-    if ch then
-      local c = ch.content or ch.text or ""
-      if c ~= "" then
-        local text = stripHtml(c)
-        -- Убираем дублирующееся название главы из первой строки
-        text = removeChapterTitleDuplicate(text, ch.name or "")
-        return text
-      end
-    end
-    -- Структура: { data={ content=... } }
-    if apiData.data and type(apiData.data.content) == "string" and apiData.data.content ~= "" then
-      return stripHtml(apiData.data.content)
-    end
-    -- Структура без обёртки: { content=... }
-    if type(apiData.content) == "string" and apiData.content ~= "" then
-      return stripHtml(apiData.content)
-    end
-    return nil
+  if not url or url == "" then
+    log_error("NovelBuddy: getChapterText called with empty url")
+    return ""
   end
 
-  -- 1. Пробуем распарсить html если приложение уже передало JSON тело
-  if html and html ~= "" then
-    local ok, apiData = pcall(json_parse, html)
-    if ok and type(apiData) == "table" then
-      local content = extractContent(apiData)
-      if content and content ~= "" then
-        return applyStandardContentTransforms(content)
-      end
-    end
+  -- Извлекаем slug романа и slug главы из URL сайта
+  -- Формат: https://novelbuddy.com/novel-slug/chapter-slug
+  local novelSlug, chapterSlug = url:match("novelbuddy%.com/([^/?#]+)/([^/?#]+)")
+  if not novelSlug or not chapterSlug then
+    log_error("NovelBuddy: cannot parse slugs from url=" .. url)
+    return ""
   end
 
-  -- 2. Грузим по API URL напрямую
-  if url and url ~= "" then
-    local cleanUrl = url:match("^([^#]+)") or url
-    local r = http_get(cleanUrl)
-    if r and r.success and r.body and r.body ~= "" then
-      local apiData = json_parse(r.body)
-      if apiData then
-        local content = extractContent(apiData)
-        if content and content ~= "" then
-          return applyStandardContentTransforms(content)
-        end
-        log_error("NovelBuddy: unexpected API response for " .. cleanUrl
-                  .. " | body[:300]=" .. r.body:sub(1, 300))
-      else
-        log_error("NovelBuddy: JSON parse failed for chapter: " .. cleanUrl)
-      end
-    else
-      log_error("NovelBuddy: chapter HTTP failed for " .. tostring(cleanUrl))
-    end
+  -- Получаем ID романа через поиск по slug
+  local searchData = apiGet("titles/search?q=" .. url_encode(novelSlug) .. "&limit=1")
+  if not searchData then
+    log_error("NovelBuddy: search failed for slug=" .. novelSlug)
+    return ""
+  end
+  local items = (searchData.data and searchData.data.items) or {}
+  if #items == 0 or not items[1] or not items[1].id then
+    log_error("NovelBuddy: novel not found for slug=" .. novelSlug)
+    return ""
+  end
+  local novelId = items[1].id
+
+  -- Строим API URL и грузим главу
+  local apiUrl = API_BASE .. "titles/" .. url_encode(novelId)
+                 .. "/chapters/" .. url_encode(chapterSlug)
+
+  local r = http_get(apiUrl)
+  if not r or not r.success or not r.body or r.body == "" then
+    log_error("NovelBuddy: chapter API HTTP failed for " .. apiUrl)
+    return ""
   end
 
-  log_error("NovelBuddy: getChapterText completely failed, url=" .. tostring(url))
-  return ""
+  local apiData = json_parse(r.body)
+  if not apiData then
+    log_error("NovelBuddy: JSON parse failed for " .. apiUrl)
+    return ""
+  end
+
+  local ch = apiData.data and apiData.data.chapter
+  if not ch then
+    log_error("NovelBuddy: no chapter object in response for " .. apiUrl)
+    return ""
+  end
+
+  local content = ch.content or ch.text or ""
+  if content == "" then
+    log_error("NovelBuddy: empty content for " .. apiUrl)
+    return ""
+  end
+
+  content = stripHtml(content)
+  content = removeChapterTitleDuplicate(content, ch.name or "")
+  content = applyStandardContentTransforms(content)
+  return content
 end
 
 -- -- Список фильтров -----------------------------------------------------------
