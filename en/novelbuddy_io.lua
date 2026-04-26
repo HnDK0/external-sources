@@ -1,7 +1,7 @@
 ﻿-- -- Метаданные ----------------------------------------------------------------
 id       = "novelbuddy"
 name     = "NovelBuddy"
-version  = "2.5.7"
+version  = "2.5.8"
 baseUrl  = "https://novelbuddy.com"
 language = "en"
 icon     = "https://raw.githubusercontent.com/HnDK0/external-sources/main/icons/novelbuddy.png"
@@ -63,26 +63,31 @@ local function stripHtml(content)
   if not content or content == "" then return "" end
 
   -- 1. Вырезаем рекламные div со style margin (вставки между параграфами)
-  content = regex_replace(content,
-    "<div[^>]+style=\"[^\"]*margin[^\"]*\"[^>]*>\\s*(?:<div[^>]*>\\s*</div>\\s*)*</div>", "")
+  content = content:gsub(
+    "<div[^>]+style=\"[^\"]*margin[^\"]*\"[^>]*>.-</div>", "")
 
   -- 2. <br> → перенос строки
-  content = regex_replace(content, "<br[^>]*/?>", "\n")
+  content = content:gsub("<br[^>]*/?>", "\n")
 
-  -- 3. <p> → перенос строки, </p> убираем
-  content = regex_replace(content, "<p[^>]*>", "\n")
-  content = regex_replace(content, "</p>", "")
+  -- 3. <p> и </p>: убираем пробельные символы (включая \n) вплотную к тегам.
+  --    ГЛАВНЫЙ ФИКС: API кладёт \n прямо перед </p>, например:
+  --      <p> "MOMMY!!"\n</p>
+  --    Старый код оставлял этот \n в тексте, отчего читалка показывала
+  --    лишние переносы строк и артефакты вроде \" при экранировании.
+  --    Паттерн %s* поглощает любые пробелы/табы/переносы у границ тега.
+  content = content:gsub("<p[^>]*>%s*", "\n")
+  content = content:gsub("%s*</p>",     "")
 
   -- 4. Убираем все оставшиеся теги
-  content = regex_replace(content, "<[^>]+>", "")
+  content = content:gsub("<[^>]+>", "")
 
   -- 5. HTML entities
   content = decodeHtmlEntities(content)
 
-  -- 6. Убираем строки из одних пробелов, схлопываем переносы
-  content = regex_replace(content, "(?m)^[ \\t]+$", "")
-  content = regex_replace(content, "\n{3,}", "\n\n")
-  content = regex_replace(content, "(?m)^[ \t]+", "")
+  -- 6. Хвостовые пробелы на строках и схлопывание переносов
+  content = content:gsub("[ \t]+\n", "\n")
+  content = content:gsub("\n[ \t]+", "\n")
+  content = content:gsub("\n\n\n+",  "\n\n")
 
   return string_trim(content)
 end
@@ -120,43 +125,6 @@ local function resolveGenreStr(genres)
   if type(genres) == "string" then return genres end
   if type(genres) == "table" then return table.concat(genres, ",") end
   return ""
-end
-
--- Раскодирует JSON escape-последовательности вручную.
--- Нужно когда json_parse не делает unescape или контент двойно экранирован.
--- Проверяем наличие \\" или literal \n перед обработкой чтобы не трогать
--- уже чистый контент.
--- Порядок замен важен: сначала прячем \\ чтобы не сломать остальные замены,
--- потом чистим \", \n, \r, \t, потом возвращаем \\.
-local function rawUnescape(s)
-  if not s or s == "" then return s end
-
-  -- Проверяем нужен ли unescape — ищем любой из признаков двойного escape
-  local needsUnescape = s:find('\\"', 1, true)
-                     or s:find("\\n", 1, true)
-                     or s:find("\\r", 1, true)
-                     or s:find("\\t", 1, true)
-
-  if not needsUnescape then
-    return s
-  end
-
-  log_info("NovelBuddy: rawUnescape triggered, content has escape sequences")
-
-  -- Прячем \\ → временный маркер, чтобы не испортить последующие замены
-  local MARKER = "\x01\x02\x03"
-  s = s:gsub("\\\\", MARKER)
-
-  -- Раскодируем escape-последовательности
-  s = s:gsub('\\"',  '"')
-  s = s:gsub("\\n",  "\n")
-  s = s:gsub("\\r",  "")     -- \r просто выбрасываем
-  s = s:gsub("\\t",  "\t")
-
-  -- Восстанавливаем одиночный backslash
-  s = s:gsub(MARKER, "\\")
-
-  return s
 end
 
 -- -- API запросы ---------------------------------------------------------------
@@ -347,7 +315,7 @@ function getBookDescription(bookUrl)
   if not manga then return nil end
   local summary = manga.summary or manga.description or ""
   if summary ~= "" then
-    summary = regex_replace(summary, "<[^>]+>", "")
+    summary = summary:gsub("<[^>]+>", "")
     summary = decodeHtmlEntities(summary)
     return string_trim(summary)
   end
@@ -449,8 +417,6 @@ function getChapterText(html, url)
   local apiData = nil
 
   -- Путь 1: пробуем распарсить тело html если Jsoup уже загрузил API URL
-  -- ВАЖНО: в этом пути json_parse уже раскодирует \n и \" из JSON,
-  -- поэтому rawUnescape на выходе ничего не тронет (needsUnescape = false)
   local bodyContent = html and (html:match("<body[^>]*>(.-)</body>") or html:match("<body>(.-)</body>"))
   if bodyContent and bodyContent ~= "" then
     bodyContent = bodyContent:gsub("&quot;", '"'):gsub("&amp;", "&"):gsub("&lt;", "<"):gsub("&gt;", ">")
@@ -466,9 +432,6 @@ function getChapterText(html, url)
   end
 
   -- Путь 2: грузим напрямую по API URL
-  -- В этом пути возможен двойной escape если API отдаёт content как
-  -- строку-внутри-строки (дважды сериализованный JSON).
-  -- rawUnescape обработает этот случай.
   if not apiData then
     log_info("NovelBuddy: fetching " .. apiUrl)
     local r = http_get(apiUrl)
@@ -498,12 +461,6 @@ function getChapterText(html, url)
     log_error("NovelBuddy: empty content for " .. url)
     return ""
   end
-
-  -- Раскодируем JSON escape-последовательности.
-  -- Срабатывает только если в content остались литеральные \" или \n —
-  -- то есть json_parse не раскодировал их (двойной escape или иной случай).
-  -- Если json_parse уже всё раскодировал — функция вернёт content без изменений.
-  content = rawUnescape(content)
 
   content = stripHtml(content)
   content = removeChapterTitleDuplicate(content, ch.name or "")
