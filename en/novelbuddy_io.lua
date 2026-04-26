@@ -1,7 +1,7 @@
 ﻿-- -- Метаданные ----------------------------------------------------------------
 id       = "novelbuddy"
 name     = "NovelBuddy"
-version  = "2.6.0"
+version  = "2.6.1"
 baseUrl  = "https://novelbuddy.com"
 language = "en"
 icon     = "https://raw.githubusercontent.com/HnDK0/external-sources/main/icons/novelbuddy.png"
@@ -45,8 +45,8 @@ local function applyStandardContentTransforms(text)
   text = regex_replace(text, "(?i)free.{0,10}novel\\.com", "")
   text = string_trim(text)
   -- Убираем литеральные \n и \" которые API отдаёт как escape-последовательности
-  text = text:gsub("\n", "")
-  text = text:gsub('\"', '"')
+  text = regex_replace(text, "\\\\n", "")
+  text = regex_replace(text, '\\\\"', '"')
   return text
 end
 
