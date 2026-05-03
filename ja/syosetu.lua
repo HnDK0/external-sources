@@ -1,7 +1,7 @@
 -- ── Метаданные ───────────────────────────────────────────────────────────────
 id       = "syosetu"
 name     = "Syosetu"
-version  = "1.0.7"
+version  = "1.0.8"
 baseUrl  = "https://ncode.syosetu.com/"
 language = "ja"
 icon     = "https://raw.githubusercontent.com/HnDK0/external-sources/main/icons/narou.png"
@@ -72,35 +72,22 @@ function getCatalogSearch(index, query)
     
     log_info("syosetu search: response length=" .. #r.body)
     
-    -- 🔍 Отладка: проверяем, находит ли парсер вообще элементы
-    local allLinks = html_select(r.body, "a")
-    log_info("syosetu search: total <a> tags: " .. #allLinks)
-    
-    local tlLinks = html_select(r.body, "a.tl")
-    log_info("syosetu search: total <a.tl> tags: " .. #tlLinks)
-    
     local items = {}
     
-    for _, container in ipairs(html_select(r.body, ".searchkekka_box")) do
-        -- container:select() возвращает таблицу элементов внутри контейнера
-        local links = container:select(".novel_h a.tl")
-        if links and #links > 0 then
-            local a = links[1]
-            if a and a.href and a.text then
-                local novelUrl = a.href
-                local title = string_trim(a.text)
-                
-                log_info("syosetu search: found: " .. title .. " -> " .. novelUrl)
-                
-                -- Нормализуем относительные ссылки
-                local finalUrl = novelUrl
-                if novelUrl:sub(1,1) == "/" then
-                    finalUrl = "https://ncode.syosetu.com" .. novelUrl
-                end
-                
+    -- ✅ Ищем ВСЕ ссылки с href и фильтруем по паттерну URL новеллы
+    -- Это обходит проблему с селекторами классов и вложенным парсингом
+    for _, a in ipairs(html_select(r.body, "a[href]")) do
+        local href = a.href or ""
+        local title = a.text and string_trim(a.text) or ""
+        
+        -- ✅ Фильтруем только ссылки на новеллы (ncode.syosetu.com/nXXXXX/)
+        if href:match("https?://ncode%.syosetu%.com/n[%w]+/?$") or 
+           href:match("^/n[%w]+/?$") then
+            if title ~= "" then
+                log_info("syosetu search: found: " .. title .. " -> " .. href)
                 table.insert(items, { 
                     title = title, 
-                    url = finalUrl,
+                    url = href:sub(1,4)=="http" and href or "https://ncode.syosetu.com" .. href,
                     cover = "" 
                 })
             end
