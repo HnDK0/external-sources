@@ -1,7 +1,7 @@
 -- ── Метаданные ───────────────────────────────────────────────────────────────
 id       = "syosetu"
 name     = "Syosetu"
-version  = "1.0.4"
+version  = "1.0.5"
 baseUrl  = "https://ncode.syosetu.com/"
 language = "ja"
 icon     = "https://raw.githubusercontent.com/HnDK0/external-sources/main/icons/narou.png"
@@ -73,19 +73,29 @@ function getCatalogSearch(index, query)
     log_info("syosetu search: response length=" .. #r.body)
     
     local items = {}
-    for _, a in ipairs(html_select(r.body, ".searchkekka_box .novel_h a.tl")) do
+    -- ✅ ИДЕНТИЧНО РАНКИНГУ: вложенный парсинг через container.html
+    for _, container in ipairs(html_select(r.body, ".searchkekka_box")) do
+        local a = html_select_first(container.html, ".novel_h a.tl")
         if a and a.href and a.text then
-            local novelUrl = a.href
+            local novelUrl = a.href  -- Ссылки в поиске УЖЕ полные (https://ncode.syosetu.com/...)
             local title = string_trim(a.text)
-            if novelUrl:find("ncode%.syosetu%.com/n[%w]+/?$") or novelUrl:match("/n[%w]+/?$") then
-                table.insert(items, { title = title, url = novelUrl, cover = "" })
+            
+            -- ✅ Фильтр: только новеллы (ncode.syosetu.com/nXXXXX)
+            if novelUrl:match("https?://ncode%.syosetu%.com/n[%w]+/?$") or 
+               novelUrl:match("^/n[%w]+/?$") then
                 log_info("syosetu search: found: " .. title)
+                table.insert(items, { 
+                    title = title, 
+                    url = novelUrl:sub(1,4)=="http" and novelUrl or "https://ncode.syosetu.com" .. novelUrl,
+                    cover = "" 
+                })
             end
         end
     end
     
     log_info("syosetu search: total items=" .. #items)
     
+    -- hasNext: проверяем наличие кнопки NEXT
     local nextLink = html_select_first(r.body, "a.nextlink")
     local hasNext = (nextLink ~= nil)
     
