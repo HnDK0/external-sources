@@ -1,12 +1,12 @@
 -- ── Метаданные ───────────────────────────────────────────────────────────────
 id       = "syosetu"
 name     = "Syosetu"
-version  = "1.0.2"
-baseUrl  = "https://yomou.syosetu.com/"
+version  = "1.0.3"
+baseUrl  = "https://ncode.syosetu.com/" 
 language = "ja"
 icon     = "https://raw.githubusercontent.com/HnDK0/external-sources/main/icons/narou.png"
 
-local NCODE_BASE = "https://ncode.syosetu.com"
+local YOUMOU_BASE = "https://yomou.syosetu.com/"  -- Для поиска и ранкингов
 local HEADERS = {
     ["User-Agent"] = "Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/120.0.0.0 Safari/537.36"
 }
@@ -16,7 +16,7 @@ local function absUrl(href)
     if not href or href == "" then return "" end
     if href:sub(1, 4) == "http" then return href end
     if href:sub(1, 2) == "//"   then return "https:" .. href end
-    return url_resolve(NCODE_BASE, href)
+    return url_resolve(baseUrl, href)
 end
 
 -- ── Каталог (Ранкинг) ────────────────────────────────────────────────────────
@@ -26,26 +26,25 @@ end
 
 function getCatalogFiltered(index, filters)
     local page     = index + 1
-    local period   = filters["period"]   or "daily"
+    local period   = filters["period"]   or "total"  -- ✅ Изменено: общий топ по умолчанию
     local modifier = filters["modifier"] or "total"
     local genre    = filters["genre"]    or ""
     local url
 
     if genre == "" then
         local suffix = (modifier == "total") and (period .. "_total") or (period .. "_" .. modifier)
-        url = baseUrl .. "rank/list/type/" .. suffix .. "/?p=" .. tostring(page)
+        url = YOUMOU_BASE .. "rank/list/type/" .. suffix .. "/?p=" .. tostring(page)
     elseif genre:sub(1, 1) == "i" then
         local isekaiSuffix = genre:sub(2)
-        url = baseUrl .. "rank/isekailist/type/" .. period .. "_" .. isekaiSuffix .. "/?p=" .. tostring(page)
+        url = YOUMOU_BASE .. "rank/isekailist/type/" .. period .. "_" .. isekaiSuffix .. "/?p=" .. tostring(page)
     else
-        url = baseUrl .. "rank/genrelist/type/" .. period .. "_" .. genre .. "/?p=" .. tostring(page)
+        url = YOUMOU_BASE .. "rank/genrelist/type/" .. period .. "_" .. genre .. "/?p=" .. tostring(page)
     end
 
     local r = http_get(url, { headers = HEADERS })
     if not r.success then return { items = {}, hasNext = false } end
 
     local items = {}
-    -- Паттерн из wtrlab/novelbuddy: итерируем контейнеры, берём вложенный элемент
     for _, container in ipairs(html_select(r.body, ".p-ranklist-item")) do
         local a = html_select_first(container.html, ".p-ranklist-item__title a")
         if a and a.href then
@@ -62,7 +61,7 @@ end
 -- ── Поиск ────────────────────────────────────────────────────────────────────
 function getCatalogSearch(index, query)
     local page = index + 1
-    local url = baseUrl .. "search.php?order=hyoka&p=" .. tostring(page) .. "&word=" .. url_encode(query)
+    local url = YOUMOU_BASE .. "search.php?order=hyoka&p=" .. tostring(page) .. "&word=" .. url_encode(query)
     local r = http_get(url, { headers = HEADERS })
     if not r.success then
         log_error("syosetu search failed: " .. url)
@@ -74,14 +73,12 @@ function getCatalogSearch(index, query)
         local a = html_select_first(container.html, ".novel_h a.tl")
         if a and a.href then
             local novelUrl = absUrl(a.href)
-            -- Фильтруем только ncode (новеллы), игнорируем серии/авторов
             if novelUrl:match("/n%w+/") then
                 table.insert(items, { title = string_trim(a.text), url = novelUrl, cover = "" })
             end
         end
     end
 
-    -- Syosetu добавляет a.nextlink если есть следующая страница
     local nextLink = html_select_first(r.body, "a.nextlink")
     local hasNext = (nextLink ~= nil) or (#items >= 20)
     return { items = items, hasNext = hasNext }
@@ -96,14 +93,12 @@ function getBookTitle(bookUrl)
 end
 
 function getBookCoverImageUrl(bookUrl)
-    -- На yomou.syosetu.com обложки в HTML не отдаются (только og:image с заглушкой)
     return nil
 end
 
 function getBookDescription(bookUrl)
     local r = http_get(bookUrl, { headers = HEADERS })
     if not r.success then return nil end
-    -- Проверяем оба возможных селектора описания
     local el = html_select_first(r.body, "#novel_ex")
     if el and string_trim(el.text) ~= "" then return string_trim(el.text) end
     el = html_select_first(r.body, ".p-novel__summary")
@@ -120,17 +115,19 @@ function getChapterList(bookUrl)
         return {}
     end
 
-    -- Проверка на короткую историю/однотомник (текст есть, списка глав нет)
+    -- ✅ Улучшенная проверка на однотомник: есть текст, но нет списка глав
     local hasText = html_select_first(r.body, ".p-novel__text")
-    local hasList = html_select_first(r.body, ".p-eplist__subtitle")
-    if hasText and not hasList then
+    local hasEplist = html_select_first(r.body, ".p-eplist")
+    
+    if hasText and not hasEplist then
         local titleEl = html_select_first(r.body, ".p-novel__title")
         local title = titleEl and string_trim(titleEl.text) or "Chapter 1"
         table.insert(chapters, { title = title, url = bookUrl })
+        log_info("syosetu getChapterList: single-chapter novel detected")
         return chapters
     end
 
-    -- Определение максимальной страницы пагинации
+    -- Пагинация: берём номер последней страницы из .c-pager__item--last
     local totalPages = 1
     local lastLink = html_select_first(r.body, ".c-pager__item--last")
     if lastLink and lastLink.href then
@@ -150,10 +147,10 @@ function getChapterList(bookUrl)
         end
     end
 
-    parsePage(r.body) -- ✅ r.body передан корректно
+    parsePage(r.body)
 
     for p = 2, totalPages do
-        sleep(300) -- Задержка чтобы не получить бан по IP
+        sleep(300)
         local pr = http_get(bookUrl .. "?p=" .. tostring(p), { headers = HEADERS })
         if pr.success then parsePage(pr.body) end
     end
@@ -184,14 +181,12 @@ function getChapterText(html, url)
     local bodyEl = html_select_first(html, ".p-novel__text")
     if not bodyEl then return "" end
 
-    -- Убираем скрипты/стили, извлекаем чистый текст
     local cleaned = html_remove(bodyEl.html, "script", "style")
     local text = html_text("<div>" .. cleaned .. "</div>")
     text = string_normalize(text)
     text = string_trim(text)
 
-    -- Добавляем заголовок, если его нет в начале текста
-    if titleText ~= "" and not text:sub(1, #titleText):find(titleText, 1, true) then
+    if titleText ~= "" and not text:find(titleText, 1, true) then
         text = titleText .. "\n\n" .. text
     end
     return text
@@ -204,7 +199,7 @@ function getFilterList()
             type         = "select",
             key          = "period",
             label        = "Period",
-            defaultValue = "daily",
+            defaultValue = "total",  -- ✅ Изменено: общий топ по умолчанию
             options = {
                 { value = "daily",   label = "日間 (Daily)"      },
                 { value = "weekly",  label = "週間 (Weekly)"     },
