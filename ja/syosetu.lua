@@ -1,7 +1,7 @@
 -- ── Метаданные ───────────────────────────────────────────────────────────────
 id       = "syosetu"
 name     = "Syosetu"
-version  = "1.0.9"
+version  = "1.1.0"
 baseUrl  = "https://ncode.syosetu.com/"
 language = "ja"
 icon     = "https://raw.githubusercontent.com/HnDK0/external-sources/main/icons/narou.png"
@@ -182,7 +182,6 @@ function getChapterListHash(bookUrl)
 end
 
 -- ── Текст главы ──────────────────────────────────────────────────────────────
--- ── Текст главы ──────────────────────────────────────────────────────────────
 function getChapterText(html, url)
     local cleaned = html_remove(html, 
         "script", "style", 
@@ -190,7 +189,7 @@ function getChapterText(html, url)
         ".p-bookmark-bar", ".l-footer", "header", ".p-adjust-layout"
     )
     
-    local el = html_select_first(cleaned, ".p-novel__text")
+    local el = html_select_first(cleaned, ".p-novel__body")
     if not el then return "" end
     
     local text = html_text(el.html)
