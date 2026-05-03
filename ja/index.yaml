@@ -3,7 +3,7 @@ name: "Japanese"
 sources:
   - id: "syosetu"
     name: "Syosetu"
-    version: "1.0.8"
+    version: "1.0.9"
     url: "https://raw.githubusercontent.com/HnDK0/external-sources/refs/heads/main/ja/syosetu.lua"
     icon: "https://raw.githubusercontent.com/HnDK0/external-sources/main/icons/narou.png"
     language: "ja"
