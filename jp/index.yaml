@@ -1,5 +1,5 @@
 language: "jp"
-name: "Jp"
+name: "Japanese"
 sources:
   - id: "syosetu"
     name: "Syosetu"
