@@ -5,9 +5,9 @@ languages:
   id:
     name: "Indonesian"
     url: "https://raw.githubusercontent.com/HnDK0/external-sources/refs/heads/main/id/index.yaml"
-  jp:
+  ja:
     name: "Japanese"
-    url: "https://raw.githubusercontent.com/HnDK0/external-sources/refs/heads/main/jp/index.yaml"
+    url: "https://raw.githubusercontent.com/HnDK0/external-sources/refs/heads/main/ja/index.yaml"
   mtl:
     name: "Mtl"
     url: "https://raw.githubusercontent.com/HnDK0/external-sources/refs/heads/main/mtl/index.yaml"
