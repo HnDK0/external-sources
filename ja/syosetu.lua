@@ -1,12 +1,11 @@
 -- ── Метаданные ───────────────────────────────────────────────────────────────
 id       = "syosetu"
 name     = "Syosetu"
-version  = "1.0.3"
-baseUrl  = "https://ncode.syosetu.com/" 
+version  = "1.0.4"
+baseUrl  = "https://ncode.syosetu.com/"
 language = "ja"
 icon     = "https://raw.githubusercontent.com/HnDK0/external-sources/main/icons/narou.png"
 
-local YOUMOU_BASE = "https://yomou.syosetu.com/"  -- Для поиска и ранкингов
 local HEADERS = {
     ["User-Agent"] = "Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/120.0.0.0 Safari/537.36"
 }
@@ -16,7 +15,7 @@ local function absUrl(href)
     if not href or href == "" then return "" end
     if href:sub(1, 4) == "http" then return href end
     if href:sub(1, 2) == "//"   then return "https:" .. href end
-    return url_resolve(baseUrl, href)
+    return url_resolve("https://ncode.syosetu.com/", href)
 end
 
 -- ── Каталог (Ранкинг) ────────────────────────────────────────────────────────
@@ -26,19 +25,19 @@ end
 
 function getCatalogFiltered(index, filters)
     local page     = index + 1
-    local period   = filters["period"]   or "total"  -- ✅ Изменено: общий топ по умолчанию
+    local period   = filters["period"]   or "total"
     local modifier = filters["modifier"] or "total"
     local genre    = filters["genre"]    or ""
     local url
 
     if genre == "" then
         local suffix = (modifier == "total") and (period .. "_total") or (period .. "_" .. modifier)
-        url = YOUMOU_BASE .. "rank/list/type/" .. suffix .. "/?p=" .. tostring(page)
+        url = "https://yomou.syosetu.com/rank/list/type/" .. suffix .. "/?p=" .. tostring(page)
     elseif genre:sub(1, 1) == "i" then
         local isekaiSuffix = genre:sub(2)
-        url = YOUMOU_BASE .. "rank/isekailist/type/" .. period .. "_" .. isekaiSuffix .. "/?p=" .. tostring(page)
+        url = "https://yomou.syosetu.com/rank/isekailist/type/" .. period .. "_" .. isekaiSuffix .. "/?p=" .. tostring(page)
     else
-        url = YOUMOU_BASE .. "rank/genrelist/type/" .. period .. "_" .. genre .. "/?p=" .. tostring(page)
+        url = "https://yomou.syosetu.com/rank/genrelist/type/" .. period .. "_" .. genre .. "/?p=" .. tostring(page)
     end
 
     local r = http_get(url, { headers = HEADERS })
@@ -49,7 +48,7 @@ function getCatalogFiltered(index, filters)
         local a = html_select_first(container.html, ".p-ranklist-item__title a")
         if a and a.href then
             local novelUrl = absUrl(a.href)
-            if novelUrl:match("/n%w+/") then
+            if novelUrl:match("/n[%w]+/?$") then
                 table.insert(items, { title = string_trim(a.text), url = novelUrl, cover = "" })
             end
         end
@@ -61,26 +60,35 @@ end
 -- ── Поиск ────────────────────────────────────────────────────────────────────
 function getCatalogSearch(index, query)
     local page = index + 1
-    local url = YOUMOU_BASE .. "search.php?order=hyoka&p=" .. tostring(page) .. "&word=" .. url_encode(query)
+    local url = "https://yomou.syosetu.com/search.php?order=hyoka&p=" .. tostring(page) .. "&word=" .. url_encode(query)
+    
+    log_info("syosetu search: fetching " .. url)
+    
     local r = http_get(url, { headers = HEADERS })
     if not r.success then
-        log_error("syosetu search failed: " .. url)
+        log_error("syosetu search: HTTP failed code=" .. tostring(r.code))
         return { items = {}, hasNext = false }
     end
-
+    
+    log_info("syosetu search: response length=" .. #r.body)
+    
     local items = {}
-    for _, container in ipairs(html_select(r.body, ".searchkekka_box")) do
-        local a = html_select_first(container.html, ".novel_h a.tl")
-        if a and a.href then
-            local novelUrl = absUrl(a.href)
-            if novelUrl:match("/n%w+/") then
-                table.insert(items, { title = string_trim(a.text), url = novelUrl, cover = "" })
+    for _, a in ipairs(html_select(r.body, ".searchkekka_box .novel_h a.tl")) do
+        if a and a.href and a.text then
+            local novelUrl = a.href
+            local title = string_trim(a.text)
+            if novelUrl:find("ncode%.syosetu%.com/n[%w]+/?$") or novelUrl:match("/n[%w]+/?$") then
+                table.insert(items, { title = title, url = novelUrl, cover = "" })
+                log_info("syosetu search: found: " .. title)
             end
         end
     end
-
+    
+    log_info("syosetu search: total items=" .. #items)
+    
     local nextLink = html_select_first(r.body, "a.nextlink")
-    local hasNext = (nextLink ~= nil) or (#items >= 20)
+    local hasNext = (nextLink ~= nil)
+    
     return { items = items, hasNext = hasNext }
 end
 
@@ -115,19 +123,19 @@ function getChapterList(bookUrl)
         return {}
     end
 
-    -- ✅ Улучшенная проверка на однотомник: есть текст, но нет списка глав
+    -- Проверка на однотомник
     local hasText = html_select_first(r.body, ".p-novel__text")
     local hasEplist = html_select_first(r.body, ".p-eplist")
     
     if hasText and not hasEplist then
         local titleEl = html_select_first(r.body, ".p-novel__title")
         local title = titleEl and string_trim(titleEl.text) or "Chapter 1"
+        log_info("syosetu getChapterList: single-chapter novel")
         table.insert(chapters, { title = title, url = bookUrl })
-        log_info("syosetu getChapterList: single-chapter novel detected")
         return chapters
     end
 
-    -- Пагинация: берём номер последней страницы из .c-pager__item--last
+    -- Пагинация
     local totalPages = 1
     local lastLink = html_select_first(r.body, ".c-pager__item--last")
     if lastLink and lastLink.href then
@@ -155,6 +163,7 @@ function getChapterList(bookUrl)
         if pr.success then parsePage(pr.body) end
     end
 
+    log_info("syosetu getChapterList: loaded " .. #chapters .. " chapters")
     return chapters
 end
 
@@ -199,7 +208,7 @@ function getFilterList()
             type         = "select",
             key          = "period",
             label        = "Period",
-            defaultValue = "total",  -- ✅ Изменено: общий топ по умолчанию
+            defaultValue = "total",
             options = {
                 { value = "daily",   label = "日間 (Daily)"      },
                 { value = "weekly",  label = "週間 (Weekly)"     },
