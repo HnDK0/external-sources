@@ -1,7 +1,7 @@
 -- ── Метаданные ───────────────────────────────────────────────────────────────
 id       = "syosetu"
 name     = "Syosetu"
-version  = "1.0.8"
+version  = "1.0.9"
 baseUrl  = "https://ncode.syosetu.com/"
 language = "ja"
 icon     = "https://raw.githubusercontent.com/HnDK0/external-sources/main/icons/narou.png"
@@ -23,24 +23,21 @@ function getCatalogList(index)
     return getCatalogFiltered(index, {})
 end
 
--- ── Каталог с фильтрами ───────────────────────────────────────────────────────
 function getCatalogFiltered(index, filters)
     local page     = index + 1
     local period   = filters["period"]   or "total"
     local modifier = filters["modifier"] or "total"
-    local genre    = filters["genre"]    or "" 
-    
+    local genre    = filters["genre"]    or ""
     local url
+
     if genre == "" then
-        -- Без жанра: общий ранкинг
         local suffix = (modifier == "total") and (period .. "_total") or (period .. "_" .. modifier)
-        url = baseUrl .. "rank/list/type/" .. suffix .. "/?p=" .. tostring(page)
-    elseif #genre == 1 then
-        -- Исекай-жанры (1, 2, o): isekailist
-        url = baseUrl .. "rank/isekailist/type/" .. period .. "_" .. genre .. "/?p=" .. tostring(page)
+        url = "https://yomou.syosetu.com/rank/list/type/" .. suffix .. "/?p=" .. tostring(page)
+    elseif genre:sub(1, 1) == "i" then
+        local isekaiSuffix = genre:sub(2)
+        url = "https://yomou.syosetu.com/rank/isekailist/type/" .. period .. "_" .. isekaiSuffix .. "/?p=" .. tostring(page)
     else
-        -- Остальные жанры (101, 201...): genrelist
-        url = baseUrl .. "rank/genrelist/type/" .. period .. "_" .. genre .. "/?p=" .. tostring(page)
+        url = "https://yomou.syosetu.com/rank/genrelist/type/" .. period .. "_" .. genre .. "/?p=" .. tostring(page)
     end
 
     local r = http_get(url, { headers = HEADERS })
@@ -185,28 +182,20 @@ function getChapterListHash(bookUrl)
 end
 
 -- ── Текст главы ──────────────────────────────────────────────────────────────
+-- ── Текст главы ──────────────────────────────────────────────────────────────
 function getChapterText(html, url)
-    if not html or html == "" then
-        local r = http_get(url, { headers = HEADERS })
-        if not r.success then return "" end
-        html = r.body
-    end
-
-    local titleText = ""
-    local titleEl = html_select_first(html, ".p-novel__title")
-    if titleEl then titleText = string_trim(titleEl.text) end
-
-    local bodyEl = html_select_first(html, ".p-novel__text")
-    if not bodyEl then return "" end
-
-    local cleaned = html_remove(bodyEl.html, "script", "style")
-    local text = html_text("<div>" .. cleaned .. "</div>")
+    local cleaned = html_remove(html, 
+        "script", "style", 
+        ".c-ad", ".c-pager", ".p-reaction", 
+        ".p-bookmark-bar", ".l-footer", "header", ".p-adjust-layout"
+    )
+    
+    local el = html_select_first(cleaned, ".p-novel__text")
+    if not el then return "" end
+    
+    local text = html_text(el.html)
     text = string_normalize(text)
     text = string_trim(text)
-
-    if titleText ~= "" and not text:find(titleText, 1, true) then
-        text = titleText .. "\n\n" .. text
-    end
     return text
 end
 
@@ -240,34 +229,34 @@ function getFilterList()
             }
         },
         {
-            type         = "select", 
+            type         = "select",
             key          = "genre",
-            label        = "Ranking Genre",
+            label        = "Genre",
             defaultValue = "",
             options = {
-                { value = "",   label = "総ジャンル (All)"                                    },
-                { value = "1",  label = "[異世界転生/転移] 恋愛 (Isekai Romance)"            },
-                { value = "2",  label = "[異世界転生/転移] ファンタジー (Isekai Fantasy)"    },
-                { value = "o",  label = "[異世界転生/転移] 文芸・SF・その他 (Isekai Other)" },
-                { value = "101", label = "[恋愛] 異世界 (Romance - Fantasy World)"           },
-                { value = "102", label = "[恋愛] 現実世界 (Romance - Real World)"            },
-                { value = "201", label = "[ファンタジー] ハイファンタジー (High Fantasy)"    },
-                { value = "202", label = "[ファンタジー] ローファンタジー (Low Fantasy)"     },
-                { value = "301", label = "[文芸] 純文学 (Literary Fiction)"                  },
-                { value = "302", label = "[文芸] ヒューマンドラマ (Human Drama)"             },
-                { value = "303", label = "[文芸] 歴史 (Historical)"                          },
-                { value = "304", label = "[文芸] 推理 (Mystery)"                             },
-                { value = "305", label = "[文芸] ホラー (Horror)"                            },
-                { value = "306", label = "[文芸] アクション (Action)"                        },
-                { value = "307", label = "[文芸] コメディー (Comedy)"                        },
-                { value = "401", label = "[SF] VRゲーム (VR Game)"                           },
-                { value = "402", label = "[SF] 宇宙 (Space)"                                 },
-                { value = "403", label = "[SF] 空想科学 (Science Fiction)"                   },
-                { value = "404", label = "[SF] パニック (Panic/Disaster)"                    },
-                { value = "9901", label = "[その他] 童話 (Fairy Tale)"                       },
-                { value = "9902", label = "[その他] 詩 (Poetry)"                             },
-                { value = "9903", label = "[その他] エッセイ (Essay)"                        },
-                { value = "9999", label = "[その他] その他 (Other)"                          },
+                { value = "",     label = "総ジャンル (All)"                                    },
+                { value = "i1",   label = "[異世界転生] 恋愛 (Isekai Romance)"                  },
+                { value = "i2",   label = "[異世界転生] ファンタジー (Isekai Fantasy)"          },
+                { value = "io",   label = "[異世界転生] 文芸・SF・その他 (Isekai Lit/SF/Other)" },
+                { value = "101",  label = "[恋愛] 異世界 (Romance - Fantasy World)"             },
+                { value = "102",  label = "[恋愛] 現実世界 (Romance - Real World)"              },
+                { value = "201",  label = "[ファンタジー] ハイファンタジー (High Fantasy)"      },
+                { value = "202",  label = "[ファンタジー] ローファンタジー (Low Fantasy)"       },
+                { value = "301",  label = "[文芸] 純文学 (Literary Fiction)"                    },
+                { value = "302",  label = "[文芸] ヒューマンドラマ (Human Drama)"               },
+                { value = "303",  label = "[文芸] 歴史 (Historical)"                            },
+                { value = "304",  label = "[文芸] 推理 (Mystery)"                               },
+                { value = "305",  label = "[文芸] ホラー (Horror)"                              },
+                { value = "306",  label = "[文芸] アクション (Action)"                          },
+                { value = "307",  label = "[文芸] コメディー (Comedy)"                          },
+                { value = "401",  label = "[SF] VRゲーム (VR Game)"                             },
+                { value = "402",  label = "[SF] 宇宙 (Space)"                                   },
+                { value = "403",  label = "[SF] 空想科学 (Science Fiction)"                     },
+                { value = "404",  label = "[SF] パニック (Panic/Disaster)"                      },
+                { value = "9901", label = "[その他] 童話 (Fairy Tale)"                          },
+                { value = "9902", label = "[その他] 詩 (Poetry)"                                },
+                { value = "9903", label = "[その他] エッセイ (Essay)"                           },
+                { value = "9999", label = "[その他] その他 (Other)"                             },
             }
         },
     }
