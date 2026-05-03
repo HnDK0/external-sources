@@ -23,21 +23,24 @@ function getCatalogList(index)
     return getCatalogFiltered(index, {})
 end
 
+-- ── Каталог с фильтрами ───────────────────────────────────────────────────────
 function getCatalogFiltered(index, filters)
     local page     = index + 1
     local period   = filters["period"]   or "total"
     local modifier = filters["modifier"] or "total"
-    local genre    = filters["genre"]    or ""
+    local genre    = filters["genre"]    or "" 
+    
     local url
-
     if genre == "" then
+        -- Без жанра: общий ранкинг
         local suffix = (modifier == "total") and (period .. "_total") or (period .. "_" .. modifier)
-        url = "https://yomou.syosetu.com/rank/list/type/" .. suffix .. "/?p=" .. tostring(page)
-    elseif genre:sub(1, 1) == "i" then
-        local isekaiSuffix = genre:sub(2)
-        url = "https://yomou.syosetu.com/rank/isekailist/type/" .. period .. "_" .. isekaiSuffix .. "/?p=" .. tostring(page)
+        url = baseUrl .. "rank/list/type/" .. suffix .. "/?p=" .. tostring(page)
+    elseif #genre == 1 then
+        -- Исекай-жанры (1, 2, o): isekailist
+        url = baseUrl .. "rank/isekailist/type/" .. period .. "_" .. genre .. "/?p=" .. tostring(page)
     else
-        url = "https://yomou.syosetu.com/rank/genrelist/type/" .. period .. "_" .. genre .. "/?p=" .. tostring(page)
+        -- Остальные жанры (101, 201...): genrelist
+        url = baseUrl .. "rank/genrelist/type/" .. period .. "_" .. genre .. "/?p=" .. tostring(page)
     end
 
     local r = http_get(url, { headers = HEADERS })
@@ -72,13 +75,13 @@ function getCatalogSearch(index, query)
     
     local items = {}
     
-    -- ✅ Ищем ВСЕ ссылки с href и фильтруем по паттерну URL новеллы
+    -- Ищем ВСЕ ссылки с href и фильтруем по паттерну URL новеллы
     -- Это обходит проблему с селекторами классов и вложенным парсингом
     for _, a in ipairs(html_select(r.body, "a[href]")) do
         local href = a.href or ""
         local title = a.text and string_trim(a.text) or ""
         
-        -- ✅ Фильтруем только ссылки на новеллы (ncode.syosetu.com/nXXXXX/)
+        -- Фильтруем только ссылки на новеллы (ncode.syosetu.com/nXXXXX/)
         if href:match("https?://ncode%.syosetu%.com/n[%w]+/?$") or 
            href:match("^/n[%w]+/?$") then
             if title ~= "" then
@@ -237,34 +240,34 @@ function getFilterList()
             }
         },
         {
-            type         = "select",
+            type         = "select", 
             key          = "genre",
-            label        = "Genre",
+            label        = "Ranking Genre",
             defaultValue = "",
             options = {
-                { value = "",     label = "総ジャンル (All)"                                    },
-                { value = "i1",   label = "[異世界転生] 恋愛 (Isekai Romance)"                  },
-                { value = "i2",   label = "[異世界転生] ファンタジー (Isekai Fantasy)"          },
-                { value = "io",   label = "[異世界転生] 文芸・SF・その他 (Isekai Lit/SF/Other)" },
-                { value = "101",  label = "[恋愛] 異世界 (Romance - Fantasy World)"             },
-                { value = "102",  label = "[恋愛] 現実世界 (Romance - Real World)"              },
-                { value = "201",  label = "[ファンタジー] ハイファンタジー (High Fantasy)"      },
-                { value = "202",  label = "[ファンタジー] ローファンタジー (Low Fantasy)"       },
-                { value = "301",  label = "[文芸] 純文学 (Literary Fiction)"                    },
-                { value = "302",  label = "[文芸] ヒューマンドラマ (Human Drama)"               },
-                { value = "303",  label = "[文芸] 歴史 (Historical)"                            },
-                { value = "304",  label = "[文芸] 推理 (Mystery)"                               },
-                { value = "305",  label = "[文芸] ホラー (Horror)"                              },
-                { value = "306",  label = "[文芸] アクション (Action)"                          },
-                { value = "307",  label = "[文芸] コメディー (Comedy)"                          },
-                { value = "401",  label = "[SF] VRゲーム (VR Game)"                             },
-                { value = "402",  label = "[SF] 宇宙 (Space)"                                   },
-                { value = "403",  label = "[SF] 空想科学 (Science Fiction)"                     },
-                { value = "404",  label = "[SF] パニック (Panic/Disaster)"                      },
-                { value = "9901", label = "[その他] 童話 (Fairy Tale)"                          },
-                { value = "9902", label = "[その他] 詩 (Poetry)"                                },
-                { value = "9903", label = "[その他] エッセイ (Essay)"                           },
-                { value = "9999", label = "[その他] その他 (Other)"                             },
+                { value = "",   label = "総ジャンル (All)"                                    },
+                { value = "1",  label = "[異世界転生/転移] 恋愛 (Isekai Romance)"            },
+                { value = "2",  label = "[異世界転生/転移] ファンタジー (Isekai Fantasy)"    },
+                { value = "o",  label = "[異世界転生/転移] 文芸・SF・その他 (Isekai Other)" },
+                { value = "101", label = "[恋愛] 異世界 (Romance - Fantasy World)"           },
+                { value = "102", label = "[恋愛] 現実世界 (Romance - Real World)"            },
+                { value = "201", label = "[ファンタジー] ハイファンタジー (High Fantasy)"    },
+                { value = "202", label = "[ファンタジー] ローファンタジー (Low Fantasy)"     },
+                { value = "301", label = "[文芸] 純文学 (Literary Fiction)"                  },
+                { value = "302", label = "[文芸] ヒューマンドラマ (Human Drama)"             },
+                { value = "303", label = "[文芸] 歴史 (Historical)"                          },
+                { value = "304", label = "[文芸] 推理 (Mystery)"                             },
+                { value = "305", label = "[文芸] ホラー (Horror)"                            },
+                { value = "306", label = "[文芸] アクション (Action)"                        },
+                { value = "307", label = "[文芸] コメディー (Comedy)"                        },
+                { value = "401", label = "[SF] VRゲーム (VR Game)"                           },
+                { value = "402", label = "[SF] 宇宙 (Space)"                                 },
+                { value = "403", label = "[SF] 空想科学 (Science Fiction)"                   },
+                { value = "404", label = "[SF] パニック (Panic/Disaster)"                    },
+                { value = "9901", label = "[その他] 童話 (Fairy Tale)"                       },
+                { value = "9902", label = "[その他] 詩 (Poetry)"                             },
+                { value = "9903", label = "[その他] エッセイ (Essay)"                        },
+                { value = "9999", label = "[その他] その他 (Other)"                          },
             }
         },
     }
