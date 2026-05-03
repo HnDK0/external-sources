@@ -1,7 +1,7 @@
 -- ── Метаданные ───────────────────────────────────────────────────────────────
 id       = "syosetu"
 name     = "Syosetu"
-version  = "1.0.6"
+version  = "1.0.7"
 baseUrl  = "https://ncode.syosetu.com/"
 language = "ja"
 icon     = "https://raw.githubusercontent.com/HnDK0/external-sources/main/icons/narou.png"
@@ -72,21 +72,35 @@ function getCatalogSearch(index, query)
     
     log_info("syosetu search: response length=" .. #r.body)
     
+    -- 🔍 Отладка: проверяем, находит ли парсер вообще элементы
+    local allLinks = html_select(r.body, "a")
+    log_info("syosetu search: total <a> tags: " .. #allLinks)
+    
+    local tlLinks = html_select(r.body, "a.tl")
+    log_info("syosetu search: total <a.tl> tags: " .. #tlLinks)
+    
     local items = {}
-    -- ✅ ПРОСТОЙ СЕЛЕКТОР: ищем все ссылки с классом "tl" и фильтруем по URL
-    -- Это обходит проблему с вложенными селекторами и container.html
-    for _, a in ipairs(html_select(r.body, "a.tl")) do
-        if a and a.href and a.text then
-            local novelUrl = a.href
-            local title = string_trim(a.text)
-            
-            -- ✅ Фильтр: только ссылки на новеллы (ncode.syosetu.com/nXXXXX)
-            if novelUrl:find("ncode%.syosetu%.com/n[%w]+/?$") or 
-               novelUrl:match("^/n[%w]+/?$") then
+    
+    for _, container in ipairs(html_select(r.body, ".searchkekka_box")) do
+        -- container:select() возвращает таблицу элементов внутри контейнера
+        local links = container:select(".novel_h a.tl")
+        if links and #links > 0 then
+            local a = links[1]
+            if a and a.href and a.text then
+                local novelUrl = a.href
+                local title = string_trim(a.text)
+                
                 log_info("syosetu search: found: " .. title .. " -> " .. novelUrl)
+                
+                -- Нормализуем относительные ссылки
+                local finalUrl = novelUrl
+                if novelUrl:sub(1,1) == "/" then
+                    finalUrl = "https://ncode.syosetu.com" .. novelUrl
+                end
+                
                 table.insert(items, { 
                     title = title, 
-                    url = novelUrl:sub(1,4)=="http" and novelUrl or "https://ncode.syosetu.com" .. novelUrl,
+                    url = finalUrl,
                     cover = "" 
                 })
             end
