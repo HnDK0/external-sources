@@ -1,7 +1,7 @@
 -- ── Метаданные ───────────────────────────────────────────────────────────────
 id       = "syosetu"
 name     = "Syosetu"
-version  = "1.0.5"
+version  = "1.0.6"
 baseUrl  = "https://ncode.syosetu.com/"
 language = "ja"
 icon     = "https://raw.githubusercontent.com/HnDK0/external-sources/main/icons/narou.png"
@@ -73,17 +73,17 @@ function getCatalogSearch(index, query)
     log_info("syosetu search: response length=" .. #r.body)
     
     local items = {}
-    -- ✅ ИДЕНТИЧНО РАНКИНГУ: вложенный парсинг через container.html
-    for _, container in ipairs(html_select(r.body, ".searchkekka_box")) do
-        local a = html_select_first(container.html, ".novel_h a.tl")
+    -- ✅ ПРОСТОЙ СЕЛЕКТОР: ищем все ссылки с классом "tl" и фильтруем по URL
+    -- Это обходит проблему с вложенными селекторами и container.html
+    for _, a in ipairs(html_select(r.body, "a.tl")) do
         if a and a.href and a.text then
-            local novelUrl = a.href  -- Ссылки в поиске УЖЕ полные (https://ncode.syosetu.com/...)
+            local novelUrl = a.href
             local title = string_trim(a.text)
             
-            -- ✅ Фильтр: только новеллы (ncode.syosetu.com/nXXXXX)
-            if novelUrl:match("https?://ncode%.syosetu%.com/n[%w]+/?$") or 
+            -- ✅ Фильтр: только ссылки на новеллы (ncode.syosetu.com/nXXXXX)
+            if novelUrl:find("ncode%.syosetu%.com/n[%w]+/?$") or 
                novelUrl:match("^/n[%w]+/?$") then
-                log_info("syosetu search: found: " .. title)
+                log_info("syosetu search: found: " .. title .. " -> " .. novelUrl)
                 table.insert(items, { 
                     title = title, 
                     url = novelUrl:sub(1,4)=="http" and novelUrl or "https://ncode.syosetu.com" .. novelUrl,
