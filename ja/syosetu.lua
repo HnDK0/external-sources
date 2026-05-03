@@ -70,8 +70,6 @@ function getCatalogSearch(index, query)
         return { items = {}, hasNext = false }
     end
     
-    log_info("syosetu search: response length=" .. #r.body)
-    
     local items = {}
     
     -- ✅ Ищем ВСЕ ссылки с href и фильтруем по паттерну URL новеллы
@@ -84,7 +82,6 @@ function getCatalogSearch(index, query)
         if href:match("https?://ncode%.syosetu%.com/n[%w]+/?$") or 
            href:match("^/n[%w]+/?$") then
             if title ~= "" then
-                log_info("syosetu search: found: " .. title .. " -> " .. href)
                 table.insert(items, { 
                     title = title, 
                     url = href:sub(1,4)=="http" and href or "https://ncode.syosetu.com" .. href,
@@ -93,8 +90,6 @@ function getCatalogSearch(index, query)
             end
         end
     end
-    
-    log_info("syosetu search: total items=" .. #items)
     
     -- hasNext: проверяем наличие кнопки NEXT
     local nextLink = html_select_first(r.body, "a.nextlink")
