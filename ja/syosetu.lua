@@ -1,10 +1,11 @@
 -- ── Метаданные ───────────────────────────────────────────────────────────────
 id       = "syosetu"
 name     = "Syosetu"
-version  = "1.0.1"
+version  = "1.0.2"
 baseUrl  = "https://yomou.syosetu.com/"
 language = "ja"
 icon     = "https://raw.githubusercontent.com/HnDK0/external-sources/main/icons/narou.png"
+
 local NCODE_BASE = "https://ncode.syosetu.com"
 local HEADERS = {
     ["User-Agent"] = "Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/120.0.0.0 Safari/537.36"
@@ -18,7 +19,7 @@ local function absUrl(href)
     return url_resolve(NCODE_BASE, href)
 end
 
--- ── Каталог (ранкинг) ────────────────────────────────────────────────────────
+-- ── Каталог (Ранкинг) ────────────────────────────────────────────────────────
 function getCatalogList(index)
     return getCatalogFiltered(index, {})
 end
@@ -40,28 +41,22 @@ function getCatalogFiltered(index, filters)
         url = baseUrl .. "rank/genrelist/type/" .. period .. "_" .. genre .. "/?p=" .. tostring(page)
     end
 
-    log_info("syosetu getCatalogFiltered: " .. url)
     local r = http_get(url, { headers = HEADERS })
-    if not r.success then
-        log_error("syosetu getCatalogFiltered: failed code=" .. tostring(r.code))
-        return { items = {}, hasNext = false }
-    end
+    if not r.success then return { items = {}, hasNext = false } end
 
-    -- ✅ Обновлено под новую верстку ранкинга
     local items = {}
+    -- Паттерн из wtrlab/novelbuddy: итерируем контейнеры, берём вложенный элемент
     for _, container in ipairs(html_select(r.body, ".p-ranklist-item")) do
         local a = html_select_first(container.html, ".p-ranklist-item__title a")
         if a and a.href then
             local novelUrl = absUrl(a.href)
-            if novelUrl:find(NCODE_BASE) or novelUrl:find("/n%d") then
+            if novelUrl:match("/n%w+/") then
                 table.insert(items, { title = string_trim(a.text), url = novelUrl, cover = "" })
             end
         end
     end
 
-    -- На ранкинге Syosetu всегда 50 элементов на страницу, кроме последней
-    local hasNext = #items >= 50
-    return { items = items, hasNext = hasNext }
+    return { items = items, hasNext = #items >= 50 }
 end
 
 -- ── Поиск ────────────────────────────────────────────────────────────────────
@@ -70,23 +65,23 @@ function getCatalogSearch(index, query)
     local url = baseUrl .. "search.php?order=hyoka&p=" .. tostring(page) .. "&word=" .. url_encode(query)
     local r = http_get(url, { headers = HEADERS })
     if not r.success then
-        log_error("syosetu getCatalogSearch: failed code=" .. tostring(r.code))
+        log_error("syosetu search failed: " .. url)
         return { items = {}, hasNext = false }
     end
 
-    -- ✅ Обновлено под верстку поиска
     local items = {}
     for _, container in ipairs(html_select(r.body, ".searchkekka_box")) do
         local a = html_select_first(container.html, ".novel_h a.tl")
         if a and a.href then
             local novelUrl = absUrl(a.href)
-            if novelUrl:find(NCODE_BASE) or novelUrl:find("/n%d") then
+            -- Фильтруем только ncode (новеллы), игнорируем серии/авторов
+            if novelUrl:match("/n%w+/") then
                 table.insert(items, { title = string_trim(a.text), url = novelUrl, cover = "" })
             end
         end
     end
 
-    -- Поиск выдает 20 результатов. Проверяем наличие кнопки NEXT или кол-во элементов
+    -- Syosetu добавляет a.nextlink если есть следующая страница
     local nextLink = html_select_first(r.body, "a.nextlink")
     local hasNext = (nextLink ~= nil) or (#items >= 20)
     return { items = items, hasNext = hasNext }
@@ -96,19 +91,19 @@ end
 function getBookTitle(bookUrl)
     local r = http_get(bookUrl, { headers = HEADERS })
     if not r.success then return nil end
-    -- ✅ Обновлено: h1.p-novel__title
     local el = html_select_first(r.body, ".p-novel__title")
     return el and string_trim(el.text) or nil
 end
 
 function getBookCoverImageUrl(bookUrl)
+    -- На yomou.syosetu.com обложки в HTML не отдаются (только og:image с заглушкой)
     return nil
 end
 
 function getBookDescription(bookUrl)
     local r = http_get(bookUrl, { headers = HEADERS })
     if not r.success then return nil end
-    -- ✅ Обновлено: #novel_ex или .p-novel__summary
+    -- Проверяем оба возможных селектора описания
     local el = html_select_first(r.body, "#novel_ex")
     if el and string_trim(el.text) ~= "" then return string_trim(el.text) end
     el = html_select_first(r.body, ".p-novel__summary")
@@ -119,14 +114,13 @@ end
 function getChapterList(bookUrl)
     bookUrl = bookUrl:gsub("/+$", "") .. "/"
     local chapters = {}
-
     local r = http_get(bookUrl, { headers = HEADERS })
     if not r.success then
-        log_error("syosetu getChapterList: failed code=" .. tostring(r.code))
+        log_error("syosetu getChapterList failed: " .. bookUrl)
         return {}
     end
 
-    -- Проверка на однотомник/короткую историю (нет списка, только текст)
+    -- Проверка на короткую историю/однотомник (текст есть, списка глав нет)
     local hasText = html_select_first(r.body, ".p-novel__text")
     local hasList = html_select_first(r.body, ".p-eplist__subtitle")
     if hasText and not hasList then
@@ -136,15 +130,15 @@ function getChapterList(bookUrl)
         return chapters
     end
 
-    -- Пагинация индекса глав
+    -- Определение максимальной страницы пагинации
     local totalPages = 1
-    for _, a in ipairs(html_select(r.body, ".c-pager a.c-pager__item")) do
-        local n = string.match(a.href or "", "p=(%d+)")
-        if n and tonumber(n) > totalPages then totalPages = tonumber(n) end
+    local lastLink = html_select_first(r.body, ".c-pager__item--last")
+    if lastLink and lastLink.href then
+        local p = string.match(lastLink.href, "p=(%d+)")
+        if p then totalPages = tonumber(p) end
     end
 
     local function parsePage(html)
-        -- ✅ Обновлено: .p-eplist__subtitle
         for _, a in ipairs(html_select(html, ".p-eplist__subtitle")) do
             local href = a.href or ""
             if href ~= "" then
@@ -156,19 +150,14 @@ function getChapterList(bookUrl)
         end
     end
 
-    parsePage(r.body)
+    parsePage(r.body) -- ✅ r.body передан корректно
 
     for p = 2, totalPages do
-        sleep(200)
+        sleep(300) -- Задержка чтобы не получить бан по IP
         local pr = http_get(bookUrl .. "?p=" .. tostring(p), { headers = HEADERS })
-        if pr.success then
-            parsePage(pr.body)
-        else
-            log_error("syosetu getChapterList: page " .. p .. " failed code=" .. tostring(pr.code))
-        end
+        if pr.success then parsePage(pr.body) end
     end
 
-    log_info("syosetu getChapterList: loaded " .. tostring(#chapters) .. " chapters")
     return chapters
 end
 
@@ -176,45 +165,35 @@ end
 function getChapterListHash(bookUrl)
     local r = http_get(bookUrl, { headers = HEADERS })
     if not r.success then return nil end
-    -- ✅ Обновлено: дата последнего обновления теперь в .p-novel__date-published
     local el = html_select_first(r.body, ".p-novel__date-published")
-    if el then return string_trim(el.text) end
-    return nil
+    return el and string_trim(el.text) or nil
 end
 
 -- ── Текст главы ──────────────────────────────────────────────────────────────
 function getChapterText(html, url)
     if not html or html == "" then
         local r = http_get(url, { headers = HEADERS })
-        if not r.success then
-            log_error("syosetu getChapterText: fetch failed code=" .. tostring(r.code))
-            return ""
-        end
+        if not r.success then return "" end
         html = r.body
     end
 
-    -- ✅ Обновлено: заголовок главы
     local titleText = ""
     local titleEl = html_select_first(html, ".p-novel__title")
     if titleEl then titleText = string_trim(titleEl.text) end
 
-    -- ✅ Обновлено: основной текст главы
     local bodyEl = html_select_first(html, ".p-novel__text")
-    if not bodyEl then
-        log_error("syosetu getChapterText: .p-novel__text not found")
-        return ""
-    end
+    if not bodyEl then return "" end
 
+    -- Убираем скрипты/стили, извлекаем чистый текст
     local cleaned = html_remove(bodyEl.html, "script", "style")
     local text = html_text("<div>" .. cleaned .. "</div>")
     text = string_normalize(text)
     text = string_trim(text)
 
-    -- Не дублируем название книги, если оно совпадает с заголовком главы
-    if titleText ~= "" and titleText ~= (getBookTitle(url) or "") then
+    -- Добавляем заголовок, если его нет в начале текста
+    if titleText ~= "" and not text:sub(1, #titleText):find(titleText, 1, true) then
         text = titleText .. "\n\n" .. text
     end
-
     return text
 end
 
