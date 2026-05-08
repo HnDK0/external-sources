@@ -1,0 +1,9 @@
+language: "fr"
+name: "Fr"
+sources:
+  - id: "novelfrance"
+    name: "NovelFrance"
+    version: "1.0.0"
+    url: "https://raw.githubusercontent.com/HnDK0/external-sources/refs/heads/main/fr/novelfrance.lua"
+    icon: "https://raw.githubusercontent.com/HnDK0/external-sources/main/icons/novelfrance.png"
+    language: "fr"

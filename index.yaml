@@ -2,6 +2,9 @@ languages:
   en:
     name: "English"
     url: "https://raw.githubusercontent.com/HnDK0/external-sources/refs/heads/main/en/index.yaml"
+  fr:
+    name: "Fr"
+    url: "https://raw.githubusercontent.com/HnDK0/external-sources/refs/heads/main/fr/index.yaml"
   id:
     name: "Indonesian"
     url: "https://raw.githubusercontent.com/HnDK0/external-sources/refs/heads/main/id/index.yaml"
