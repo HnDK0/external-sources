@@ -1,7 +1,7 @@
 -- ── Метаданные ───────────────────────────────────────────────────────────────
 id       = "novelfrance"
 name     = "NovelFrance"
-version  = "1.0.8"
+version  = "1.0.9"
 baseUrl  = "https://novelfrance.fr"
 language = "fr"
 icon     = "https://raw.githubusercontent.com/HnDK0/external-sources/main/icons/novelfrance.png"
@@ -154,6 +154,14 @@ end
 function getBookDescription(bookUrl)
     local r = httpGet(bookUrl)
     if not r or not r.success then return nil end
+
+    -- Ищем див с описанием: внутри main main находится div с классом whitespace-pre-line
+    local descEl = html_select_first(r.body, "main main div[class*='whitespace-pre-line']")
+    if descEl and descEl.text and string_trim(descEl.text) ~= "" then
+        return string_trim(descEl.text)
+    end
+
+    -- fallback: более общий поиск, удаляем лишние элементы
     local cleaned = html_remove(r.body, "script", "style", "nav", "footer", "header")
     local mainEl = html_select_first(cleaned, "main")
     if not mainEl then return nil end
@@ -232,7 +240,7 @@ function getChapterListHash(bookUrl)
     
     local ok, data = pcall(json_parse, r.body)
     if not ok or not data then return nil end
-    
+
     -- Используем total как хеш
     return tostring(data.total or "")
 end
@@ -352,12 +360,14 @@ end
 
 function getCatalogFiltered(index, filters)
     local page = index + 1
+    
     local sort        = filters["sort"]          or "updated"
     local status      = filters["status"]        or "all"
     local genres_inc  = filters["genres_included"] or {}
     local genres_exc  = filters["genres_excluded"] or {}
     
-    local url = baseUrl .. "/search?page=" .. tostring(page)
+    -- Строим URL на основе /browse (рабочий эндпоинт вместо /search)
+    local url = baseUrl .. "/browse?page=" .. tostring(page)
     
     local sortMap = {
         ["updated"] = "updated",
@@ -369,13 +379,15 @@ function getCatalogFiltered(index, filters)
     url = url .. "&sort=" .. sortVal
     
     if status ~= "all" then url = url .. "&status=" .. status end
-    if #genres_inc  > 0 then url = url .. "&genres=" .. table.concat(genres_inc, ",") end
-    if #genres_exc  > 0 then url = url .. "&excludeGenres=" .. table.concat(genres_exc, ",") end
-
+    -- Browse поддерживает множественные жанры через запятую
+    if #genres_inc > 0 then
+        url = url .. "&genres=" .. table.concat(genres_inc, ",")
+    end
+    
     local r = httpGet(url)
     if not r or not r.success then return { items = {}, hasNext = false } end
 
-    -- Парсим HTML результаты поиска
+    -- Парсим HTML результаты поиска - структура карточек та же, что и в /browse
     local links = html_select(r.body, "main a[href*='/novel/']")
     local items = {}
     local seen = {}
