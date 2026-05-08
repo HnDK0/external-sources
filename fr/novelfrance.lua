@@ -1,7 +1,7 @@
 -- ── Метаданные ───────────────────────────────────────────────────────────────
 id       = "novelfrance"
 name     = "NovelFrance"
-version  = "1.0.4"
+version  = "1.0.5"
 baseUrl  = "https://novelfrance.fr"
 language = "fr"
 icon     = "https://raw.githubusercontent.com/HnDK0/external-sources/main/icons/novelfrance.png"
@@ -28,10 +28,26 @@ local function extractNovelSlug(url)
     return slug or ""
 end
 
--- Извлекает номер главы из URL /novel/{slug}/chapter-{num}
-local function extractChapterNumber(url)
-    local num = url:match("chapter%-?(%d+)")
-    return num and tonumber(num) or 0
+-- Парсит главы из HTML страницы новеллы
+-- Должна быть объявлена ДО getChapterList, т.к. вызывается из него
+local function parseChaptersFromHtml(html, novelSlug)
+    local chapters = {}
+    -- Ссылки на главы: /novel/{slug}/chapter-{num}
+    local pattern = "/novel/" .. novelSlug .. "/chapter%-"
+    local chapterLinks = html_select(html, "a[href*='" .. pattern .. "']")
+    
+    for _, link in ipairs(chapterLinks) do
+        local href = link.href or ""
+        local titleText = link.text or ""
+        local title = string_trim(titleText)
+        if title ~= "" then
+            table.insert(chapters, {
+                title = string_clean(title),
+                url   = absUrl(href)
+            })
+        end
+    end
+    return chapters
 end
 
 -- ── Каталог ──────────────────────────────────────────────────────────────────
@@ -48,7 +64,6 @@ function getCatalogList(index)
 
     for _, link in ipairs(links) do
         local href = link.href or ""
-        -- Проверяем что это карточка новеллы (имеет h3), а не ссылка из футера
         local titleEl = html_select_first(link.html, "h3")
         if titleEl then
             local slug = extractNovelSlug(href)
@@ -74,7 +89,7 @@ function getCatalogList(index)
             break
         end
     end
-    -- fallback: если кнопок пагинации нет, но вернулось >= 20 элементов
+    -- fallback
     if not hasNext and #items >= 20 then
         hasNext = true
     end
@@ -117,7 +132,6 @@ end
 function getBookCoverImageUrl(bookUrl)
     local r = http_get(bookUrl)
     if not r or not r.success then return nil end
-    -- Первое изображение в main (обложка)
     local cover = html_attr(r.body, "main img", "src")
     return cover ~= "" and absUrl(cover) or nil
 end
@@ -125,25 +139,19 @@ end
 function getBookDescription(bookUrl)
     local r = http_get(bookUrl)
     if not r or not r.success then return nil end
-    -- Описание идёт текстом после заголовка h1, до секции с главами
-    -- Ищем большой блок текста перед секцией глав
+    -- Описание на странице новеллы — текст под обложкой/заголовком, до секции глав
     local cleaned = html_remove(r.body, "script", "style", "nav", "footer", "header")
     local mainEl = html_select_first(cleaned, "main")
     if not mainEl then return nil end
     local text = mainEl.text
     if text and text ~= "" then
-        text = applyStandardContentTransforms(text)
-        -- Обрезаем слишком длинный текст (описание обычно до 500 символов)
-        local desc = ""
+        -- Ищем первый большой блок текста (описание)
         for line in string.gmatch(text, "[^\n]+") do
             local trimmed = string_trim(line)
-            if #desc + #trimmed < 1000 then
-                desc = desc ~= "" and desc .. " " .. trimmed or trimmed
-            else
-                break
+            if #trimmed > 50 then
+                return string_trim(trimmed)
             end
         end
-        return desc ~= "" and desc or nil
     end
     return nil
 end
@@ -152,7 +160,6 @@ function getBookGenres(bookUrl)
     local r = http_get(bookUrl)
     if not r or not r.success then return {} end
     local genres = {}
-    -- Жанры — это ссылки с href /browse?genre=...
     local genreLinks = html_select(r.body, "a[href*='/browse?genre=']")
     for _, link in ipairs(genreLinks) do
         local name = string_trim(link.text)
@@ -212,32 +219,9 @@ function getChapterList(bookUrl)
     return reversed
 end
 
--- Парсит главы из HTML страницы новеллы
-local function parseChaptersFromHtml(html, novelSlug)
-    local chapters = {}
-    -- Ссылки на главы: /novel/{slug}/chapter-{num}
-    local pattern = "/novel/" .. novelSlug .. "/chapter%-"
-    local chapterLinks = html_select(html, "a[href*='" .. pattern .. "']")
-    
-    for _, link in ipairs(chapterLinks) do
-        local href = link.href or ""
-        local titleText = link.text or ""
-        -- Очищаем заголовок: убираем номер главы в начале
-        local title = string_trim(titleText)
-        if title ~= "" then
-            table.insert(chapters, {
-                title = string_clean(title),
-                url   = absUrl(href)
-            })
-        end
-    end
-    return chapters
-end
-
 function getChapterListHash(bookUrl)
     local r = http_get(bookUrl)
     if not r or not r.success then return nil end
-    -- Используем URL последней главы как хеш
     local novelSlug = extractNovelSlug(bookUrl)
     if novelSlug == "" then return nil end
     local pattern = "/novel/" .. novelSlug .. "/chapter%-"
@@ -264,7 +248,6 @@ function getChapterText(html, chapterUrl)
     )
 
     -- Ищем контейнер с текстом главы
-    -- На странице главы основной текст — внутри вложенного main
     local mainEl = html_select_first(cleaned, "main main")
     if not mainEl then
         mainEl = html_select_first(cleaned, "main")
@@ -354,7 +337,6 @@ function getCatalogFiltered(index, filters)
     
     local url = baseUrl .. "/search?page=" .. tostring(page)
     
-    -- Маппинг sort
     local sortMap = {
         ["updated"] = "updated",
         ["popular"] = "popular",
