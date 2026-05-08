@@ -1,7 +1,7 @@
 -- ── Метаданные ───────────────────────────────────────────────────────────────
 id       = "novelfrance"
 name     = "NovelFrance"
-version  = "1.0.1"
+version  = "1.0.2"
 baseUrl  = "https://novelfrance.fr"
 language = "fr"
 icon     = "https://raw.githubusercontent.com/HnDK0/external-sources/main/icons/novelfrance.png"
@@ -14,13 +14,70 @@ local function absUrl(href)
     return url_resolve(baseUrl, href)
 end
 
--- Извлечение __NEXT_DATA__ из HTML
-local function fetchNextData(url)
-    local r = http_get(url)
-    if not r or not r.success then return nil end
-    local json_str = r.body:match('<script[^>]+id="__NEXT_DATA__"[^>]*>([^<]+)</script>')
-    if not json_str then return nil end
-    return json_parse(json_str)
+--  Извлечение данных из RSC payload (Next.js App Router)
+local function extractRscData(body, key)
+    -- Ищем pattern вида: "key":{...} внутри self.__next_f.push блоков
+    -- Ключ может быть в начале строки или после запятой
+    local pattern = '"' .. key .. '":(%b{})'
+    
+    for json_str in body:gmatch(pattern) do
+        -- Декодируем экранированные кавычки: \" → "
+        local clean = json_str:gsub('\\"', '"'):gsub('\\\\', '\\')
+        
+        -- Пытаемся распарсить как объект с ключом
+        local wrapped = '{' .. key .. ':' .. clean .. '}'
+        local data = json_parse(wrapped)
+        if data and data[key] then
+            return data[key]
+        end
+        
+        -- Пробуем распарсить как чистый объект (если ключ был обёрткой)
+        local direct = json_parse(clean)
+        if direct then return direct end
+    end
+    
+    return nil
+end
+
+-- Альтернативный метод: поиск по всему телу без %b{} (более надёжный для вложенного JSON)
+local function extractRscDataRobust(body, key)
+    -- Ищем "key": и затем извлекаем объект, считая скобки
+    local start_pos = body:find('"' .. key .. '":', 1, true)
+    if not start_pos then return nil end
+    
+    local json_start = body:find('{', start_pos)
+    if not json_start then return nil end
+    
+    -- Считаем вложенные скобки
+    local depth = 0
+    local in_string = false
+    local escape_next = false
+    
+    for i = json_start, #body do
+        local char = body:sub(i, i)
+        
+        if escape_next then
+            escape_next = false
+        elseif char == '\\' then
+            escape_next = true
+        elseif char == '"' and not escape_next then
+            in_string = not in_string
+        elseif not in_string then
+            if char == '{' then
+                depth = depth + 1
+            elseif char == '}' then
+                depth = depth - 1
+                if depth == 0 then
+                    local json_str = body:sub(json_start, i)
+                    local clean = json_str:gsub('\\"', '"'):gsub('\\\\', '\\')
+                    local data = json_parse(clean)
+                    if data then return data end
+                    return nil
+                end
+            end
+        end
+    end
+    return nil
 end
 
 local function applyStandardContentTransforms(text)
@@ -28,9 +85,9 @@ local function applyStandardContentTransforms(text)
     text = string_normalize(text)
     local domain = baseUrl:gsub("https?://", ""):gsub("^www%.", ""):gsub("/$", "")
     text = regex_replace(text, "(?i)" .. domain .. ".?\n", " ")
-    text = regex_replace(text, "(?i)\A[\s\p{Z}\uFEFF]((Chapitre\s+\d+|Chapter\s+\d+)[^\n\r]*[\n\r\s]*)+", " ")
-    text = regex_replace(text, "(?im)^\s*(Traducteur|Éditeur|Relecteur|Source)[:\s][^\n\r]{0,70}(\r?\n|$)", " ")
-    text = regex_replace(text, "(?i)(discord\.gg/\S+|https://discord\.gg/\S+)", " ")
+    text = regex_replace(text, "(?i)\A[\s\p{Z}\uFEFF]((Chapitre\\s+\\d+|Chapter\\s+\\d+)[^\n\r]*[\n\r\s]*)+", " ")
+    text = regex_replace(text, "(?im)^\\s*(Traducteur|Éditeur|Relecteur|Source)[:\\s][^\n\r]{0,70}(\r?\n|$)", " ")
+    text = regex_replace(text, "(?i)(discord\\.gg/\\S+|https://discord\\.gg/\\S+)", " ")
     text = string_trim(text)
     return text
 end
@@ -39,17 +96,19 @@ end
 function getCatalogList(index)
     local page = index + 1
     local url = baseUrl .. "/browse?page=" .. tostring(page)
-    local nd = fetchNextData(url)
-    if not nd then return { items = {}, hasNext = false } end
+    local r = http_get(url)
+    if not r or not r.success then return { items = {}, hasNext = false } end
     
-    local props = nd.props and nd.props.pageProps
-    local data = props and props.initialData
-    if not data then return { items = {}, hasNext = false } end
+    -- 🔥 Используем новый RSC-парсер
+    local initialData = extractRscDataRobust(r.body, "initialData")
+    if not initialData or not initialData.searchResults then 
+        return { items = {}, hasNext = false } 
+    end
 
     local items = {}
-    for _, novel in ipairs(data.searchResults.novels or {}) do
-        local slug = novel.slug or ""
-        if slug ~= "" then
+    for _, novel in ipairs(initialData.searchResults.novels or {}) do
+        local slug = novel.slug
+        if slug and slug ~= "" then
             table.insert(items, {
                 title = string_clean(novel.title or ""),
                 url   = absUrl("/novel/" .. slug),
@@ -58,11 +117,15 @@ function getCatalogList(index)
         end
     end
 
-    return { items = items, hasNext = data.searchResults.hasMore == true }
+    return { 
+        items = items, 
+        hasNext = initialData.searchResults.hasMore == true 
+    }
 end
 
 -- ── Поиск ────────────────────────────────────────────────────────────────────
 function getCatalogSearch(index, query)
+    log_debug("RSC Body preview: " .. r.body:sub(1, 3000))
     if index > 0 then return { items = {}, hasNext = false } end
     local r = http_get(baseUrl .. "/api/search/autocomplete?q=" .. url_encode(query))
     if not r or not r.success then return { items = {}, hasNext = false } end
@@ -86,9 +149,14 @@ end
 
 -- ── Детали книги ─────────────────────────────────────────────────────────────
 local function fetchNovelData(bookUrl)
-    local nd = fetchNextData(bookUrl)
-    if not nd then return nil end
-    return nd.props and nd.props.pageProps and nd.props.pageProps.initialNovel
+    local r = http_get(bookUrl)
+    if not r or not r.success then return nil end
+    return extractRscDataRobust(r.body, "initialNovel")
+end
+
+function getBookTitle(bookUrl)
+    local n = fetchNovelData(bookUrl)
+    return n and string_clean(n.title) or nil
 end
 
 function getBookCoverImageUrl(bookUrl)
@@ -116,28 +184,29 @@ end
 
 -- ── Список глав ──────────────────────────────────────────────────────────────
 function getChapterList(bookUrl)
-    local nd = fetchNextData(bookUrl)
-    if not nd then return {} end
+    local r = http_get(bookUrl)
+    if not r or not r.success then return {} end
     
-    local props = nd.props and nd.props.pageProps
-    local resp = props and props.initialChaptersResponse
-    if not resp then return {} end
-
-    -- Безопасно извлекаем слаг новеллы
-    local novelSlug = (props and props.initialNovel and props.initialNovel.slug) or (bookUrl:match("novel/([^/]+)") or "")
-
+    -- 🔥 Извлекаем оба ключевых блока
+    local initialNovel = extractRscDataRobust(r.body, "initialNovel")
+    local initialChapters = extractRscDataRobust(r.body, "initialChaptersResponse")
+    
+    if not initialChapters or not initialChapters.chapters then return {} end
+    
+    local novelSlug = initialNovel and initialNovel.slug or bookUrl:match("novel/([^/]+)")
+    
     local chapters = {}
-    for _, ch in ipairs(resp.chapters or {}) do
-        local slug = ch.slug or ""
-        if slug ~= "" then
+    for _, ch in ipairs(initialChapters.chapters) do
+        local slug = ch.slug
+        if slug and slug ~= "" then
             table.insert(chapters, {
-                title = string_clean(ch.title or ("Chapitre " .. tostring(ch.chapterNumber))),
+                title = string_clean(ch.title or "Chapitre " .. tostring(ch.chapterNumber)),
                 url   = absUrl("/novel/" .. novelSlug .. "/" .. slug)
             })
         end
     end
-
-    -- Сайт отдает в обратном порядке (новые → старые), разворачиваем
+    
+    -- Сайт отдаёт в обратном порядке (новые → старые), разворачиваем
     local reversed = {}
     for i = #chapters, 1, -1 do table.insert(reversed, chapters[i]) end
     return reversed
@@ -151,34 +220,32 @@ end
 
 -- ── Текст главы ──────────────────────────────────────────────────────────────
 function getChapterText(html, chapterUrl)
-    local json_str = html and html:match('<script[^>]+id="__NEXT_DATA__"[^>]*>([^<]+)</script>')
-    -- Если в html нет данных, грузим напрямую
-    if not json_str or json_str == "" then
+    -- 🔥 Ищем initialChapter в переданном HTML
+    local initialChapter = extractRscDataRobust(html or "", "initialChapter")
+    
+    -- Если не найдено — грузим страницу напрямую
+    if not initialChapter then
         local r = http_get(chapterUrl)
         if r and r.success then
-            json_str = r.body:match('<script[^>]+id="__NEXT_DATA__"[^>]*>([^<]+)</script>')
+            initialChapter = extractRscDataRobust(r.body, "initialChapter")
         end
     end
-
-    if not json_str then return "" end
-    local data = json_parse(json_str)
-    if not data then return "" end
-
-    local ch = data.props and data.props.pageProps and data.props.pageProps.initialChapter
-    if not ch then return "" end
-
+    
+    if not initialChapter then return "" end
+    
+    -- Поддержка двух форматов контента
     local paragraphs = {}
-    -- Поддержка разных структур контента
-    if ch.paragraphs and type(ch.paragraphs) == "table" then
-        for _, p in ipairs(ch.paragraphs) do
+    
+    if initialChapter.paragraphs and type(initialChapter.paragraphs) == "table" then
+        for _, p in ipairs(initialChapter.paragraphs) do
             if p.content and type(p.content) == "string" and p.content ~= "" then
                 table.insert(paragraphs, string_trim(p.content))
             end
         end
-    elseif ch.content and type(ch.content) == "string" then
-        table.insert(paragraphs, string_trim(ch.content))
+    elseif initialChapter.content and type(initialChapter.content) == "string" then
+        table.insert(paragraphs, string_trim(initialChapter.content))
     end
-
+    
     if #paragraphs == 0 then return "" end
     return applyStandardContentTransforms(table.concat(paragraphs, "\n\n"))
 end
@@ -281,15 +348,15 @@ function getCatalogFiltered(index, filters)
     if #genres_inc  > 0 then url = url .. "&genres=" .. table.concat(genres_inc, ",") end
     if #genres_exc  > 0 then url = url .. "&excludeGenres=" .. table.concat(genres_exc, ",") end
 
-    local nd = fetchNextData(url)
-    if not nd then return { items = {}, hasNext = false } end
-
-    local props = nd.props and nd.props.pageProps
-    local data  = props and props.initialResults
-    if not data then return { items = {}, hasNext = false } end
+    local r = http_get(url)
+    if not r or not r.success then return { items = {}, hasNext = false } end
+    
+    -- 🔥 RSC-парсинг для filtered каталога
+    local initialResults = extractRscDataRobust(r.body, "initialResults")
+    if not initialResults then return { items = {}, hasNext = false } end
 
     local items = {}
-    for _, novel in ipairs(data.novels or {}) do
+    for _, novel in ipairs(initialResults.novels or {}) do
         local slug = novel.slug or ""
         if slug ~= "" then
             table.insert(items, {
@@ -300,5 +367,5 @@ function getCatalogFiltered(index, filters)
         end
     end
 
-    return { items = items, hasNext = data.hasMore == true }
+    return { items = items, hasNext = initialResults.hasMore == true }
 end
