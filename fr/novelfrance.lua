@@ -1,7 +1,7 @@
 -- ── Метаданные ───────────────────────────────────────────────────────────────
 id       = "novelfrance"
 name     = "NovelFrance"
-version  = "1.0.0"
+version  = "1.0.1"
 baseUrl  = "https://novelfrance.fr"
 language = "fr"
 icon     = "https://raw.githubusercontent.com/HnDK0/external-sources/main/icons/novelfrance.png"
@@ -27,10 +27,10 @@ local function applyStandardContentTransforms(text)
     if not text or text == "" then return "" end
     text = string_normalize(text)
     local domain = baseUrl:gsub("https?://", ""):gsub("^www%.", ""):gsub("/$", "")
-    text = regex_replace(text, "(?i)" .. domain .. ".*?\n", "")
-    text = regex_replace(text, "(?i)\A[\s\p{Z}\uFEFF]*((Chapitre\s+\d+|Chapter\s+\d+)[^\n\r]*[\n\r\s]*)+", "")
-    text = regex_replace(text, "(?im)^\\s*(Traducteur|Éditeur|Relecteur|Source)[:\\s][^\\n\\r]{0,70}(\\r?\\n|$)", "")
-    text = regex_replace(text, "(?i)(discord\\.gg/\\S+|https://discord\\.gg/\\S+)", "")
+    text = regex_replace(text, "(?i)" .. domain .. ".?\n", " ")
+    text = regex_replace(text, "(?i)\A[\s\p{Z}\uFEFF]((Chapitre\s+\d+|Chapter\s+\d+)[^\n\r]*[\n\r\s]*)+", " ")
+    text = regex_replace(text, "(?im)^\s*(Traducteur|Éditeur|Relecteur|Source)[:\s][^\n\r]{0,70}(\r?\n|$)", " ")
+    text = regex_replace(text, "(?i)(discord\.gg/\S+|https://discord\.gg/\S+)", " ")
     text = string_trim(text)
     return text
 end
@@ -41,7 +41,7 @@ function getCatalogList(index)
     local url = baseUrl .. "/browse?page=" .. tostring(page)
     local nd = fetchNextData(url)
     if not nd then return { items = {}, hasNext = false } end
-
+    
     local props = nd.props and nd.props.pageProps
     local data = props and props.initialData
     if not data then return { items = {}, hasNext = false } end
@@ -66,7 +66,6 @@ function getCatalogSearch(index, query)
     if index > 0 then return { items = {}, hasNext = false } end
     local r = http_get(baseUrl .. "/api/search/autocomplete?q=" .. url_encode(query))
     if not r or not r.success then return { items = {}, hasNext = false } end
-
     local results = json_parse(r.body)
     if not results or type(results) ~= "table" then return { items = {}, hasNext = false } end
 
@@ -92,11 +91,6 @@ local function fetchNovelData(bookUrl)
     return nd.props and nd.props.pageProps and nd.props.pageProps.initialNovel
 end
 
-function getBookTitle(bookUrl)
-    local n = fetchNovelData(bookUrl)
-    return n and string_clean(n.title) or nil
-end
-
 function getBookCoverImageUrl(bookUrl)
     local n = fetchNovelData(bookUrl)
     return n and absUrl(n.coverImage) or nil
@@ -105,8 +99,9 @@ end
 function getBookDescription(bookUrl)
     local n = fetchNovelData(bookUrl)
     if not n or not n.description then return nil end
-    local desc = n.description:gsub("<br%s*/?>", "\n"):gsub("<[^>]+>", " ")
-    return string_trim(desc) ~= "" and string_trim(desc) or nil
+    local desc = n.description:gsub("<br%s*/?>", "\n"):gsub("<[^>]+>", "  ")
+    desc = string_trim(desc)
+    return desc ~= "" and desc or nil
 end
 
 function getBookGenres(bookUrl)
@@ -123,9 +118,13 @@ end
 function getChapterList(bookUrl)
     local nd = fetchNextData(bookUrl)
     if not nd then return {} end
-
-    local resp = nd.props and nd.props.pageProps and nd.props.pageProps.initialChaptersResponse
+    
+    local props = nd.props and nd.props.pageProps
+    local resp = props and props.initialChaptersResponse
     if not resp then return {} end
+
+    -- Безопасно извлекаем слаг новеллы
+    local novelSlug = (props and props.initialNovel and props.initialNovel.slug) or (bookUrl:match("novel/([^/]+)") or "")
 
     local chapters = {}
     for _, ch in ipairs(resp.chapters or {}) do
@@ -133,7 +132,7 @@ function getChapterList(bookUrl)
         if slug ~= "" then
             table.insert(chapters, {
                 title = string_clean(ch.title or ("Chapitre " .. tostring(ch.chapterNumber))),
-                url   = absUrl("/novel/" .. (bookUrl:match("novel/([^/]+)") or "") .. "/" .. slug)
+                url   = absUrl("/novel/" .. novelSlug .. "/" .. slug)
             })
         end
     end
@@ -147,15 +146,13 @@ end
 function getChapterListHash(bookUrl)
     local n = fetchNovelData(bookUrl)
     if not n then return nil end
-    -- Используем дату последнего обновления или количество глав
     return n.lastChapterAt or tostring(n._count and n._count.chapters)
 end
 
 -- ── Текст главы ──────────────────────────────────────────────────────────────
 function getChapterText(html, chapterUrl)
     local json_str = html and html:match('<script[^>]+id="__NEXT_DATA__"[^>]*>([^<]+)</script>')
-    
-    -- Если в html нет данных (например, передан пустой фрагмент), грузим напрямую
+    -- Если в html нет данных, грузим напрямую
     if not json_str or json_str == "" then
         local r = http_get(chapterUrl)
         if r and r.success then
@@ -171,10 +168,15 @@ function getChapterText(html, chapterUrl)
     if not ch then return "" end
 
     local paragraphs = {}
-    for _, p in ipairs(ch.paragraphs or {}) do
-        if p.content and p.content ~= "" then
-            table.insert(paragraphs, string_trim(p.content))
+    -- Поддержка разных структур контента
+    if ch.paragraphs and type(ch.paragraphs) == "table" then
+        for _, p in ipairs(ch.paragraphs) do
+            if p.content and type(p.content) == "string" and p.content ~= "" then
+                table.insert(paragraphs, string_trim(p.content))
+            end
         end
+    elseif ch.content and type(ch.content) == "string" then
+        table.insert(paragraphs, string_trim(ch.content))
     end
 
     if #paragraphs == 0 then return "" end
@@ -271,13 +273,13 @@ function getCatalogFiltered(index, filters)
     local max_ch      = filters["maxChapters"]   or ""
     local genres_inc  = filters["genres_included"]  or {}
     local genres_exc  = filters["genres_excluded"]  or {}
-
+    
     local url = baseUrl .. "/search?page=" .. tostring(page) .. "&sort=" .. sort
     if status ~= "all" then url = url .. "&status=" .. status end
     if min_ch ~= ""   then url = url .. "&minChapters=" .. url_encode(min_ch) end
     if max_ch ~= ""   then url = url .. "&maxChapters=" .. url_encode(max_ch) end
-    if #genres_inc > 0 then url = url .. "&genres=" .. table.concat(genres_inc, ",") end
-    if #genres_exc > 0 then url = url .. "&excludeGenres=" .. table.concat(genres_exc, ",") end
+    if #genres_inc  > 0 then url = url .. "&genres=" .. table.concat(genres_inc, ",") end
+    if #genres_exc  > 0 then url = url .. "&excludeGenres=" .. table.concat(genres_exc, ",") end
 
     local nd = fetchNextData(url)
     if not nd then return { items = {}, hasNext = false } end
