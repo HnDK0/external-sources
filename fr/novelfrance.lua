@@ -1,7 +1,7 @@
 -- ── Метаданные ───────────────────────────────────────────────────────────────
 id       = "novelfrance"
 name     = "NovelFrance"
-version  = "1.0.3"
+version  = "1.0.4"
 baseUrl  = "https://novelfrance.fr"
 language = "fr"
 icon     = "https://raw.githubusercontent.com/HnDK0/external-sources/main/icons/novelfrance.png"
@@ -9,197 +9,94 @@ icon     = "https://raw.githubusercontent.com/HnDK0/external-sources/main/icons/
 -- ── Хелперы ──────────────────────────────────────────────────────────────────
 local function absUrl(href)
     if not href or href == "" then return "" end
-    if string_starts_with(href, "http") then return href end
-    if string_starts_with(href, "//") then return "https:" .. href end
-    return url_resolve(baseUrl, href)
-end
-
---  Извлечение данных из RSC payload (Next.js App Router)
-local function extractRscData(body, key)
-    -- Ищем pattern вида: "key":{...} внутри self.__next_f.push блоков
-    -- Ключ может быть в начале строки или после запятой
-    local pattern = '"' .. key .. '":(%b{})'
-    
-    for json_str in body:gmatch(pattern) do
-        -- Декодируем экранированные кавычки: \" → "
-        local clean = json_str:gsub('\\"', '"'):gsub('\\\\', '\\')
-        
-        -- Пытаемся распарсить как объект с ключом
-        local wrapped = '{' .. key .. ':' .. clean .. '}'
-        local data = json_parse(wrapped)
-        if data and data[key] then
-            return data[key]
-        end
-        
-        -- Пробуем распарсить как чистый объект (если ключ был обёрткой)
-        local direct = json_parse(clean)
-        if direct then return direct end
-    end
-    
-    return nil
-end
-
--- Альтернативный метод: поиск по всему телу без %b{} (более надёжный для вложенного JSON)
-local function extractRscDataRobust(body, key)
-    -- Ищем "key": и затем извлекаем объект, считая скобки
-    local start_pos = body:find('"' .. key .. '":', 1, true)
-    if not start_pos then return nil end
-    
-    local json_start = body:find('{', start_pos)
-    if not json_start then return nil end
-    
-    -- Считаем вложенные скобки
-    local depth = 0
-    local in_string = false
-    local escape_next = false
-    
-    for i = json_start, #body do
-        local char = body:sub(i, i)
-        
-        if escape_next then
-            escape_next = false
-        elseif char == '\\' then
-            escape_next = true
-        elseif char == '"' and not escape_next then
-            in_string = not in_string
-        elseif not in_string then
-            if char == '{' then
-                depth = depth + 1
-            elseif char == '}' then
-                depth = depth - 1
-                if depth == 0 then
-                    local json_str = body:sub(json_start, i)
-                    local clean = json_str:gsub('\\"', '"'):gsub('\\\\', '\\')
-                    local data = json_parse(clean)
-                    if data then return data end
-                    return nil
-                end
-            end
-        end
-    end
-    return nil
+    if string.sub(href, 1, 4) == "http" then return href end
+    if string.sub(href, 1, 2) == "//" then return "https:" .. href end
+    return baseUrl .. href
 end
 
 local function applyStandardContentTransforms(text)
     if not text or text == "" then return "" end
-    text = string_normalize(text)
-    local domain = baseUrl:gsub("https?://", ""):gsub("^www%.", ""):gsub("/$", "")
-    text = regex_replace(text, "(?i)" .. domain .. ".?\n", " ")
-    text = regex_replace(text, "(?i)\A[\s\p{Z}\uFEFF]((Chapitre\\s+\\d+|Chapter\\s+\\d+)[^\n\r]*[\n\r\s]*)+", " ")
-    text = regex_replace(text, "(?im)^\\s*(Traducteur|Éditeur|Relecteur|Source)[:\\s][^\n\r]{0,70}(\r?\n|$)", " ")
-    text = regex_replace(text, "(?i)(discord\\.gg/\\S+|https://discord\\.gg/\\S+)", " ")
-    text = string_trim(text)
-    return text
+    text = string.gsub(text, "<br%s*/?>", "\n")
+    text = string.gsub(text, "<[^>]+>", " ")
+    text = string.gsub(text, "%s+", " ")
+    return string.trim and string.trim(text) or text
+end
+
+-- Извлекает slug новеллы из URL /novel/{slug}
+local function extractNovelSlug(url)
+    local slug = url:match("/novel/([^/]+)")
+    return slug or ""
+end
+
+-- Извлекает номер главы из URL /novel/{slug}/chapter-{num}
+local function extractChapterNumber(url)
+    local num = url:match("chapter%-?(%d+)")
+    return num and tonumber(num) or 0
 end
 
 -- ── Каталог ──────────────────────────────────────────────────────────────────
 function getCatalogList(index)
     local page = index + 1
     local url = baseUrl .. "/browse?page=" .. tostring(page)
-    
-    -- 1. Лог запроса
-    log_debug("=== getCatalogList DEBUG ===")
-    log_debug("Request URL: " .. url)
-    
     local r = http_get(url)
-    
-    -- 2. Проверка ответа
-    if not r then
-        log_debug("ERROR: http_get returned nil")
-        return { items = {}, hasNext = false }
-    end
-    if not r.success then
-        log_debug("ERROR: HTTP failed - " .. tostring(r.error))
-        return { items = {}, hasNext = false }
-    end
-    
-    log_debug("HTTP OK, body length: " .. tostring(#r.body))
-    
-    -- 3. Поиск initialData в теле ответа
-    local initialData = extractRscDataRobust(r.body, "initialData")
-    
-    if not initialData then
-        log_debug("ERROR: initialData NOT found in response")
-        -- Выводим превью тела для анализа
-        local preview = r.body:sub(1, 3000)
-        log_debug("Body preview (first 3000 chars):")
-        log_debug(preview)
-        
-        -- Проверяем, есть ли вообще self.__next_f.push
-        if r.body:find("self%.__next_f%.push") then
-            log_debug("✓ Found self.__next_f.push in body")
-        else
-            log_debug("✗ self.__next_f.push NOT found")
-        end
-        
-        -- Проверяем ключевые строки
-        if r.body:find('"initialData"') then
-            log_debug("✓ Found literal \"initialData\" string")
-        else
-            log_debug("✗ \"initialData\" string NOT found")
-        end
-        
-        return { items = {}, hasNext = false }
-    end
-    
-    log_debug("✓ initialData parsed successfully")
-    
-    -- 4. Проверка структуры searchResults
-    if not initialData.searchResults then
-        log_debug("ERROR: initialData.searchResults is nil")
-        log_debug("initialData keys: " .. table_concat_keys(initialData))
-        return { items = {}, hasNext = false }
-    end
-    
-    log_debug("✓ searchResults found")
-    
-    -- 5. Извлечение новелл
-    local novels = initialData.searchResults.novels or {}
-    log_debug("Novels count: " .. tostring(#novels))
-    
+    if not r or not r.success then return { items = {}, hasNext = false } end
+
+    -- Ищем все карточки новелл: ссылки /novel/{slug}, у которых внутри есть h3
+    local links = html_select(r.body, "main a[href*='/novel/']")
     local items = {}
-    for i, novel in ipairs(novels) do
-        local slug = novel.slug
-        if slug and slug ~= "" then
-            table.insert(items, {
-                title = string_clean(novel.title or ""),
-                url   = absUrl("/novel/" .. slug),
-                cover = absUrl(novel.coverImage or "")
-            })
-            if i <= 3 then
-                log_debug("  [" .. i .. "] " .. (novel.title or "NO TITLE") .. " -> /novel/" .. slug)
+    local seen = {}
+
+    for _, link in ipairs(links) do
+        local href = link.href or ""
+        -- Проверяем что это карточка новеллы (имеет h3), а не ссылка из футера
+        local titleEl = html_select_first(link.html, "h3")
+        if titleEl then
+            local slug = extractNovelSlug(href)
+            if slug ~= "" and not seen[slug] then
+                seen[slug] = true
+                table.insert(items, {
+                    title = string_clean(titleEl.text),
+                    url   = absUrl("/novel/" .. slug),
+                    cover = absUrl(html_attr(link.html, "img", "src"))
+                })
             end
         end
     end
-    
-    local hasMore = initialData.searchResults.hasMore == true
-    log_debug("Items extracted: " .. tostring(#items) .. ", hasMore: " .. tostring(hasMore))
-    log_debug("=== END DEBUG ===")
-    
-    return { items = items, hasNext = hasMore }
-end
 
--- Вспомогательная функция для вывода ключей таблицы
-function table_concat_keys(t)
-    local keys = {}
-    for k, _ in pairs(t) do table.insert(keys, tostring(k)) end
-    return table.concat(keys, ", ")
+    -- Определяем hasNext: ищем кнопки с номерами страниц в main
+    local hasNext = false
+    local allButtons = html_select(r.body, "main button")
+    for _, btn in ipairs(allButtons) do
+        local text = string_trim(btn.text or "")
+        local pageNum = tonumber(text)
+        if pageNum and pageNum > page then
+            hasNext = true
+            break
+        end
+    end
+    -- fallback: если кнопок пагинации нет, но вернулось >= 20 элементов
+    if not hasNext and #items >= 20 then
+        hasNext = true
+    end
+
+    return { items = items, hasNext = hasNext }
 end
 
 -- ── Поиск ────────────────────────────────────────────────────────────────────
 function getCatalogSearch(index, query)
     if index > 0 then return { items = {}, hasNext = false } end
-    local r = http_get(baseUrl .. "/api/search/autocomplete?q=" .. url_encode(query))
+    local r = http_get(baseUrl .. "/api/search/autocomplete?q=" .. (url_encode and url_encode(query) or query))
     if not r or not r.success then return { items = {}, hasNext = false } end
-    local results = json_parse(r.body)
-    if not results or type(results) ~= "table" then return { items = {}, hasNext = false } end
+    
+    local ok, results = pcall(json_parse, r.body)
+    if not ok or not results or type(results) ~= "table" then return { items = {}, hasNext = false } end
 
     local items = {}
     for _, item in ipairs(results) do
         local slug = item.slug or ""
         if slug ~= "" then
             table.insert(items, {
-                title = string_clean(item.title or ""),
+                title = item.title or "",
                 url   = absUrl("/novel/" .. slug),
                 cover = absUrl(item.coverImage or "")
             })
@@ -210,36 +107,58 @@ function getCatalogSearch(index, query)
 end
 
 -- ── Детали книги ─────────────────────────────────────────────────────────────
-local function fetchNovelData(bookUrl)
+function getBookTitle(bookUrl)
     local r = http_get(bookUrl)
     if not r or not r.success then return nil end
-    return extractRscDataRobust(r.body, "initialNovel")
-end
-
-function getBookTitle(bookUrl)
-    local n = fetchNovelData(bookUrl)
-    return n and string_clean(n.title) or nil
+    local el = html_select_first(r.body, "h1")
+    return el and string_clean(el.text) or nil
 end
 
 function getBookCoverImageUrl(bookUrl)
-    local n = fetchNovelData(bookUrl)
-    return n and absUrl(n.coverImage) or nil
+    local r = http_get(bookUrl)
+    if not r or not r.success then return nil end
+    -- Первое изображение в main (обложка)
+    local cover = html_attr(r.body, "main img", "src")
+    return cover ~= "" and absUrl(cover) or nil
 end
 
 function getBookDescription(bookUrl)
-    local n = fetchNovelData(bookUrl)
-    if not n or not n.description then return nil end
-    local desc = n.description:gsub("<br%s*/?>", "\n"):gsub("<[^>]+>", "  ")
-    desc = string_trim(desc)
-    return desc ~= "" and desc or nil
+    local r = http_get(bookUrl)
+    if not r or not r.success then return nil end
+    -- Описание идёт текстом после заголовка h1, до секции с главами
+    -- Ищем большой блок текста перед секцией глав
+    local cleaned = html_remove(r.body, "script", "style", "nav", "footer", "header")
+    local mainEl = html_select_first(cleaned, "main")
+    if not mainEl then return nil end
+    local text = mainEl.text
+    if text and text ~= "" then
+        text = applyStandardContentTransforms(text)
+        -- Обрезаем слишком длинный текст (описание обычно до 500 символов)
+        local desc = ""
+        for line in string.gmatch(text, "[^\n]+") do
+            local trimmed = string_trim(line)
+            if #desc + #trimmed < 1000 then
+                desc = desc ~= "" and desc .. " " .. trimmed or trimmed
+            else
+                break
+            end
+        end
+        return desc ~= "" and desc or nil
+    end
+    return nil
 end
 
 function getBookGenres(bookUrl)
-    local n = fetchNovelData(bookUrl)
-    if not n then return {} end
+    local r = http_get(bookUrl)
+    if not r or not r.success then return {} end
     local genres = {}
-    for _, g in ipairs(n.genres or {}) do
-        if g.name and g.name ~= "" then table.insert(genres, g.name) end
+    -- Жанры — это ссылки с href /browse?genre=...
+    local genreLinks = html_select(r.body, "a[href*='/browse?genre=']")
+    for _, link in ipairs(genreLinks) do
+        local name = string_trim(link.text)
+        if name ~= "" then
+            table.insert(genres, name)
+        end
     end
     return genres
 end
@@ -248,68 +167,125 @@ end
 function getChapterList(bookUrl)
     local r = http_get(bookUrl)
     if not r or not r.success then return {} end
-    
-    -- 🔥 Извлекаем оба ключевых блока
-    local initialNovel = extractRscDataRobust(r.body, "initialNovel")
-    local initialChapters = extractRscDataRobust(r.body, "initialChaptersResponse")
-    
-    if not initialChapters or not initialChapters.chapters then return {} end
-    
-    local novelSlug = initialNovel and initialNovel.slug or bookUrl:match("novel/([^/]+)")
-    
-    local chapters = {}
-    for _, ch in ipairs(initialChapters.chapters) do
-        local slug = ch.slug
-        if slug and slug ~= "" then
-            table.insert(chapters, {
-                title = string_clean(ch.title or "Chapitre " .. tostring(ch.chapterNumber)),
-                url   = absUrl("/novel/" .. novelSlug .. "/" .. slug)
-            })
+
+    local novelSlug = extractNovelSlug(bookUrl)
+    if novelSlug == "" then return {} end
+
+    -- Собираем главы с первой страницы
+    local chapters = parseChaptersFromHtml(r.body, novelSlug)
+
+    -- Определяем количество страниц пагинации (кнопки с номерами)
+    local paginationBtns = html_select(r.body, "main button")
+    local maxPage = 1
+    for _, btn in ipairs(paginationBtns) do
+        local text = btn.text or ""
+        local pageNum = tonumber(text)
+        if pageNum and pageNum > maxPage then
+            maxPage = pageNum
         end
     end
-    
-    -- Сайт отдаёт в обратном порядке (новые → старые), разворачиваем
+
+    -- Загружаем остальные страницы, если есть
+    if maxPage > 1 then
+        local urls = {}
+        for p = 2, maxPage do
+            table.insert(urls, bookUrl .. "?page=" .. p)
+        end
+
+        local results = http_get_batch(urls)
+        for _, res in ipairs(results) do
+            if res and res.success then
+                local pageChapters = parseChaptersFromHtml(res.body, novelSlug)
+                for _, ch in ipairs(pageChapters) do
+                    table.insert(chapters, ch)
+                end
+            end
+            sleep(100)
+        end
+    end
+
+    -- Сайт отдаёт главы от новых к старым, разворачиваем
     local reversed = {}
-    for i = #chapters, 1, -1 do table.insert(reversed, chapters[i]) end
+    for i = #chapters, 1, -1 do
+        table.insert(reversed, chapters[i])
+    end
     return reversed
 end
 
+-- Парсит главы из HTML страницы новеллы
+local function parseChaptersFromHtml(html, novelSlug)
+    local chapters = {}
+    -- Ссылки на главы: /novel/{slug}/chapter-{num}
+    local pattern = "/novel/" .. novelSlug .. "/chapter%-"
+    local chapterLinks = html_select(html, "a[href*='" .. pattern .. "']")
+    
+    for _, link in ipairs(chapterLinks) do
+        local href = link.href or ""
+        local titleText = link.text or ""
+        -- Очищаем заголовок: убираем номер главы в начале
+        local title = string_trim(titleText)
+        if title ~= "" then
+            table.insert(chapters, {
+                title = string_clean(title),
+                url   = absUrl(href)
+            })
+        end
+    end
+    return chapters
+end
+
 function getChapterListHash(bookUrl)
-    local n = fetchNovelData(bookUrl)
-    if not n then return nil end
-    return n.lastChapterAt or tostring(n._count and n._count.chapters)
+    local r = http_get(bookUrl)
+    if not r or not r.success then return nil end
+    -- Используем URL последней главы как хеш
+    local novelSlug = extractNovelSlug(bookUrl)
+    if novelSlug == "" then return nil end
+    local pattern = "/novel/" .. novelSlug .. "/chapter%-"
+    local lastChapter = html_select_first(r.body, "a[href*='" .. pattern .. "']")
+    return lastChapter and lastChapter.href or nil
 end
 
 -- ── Текст главы ──────────────────────────────────────────────────────────────
 function getChapterText(html, chapterUrl)
-    -- 🔥 Ищем initialChapter в переданном HTML
-    local initialChapter = extractRscDataRobust(html or "", "initialChapter")
-    
-    -- Если не найдено — грузим страницу напрямую
-    if not initialChapter then
+    if not html or html == "" then
         local r = http_get(chapterUrl)
         if r and r.success then
-            initialChapter = extractRscDataRobust(r.body, "initialChapter")
+            html = r.body
         end
     end
-    
-    if not initialChapter then return "" end
-    
-    -- Поддержка двух форматов контента
-    local paragraphs = {}
-    
-    if initialChapter.paragraphs and type(initialChapter.paragraphs) == "table" then
-        for _, p in ipairs(initialChapter.paragraphs) do
-            if p.content and type(p.content) == "string" and p.content ~= "" then
-                table.insert(paragraphs, string_trim(p.content))
-            end
-        end
-    elseif initialChapter.content and type(initialChapter.content) == "string" then
-        table.insert(paragraphs, string_trim(initialChapter.content))
+    if not html or html == "" then return "" end
+
+    -- Удаляем нежелательные элементы
+    local cleaned = html_remove(html, 
+        "script", "style", 
+        "nav", "footer", "header",
+        ".comments-section", "#comments",
+        "button"
+    )
+
+    -- Ищем контейнер с текстом главы
+    -- На странице главы основной текст — внутри вложенного main
+    local mainEl = html_select_first(cleaned, "main main")
+    if not mainEl then
+        mainEl = html_select_first(cleaned, "main")
     end
-    
-    if #paragraphs == 0 then return "" end
-    return applyStandardContentTransforms(table.concat(paragraphs, "\n\n"))
+    if not mainEl then return "" end
+
+    -- Извлекаем текст с сохранением структуры абзацев
+    local text = html_text(mainEl.html)
+    if not text or text == "" then return "" end
+
+    -- Удаляем паттерны "Chapitre N" в начале
+    text = regex_replace(text, "(?i)\\A[\\s\\p{Z}\\uFEFF]*Chapitre\\s+\\d+[^\\n\\r]*[\\n\\r\\s]*", "")
+
+    -- Удаляем заголовок главы, если дублируется
+    text = regex_replace(text, "(?i)^\\s*\\d+\\s+[^\\n\\r]{0,100}[\\n\\r]", "")
+
+    -- Удаляем ссылки на discord в конце
+    text = regex_replace(text, "(?i)Si vous voulez avoir plus d'infos.*?discord\\.gg/[^\\s]*", "")
+
+    text = applyStandardContentTransforms(text)
+    return text
 end
 
 -- ── Фильтры ──────────────────────────────────────────────────────────────────
@@ -321,10 +297,10 @@ function getFilterList()
             label        = "Trier par",
             defaultValue = "updated",
             options = {
-                { value = "updated", label = "Dernière mise à jour" },
-                { value = "rating",  label = "Meilleure note"         },
-                { value = "views",   label = "Plus populaires"        },
-                { value = "title",   label = "Titre (A-Z)"            },
+                { value = "updated", label = "Mis à jour (Nouveauté)" },
+                { value = "popular", label = "Les plus populaires"     },
+                { value = "rating",  label = "Mieux notés"             },
+                { value = "title",   label = "Titre A-Z"               },
             }
         },
         {
@@ -336,32 +312,7 @@ function getFilterList()
                 { value = "all",       label = "Tous"       },
                 { value = "ONGOING",   label = "En cours"   },
                 { value = "COMPLETED", label = "Terminé"    },
-            }
-        },
-        {
-            type         = "select",
-            key          = "minChapters",
-            label        = "Chapitres min.",
-            defaultValue = "",
-            options = {
-                { value = "",    label = "Peu importe" },
-                { value = "50",  label = "50+"         },
-                { value = "100", label = "100+"        },
-                { value = "200", label = "200+"        },
-                { value = "500", label = "500+"        },
-            }
-        },
-        {
-            type         = "select",
-            key          = "maxChapters",
-            label        = "Chapitres max.",
-            defaultValue = "",
-            options = {
-                { value = "",     label = "Peu importe" },
-                { value = "100",  label = "≤ 100"       },
-                { value = "200",  label = "≤ 200"       },
-                { value = "500",  label = "≤ 500"       },
-                { value = "1000", label = "≤ 1000"      },
+                { value = "PAUSED",    label = "En pause"   },
             }
         },
         {
@@ -369,26 +320,26 @@ function getFilterList()
             key   = "genres",
             label = "Genres",
             options = {
-                { value = "action",        label = "Action"            },
-                { value = "aventure",      label = "Aventure"          },
-                { value = "romance",       label = "Romance"           },
-                { value = "fantaisie",     label = "Fantaisie"         },
-                { value = "syst-me",       label = "Système"           },
-                { value = "magie",         label = "Magie"             },
-                { value = "myst-re",       label = "Mystère"           },
-                { value = "psychologique", label = "Psychologique"     },
-                { value = "surnaturel",    label = "Surnaturel"        },
-                { value = "com-die",       label = "Comédie"           },
-                { value = "drama",         label = "Drame"             },
-                { value = "sci-fi",        label = "Sci-fi"            },
-                { value = "horreur",       label = "Horreur"           },
-                { value = "thriller",      label = "Thriller"          },
-                { value = "r-incarnation", label = "Réincarnation"     },
-                { value = "transmigration",label = "Transmigration"    },
-                { value = "anti-h-ros",    label = "Anti-Héros"        },
-                { value = "harem",         label = "Harem"             },
-                { value = "adulte",        label = "Adulte"            },
-                { value = "mature",        label = "Mature"            },
+                { value = "action",       label = "Action"         },
+                { value = "aventure",     label = "Aventure"       },
+                { value = "romance",      label = "Romance"        },
+                { value = "fantaisie",    label = "Fantaisie"      },
+                { value = "syst-me",      label = "Système"        },
+                { value = "magie",        label = "Magie"          },
+                { value = "myst-re",      label = "Mystère"        },
+                { value = "psychologique",label = "Psychologique"  },
+                { value = "surnaturel",   label = "Surnaturel"     },
+                { value = "com-die",      label = "Comédie"        },
+                { value = "drama",        label = "Drame"          },
+                { value = "sci-fi",       label = "Sci-fi"         },
+                { value = "horreur",      label = "Horreur"        },
+                { value = "thriller",     label = "Thriller"       },
+                { value = "r-incarnation",label = "Réincarnation"  },
+                { value = "transmigration",label = "Transmigration"},
+                { value = "anti-h-ros",   label = "Anti-Héros"     },
+                { value = "harem",        label = "Harem"          },
+                { value = "adulte",       label = "Adulte"         },
+                { value = "mature",       label = "Mature"         },
             }
         }
     }
@@ -398,36 +349,63 @@ function getCatalogFiltered(index, filters)
     local page = index + 1
     local sort        = filters["sort"]          or "updated"
     local status      = filters["status"]        or "all"
-    local min_ch      = filters["minChapters"]   or ""
-    local max_ch      = filters["maxChapters"]   or ""
-    local genres_inc  = filters["genres_included"]  or {}
-    local genres_exc  = filters["genres_excluded"]  or {}
+    local genres_inc  = filters["genres_included"] or {}
+    local genres_exc  = filters["genres_excluded"] or {}
     
-    local url = baseUrl .. "/search?page=" .. tostring(page) .. "&sort=" .. sort
+    local url = baseUrl .. "/search?page=" .. tostring(page)
+    
+    -- Маппинг sort
+    local sortMap = {
+        ["updated"] = "updated",
+        ["popular"] = "popular",
+        ["rating"]  = "rating",
+        ["title"]   = "title"
+    }
+    local sortVal = sortMap[sort] or "updated"
+    url = url .. "&sort=" .. sortVal
+    
     if status ~= "all" then url = url .. "&status=" .. status end
-    if min_ch ~= ""   then url = url .. "&minChapters=" .. url_encode(min_ch) end
-    if max_ch ~= ""   then url = url .. "&maxChapters=" .. url_encode(max_ch) end
     if #genres_inc  > 0 then url = url .. "&genres=" .. table.concat(genres_inc, ",") end
     if #genres_exc  > 0 then url = url .. "&excludeGenres=" .. table.concat(genres_exc, ",") end
 
     local r = http_get(url)
     if not r or not r.success then return { items = {}, hasNext = false } end
-    
-    -- 🔥 RSC-парсинг для filtered каталога
-    local initialResults = extractRscDataRobust(r.body, "initialResults")
-    if not initialResults then return { items = {}, hasNext = false } end
 
+    -- Парсим HTML результаты поиска
+    local links = html_select(r.body, "main a[href*='/novel/']")
     local items = {}
-    for _, novel in ipairs(initialResults.novels or {}) do
-        local slug = novel.slug or ""
-        if slug ~= "" then
-            table.insert(items, {
-                title = string_clean(novel.title or ""),
-                url   = absUrl("/novel/" .. slug),
-                cover = absUrl(novel.coverImage or "")
-            })
+    local seen = {}
+
+    for _, link in ipairs(links) do
+        local href = link.href or ""
+        local titleEl = html_select_first(link.html, "h3")
+        if titleEl then
+            local slug = extractNovelSlug(href)
+            if slug ~= "" and not seen[slug] then
+                seen[slug] = true
+                table.insert(items, {
+                    title = string_clean(titleEl.text),
+                    url   = absUrl("/novel/" .. slug),
+                    cover = absUrl(html_attr(link.html, "img", "src"))
+                })
+            end
         end
     end
 
-    return { items = items, hasNext = initialResults.hasMore == true }
+    -- Определяем hasNext
+    local hasNext = false
+    local paginationLinks = html_select(r.body, "main button")
+    for _, btn in ipairs(paginationLinks) do
+        local text = btn.text or ""
+        local pageNum = tonumber(text)
+        if pageNum and pageNum > page then
+            hasNext = true
+            break
+        end
+    end
+    if not hasNext and #items >= 20 then
+        hasNext = true
+    end
+
+    return { items = items, hasNext = hasNext }
 end
