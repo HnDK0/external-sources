@@ -1,7 +1,7 @@
 -- ── Метаданные ───────────────────────────────────────────────────────────────
 id       = "novelfrance"
 name     = "NovelFrance"
-version  = "1.0.2"
+version  = "1.0.3"
 baseUrl  = "https://novelfrance.fr"
 language = "fr"
 icon     = "https://raw.githubusercontent.com/HnDK0/external-sources/main/icons/novelfrance.png"
@@ -96,17 +96,69 @@ end
 function getCatalogList(index)
     local page = index + 1
     local url = baseUrl .. "/browse?page=" .. tostring(page)
-    local r = http_get(url)
-    if not r or not r.success then return { items = {}, hasNext = false } end
     
-    -- 🔥 Используем новый RSC-парсер
-    local initialData = extractRscDataRobust(r.body, "initialData")
-    if not initialData or not initialData.searchResults then 
-        return { items = {}, hasNext = false } 
+    -- 1. Лог запроса
+    log_debug("=== getCatalogList DEBUG ===")
+    log_debug("Request URL: " .. url)
+    
+    local r = http_get(url)
+    
+    -- 2. Проверка ответа
+    if not r then
+        log_debug("ERROR: http_get returned nil")
+        return { items = {}, hasNext = false }
     end
-
+    if not r.success then
+        log_debug("ERROR: HTTP failed - " .. tostring(r.error))
+        return { items = {}, hasNext = false }
+    end
+    
+    log_debug("HTTP OK, body length: " .. tostring(#r.body))
+    
+    -- 3. Поиск initialData в теле ответа
+    local initialData = extractRscDataRobust(r.body, "initialData")
+    
+    if not initialData then
+        log_debug("ERROR: initialData NOT found in response")
+        -- Выводим превью тела для анализа
+        local preview = r.body:sub(1, 3000)
+        log_debug("Body preview (first 3000 chars):")
+        log_debug(preview)
+        
+        -- Проверяем, есть ли вообще self.__next_f.push
+        if r.body:find("self%.__next_f%.push") then
+            log_debug("✓ Found self.__next_f.push in body")
+        else
+            log_debug("✗ self.__next_f.push NOT found")
+        end
+        
+        -- Проверяем ключевые строки
+        if r.body:find('"initialData"') then
+            log_debug("✓ Found literal \"initialData\" string")
+        else
+            log_debug("✗ \"initialData\" string NOT found")
+        end
+        
+        return { items = {}, hasNext = false }
+    end
+    
+    log_debug("✓ initialData parsed successfully")
+    
+    -- 4. Проверка структуры searchResults
+    if not initialData.searchResults then
+        log_debug("ERROR: initialData.searchResults is nil")
+        log_debug("initialData keys: " .. table_concat_keys(initialData))
+        return { items = {}, hasNext = false }
+    end
+    
+    log_debug("✓ searchResults found")
+    
+    -- 5. Извлечение новелл
+    local novels = initialData.searchResults.novels or {}
+    log_debug("Novels count: " .. tostring(#novels))
+    
     local items = {}
-    for _, novel in ipairs(initialData.searchResults.novels or {}) do
+    for i, novel in ipairs(novels) do
         local slug = novel.slug
         if slug and slug ~= "" then
             table.insert(items, {
@@ -114,18 +166,28 @@ function getCatalogList(index)
                 url   = absUrl("/novel/" .. slug),
                 cover = absUrl(novel.coverImage or "")
             })
+            if i <= 3 then
+                log_debug("  [" .. i .. "] " .. (novel.title or "NO TITLE") .. " -> /novel/" .. slug)
+            end
         end
     end
+    
+    local hasMore = initialData.searchResults.hasMore == true
+    log_debug("Items extracted: " .. tostring(#items) .. ", hasMore: " .. tostring(hasMore))
+    log_debug("=== END DEBUG ===")
+    
+    return { items = items, hasNext = hasMore }
+end
 
-    return { 
-        items = items, 
-        hasNext = initialData.searchResults.hasMore == true 
-    }
+-- Вспомогательная функция для вывода ключей таблицы
+function table_concat_keys(t)
+    local keys = {}
+    for k, _ in pairs(t) do table.insert(keys, tostring(k)) end
+    return table.concat(keys, ", ")
 end
 
 -- ── Поиск ────────────────────────────────────────────────────────────────────
 function getCatalogSearch(index, query)
-    log_debug("RSC Body preview: " .. r.body:sub(1, 3000))
     if index > 0 then return { items = {}, hasNext = false } end
     local r = http_get(baseUrl .. "/api/search/autocomplete?q=" .. url_encode(query))
     if not r or not r.success then return { items = {}, hasNext = false } end
