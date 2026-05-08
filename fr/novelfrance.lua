@@ -1,9 +1,9 @@
 -- ── Метаданные ───────────────────────────────────────────────────────────────
 id       = "novelfrance"
 name     = "NovelFrance"
-version  = "1.0.6"
+version  = "1.0.7"
 baseUrl  = "https://novelfrance.fr"
-language = "fr
+language = "fr"
 icon     = "https://raw.githubusercontent.com/HnDK0/external-sources/main/icons/novelfrance.png"
 
 -- ── Хелперы ──────────────────────────────────────────────────────────────────
