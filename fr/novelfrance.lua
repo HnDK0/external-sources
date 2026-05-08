@@ -1,9 +1,9 @@
 -- ── Метаданные ───────────────────────────────────────────────────────────────
 id       = "novelfrance"
 name     = "NovelFrance"
-version  = "1.0.5"
+version  = "1.0.6"
 baseUrl  = "https://novelfrance.fr"
-language = "fr"
+language = "fr
 icon     = "https://raw.githubusercontent.com/HnDK0/external-sources/main/icons/novelfrance.png"
 
 -- ── Хелперы ──────────────────────────────────────────────────────────────────
@@ -28,26 +28,11 @@ local function extractNovelSlug(url)
     return slug or ""
 end
 
--- Парсит главы из HTML страницы новеллы
--- Должна быть объявлена ДО getChapterList, т.к. вызывается из него
-local function parseChaptersFromHtml(html, novelSlug)
-    local chapters = {}
-    -- Ссылки на главы: /novel/{slug}/chapter-{num}
-    local pattern = "/novel/" .. novelSlug .. "/chapter%-"
-    local chapterLinks = html_select(html, "a[href*='" .. pattern .. "']")
-    
-    for _, link in ipairs(chapterLinks) do
-        local href = link.href or ""
-        local titleText = link.text or ""
-        local title = string_trim(titleText)
-        if title ~= "" then
-            table.insert(chapters, {
-                title = string_clean(title),
-                url   = absUrl(href)
-            })
-        end
-    end
-    return chapters
+-- Извлекает путь главы из URL /novel/{slug}/chapter-{num}
+-- возвращает "slug/chapter-num" для запроса к API
+local function extractChapterApiPath(url)
+    local path = url:match("/novel/(.+)")
+    return path or ""
 end
 
 -- ── Каталог ──────────────────────────────────────────────────────────────────
@@ -139,13 +124,11 @@ end
 function getBookDescription(bookUrl)
     local r = http_get(bookUrl)
     if not r or not r.success then return nil end
-    -- Описание на странице новеллы — текст под обложкой/заголовком, до секции глав
     local cleaned = html_remove(r.body, "script", "style", "nav", "footer", "header")
     local mainEl = html_select_first(cleaned, "main")
     if not mainEl then return nil end
     local text = mainEl.text
     if text and text ~= "" then
-        -- Ищем первый большой блок текста (описание)
         for line in string.gmatch(text, "[^\n]+") do
             local trimmed = string_trim(line)
             if #trimmed > 50 then
@@ -170,76 +153,91 @@ function getBookGenres(bookUrl)
     return genres
 end
 
--- ── Список глав ──────────────────────────────────────────────────────────────
+-- ── Список глав (через JSON API) ────────────────────────────────────────────
 function getChapterList(bookUrl)
-    local r = http_get(bookUrl)
-    if not r or not r.success then return {} end
-
     local novelSlug = extractNovelSlug(bookUrl)
     if novelSlug == "" then return {} end
-
-    -- Собираем главы с первой страницы
-    local chapters = parseChaptersFromHtml(r.body, novelSlug)
-
-    -- Определяем количество страниц пагинации (кнопки с номерами)
-    local paginationBtns = html_select(r.body, "main button")
-    local maxPage = 1
-    for _, btn in ipairs(paginationBtns) do
-        local text = btn.text or ""
-        local pageNum = tonumber(text)
-        if pageNum and pageNum > maxPage then
-            maxPage = pageNum
-        end
-    end
-
-    -- Загружаем остальные страницы, если есть
-    if maxPage > 1 then
-        local urls = {}
-        for p = 2, maxPage do
-            table.insert(urls, bookUrl .. "?page=" .. p)
-        end
-
-        local results = http_get_batch(urls)
-        for _, res in ipairs(results) do
-            if res and res.success then
-                local pageChapters = parseChaptersFromHtml(res.body, novelSlug)
-                for _, ch in ipairs(pageChapters) do
-                    table.insert(chapters, ch)
+    
+    local allChapters = {}
+    local skip = 0
+    local take = 100
+    local hasMore = true
+    
+    while hasMore do
+        local apiUrl = baseUrl .. "/api/chapters/" .. novelSlug
+            .. "?skip=" .. skip .. "&take=" .. take .. "&order=asc"
+        local r = http_get(apiUrl)
+        if not r or not r.success then break end
+        
+        local ok, data = pcall(json_parse, r.body)
+        if not ok or not data then break end
+        
+        if data.chapters and type(data.chapters) == "table" then
+            for _, ch in ipairs(data.chapters) do
+                local slug = ch.slug or ""
+                if slug ~= "" then
+                    table.insert(allChapters, {
+                        title = string_clean(ch.title or "Chapitre " .. tostring(ch.chapterNumber or "")),
+                        url   = absUrl("/novel/" .. novelSlug .. "/" .. slug)
+                    })
                 end
             end
-            sleep(100)
         end
+        
+        hasMore = data.hasMore == true
+        skip = skip + take
+        sleep(50)
     end
-
-    -- Сайт отдаёт главы от новых к старым, разворачиваем
-    local reversed = {}
-    for i = #chapters, 1, -1 do
-        table.insert(reversed, chapters[i])
-    end
-    return reversed
+    
+    return allChapters
 end
 
 function getChapterListHash(bookUrl)
-    local r = http_get(bookUrl)
-    if not r or not r.success then return nil end
     local novelSlug = extractNovelSlug(bookUrl)
     if novelSlug == "" then return nil end
-    local pattern = "/novel/" .. novelSlug .. "/chapter%-"
-    local lastChapter = html_select_first(r.body, "a[href*='" .. pattern .. "']")
-    return lastChapter and lastChapter.href or nil
+    
+    local r = http_get(baseUrl .. "/api/chapters/" .. novelSlug .. "?skip=0&take=1&order=desc")
+    if not r or not r.success then return nil end
+    
+    local ok, data = pcall(json_parse, r.body)
+    if not ok or not data then return nil end
+    
+    -- Используем total как хеш
+    return tostring(data.total or "")
 end
 
--- ── Текст главы ──────────────────────────────────────────────────────────────
+-- ── Текст главы (через JSON API) ────────────────────────────────────────────
 function getChapterText(html, chapterUrl)
-    if not html or html == "" then
-        local r = http_get(chapterUrl)
-        if r and r.success then
-            html = r.body
+    local apiPath = extractChapterApiPath(chapterUrl)
+    if apiPath == "" then return "" end
+    
+    local r = http_get(baseUrl .. "/api/chapters/" .. apiPath)
+    if not r or not r.success then
+        -- Fallback: пробуем загрузить через HTML если API не работает
+        if html and html ~= "" then
+            return getChapterTextFromHtml(html)
+        end
+        return ""
+    end
+    
+    local ok, data = pcall(json_parse, r.body)
+    if not ok or not data then return "" end
+    
+    if not data.paragraphs or type(data.paragraphs) ~= "table" then return "" end
+    
+    local paragraphs = {}
+    for _, p in ipairs(data.paragraphs) do
+        local content = p.content or ""
+        if content ~= "" then
+            table.insert(paragraphs, string_trim(content))
         end
     end
-    if not html or html == "" then return "" end
+    
+    return table.concat(paragraphs, "\n\n")
+end
 
-    -- Удаляем нежелательные элементы
+-- Fallback: парсинг текста главы из HTML (если API недоступен)
+local function getChapterTextFromHtml(html)
     local cleaned = html_remove(html, 
         "script", "style", 
         "nav", "footer", "header",
@@ -247,24 +245,17 @@ function getChapterText(html, chapterUrl)
         "button"
     )
 
-    -- Ищем контейнер с текстом главы
     local mainEl = html_select_first(cleaned, "main main")
     if not mainEl then
         mainEl = html_select_first(cleaned, "main")
     end
     if not mainEl then return "" end
 
-    -- Извлекаем текст с сохранением структуры абзацев
     local text = html_text(mainEl.html)
     if not text or text == "" then return "" end
 
-    -- Удаляем паттерны "Chapitre N" в начале
     text = regex_replace(text, "(?i)\\A[\\s\\p{Z}\\uFEFF]*Chapitre\\s+\\d+[^\\n\\r]*[\\n\\r\\s]*", "")
-
-    -- Удаляем заголовок главы, если дублируется
     text = regex_replace(text, "(?i)^\\s*\\d+\\s+[^\\n\\r]{0,100}[\\n\\r]", "")
-
-    -- Удаляем ссылки на discord в конце
     text = regex_replace(text, "(?i)Si vous voulez avoir plus d'infos.*?discord\\.gg/[^\\s]*", "")
 
     text = applyStandardContentTransforms(text)
@@ -376,8 +367,8 @@ function getCatalogFiltered(index, filters)
 
     -- Определяем hasNext
     local hasNext = false
-    local paginationLinks = html_select(r.body, "main button")
-    for _, btn in ipairs(paginationLinks) do
+    local allButtons = html_select(r.body, "main button")
+    for _, btn in ipairs(allButtons) do
         local text = btn.text or ""
         local pageNum = tonumber(text)
         if pageNum and pageNum > page then
