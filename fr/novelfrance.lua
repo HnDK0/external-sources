@@ -1,7 +1,7 @@
 -- ── Метаданные ───────────────────────────────────────────────────────────────
 id       = "novelfrance"
 name     = "NovelFrance"
-version  = "1.0.7"
+version  = "1.0.8"
 baseUrl  = "https://novelfrance.fr"
 language = "fr"
 icon     = "https://raw.githubusercontent.com/HnDK0/external-sources/main/icons/novelfrance.png"
@@ -35,11 +35,40 @@ local function extractChapterApiPath(url)
     return path or ""
 end
 
+-- Браузерные заголовки для всех запросов (помогают избежать Cloudflare блокировки)
+local browserHeaders = {
+    ["User-Agent"] = "Mozilla/5.0 (Linux; Android 14; Pixel 8 Pro) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/120.0.6099.144 Mobile Safari/537.36",
+    ["Referer"] = baseUrl,
+    ["Accept"] = "text/html,application/xhtml+xml,application/xml;q=0.9,image/webp,*/*;q=0.8",
+    ["Accept-Language"] = "fr-FR,fr;q=0.9,en-US;q=0.8,en;q=0.7",
+    ["Sec-Fetch-Dest"] = "document",
+    ["Sec-Fetch-Mode"] = "navigate",
+    ["Sec-Fetch-Site"] = "same-origin",
+    ["Upgrade-Insecure-Requests"] = "1",
+    ["Cache-Control"] = "max-age=0"
+}
+
+-- Заголовки для JSON API
+local apiHeaders = {
+    ["User-Agent"] = "Mozilla/5.0 (Linux; Android 14; Pixel 8 Pro) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/120.0.6099.144 Mobile Safari/537.36",
+    ["Referer"] = baseUrl,
+    ["Accept"] = "application/json, text/plain, */*",
+    ["Accept-Language"] = "fr-FR,fr;q=0.9,en-US;q=0.8,en;q=0.7",
+    ["Sec-Fetch-Dest"] = "empty",
+    ["Sec-Fetch-Mode"] = "cors",
+    ["Sec-Fetch-Site"] = "same-origin"
+}
+
+-- Обёртка для http_get с браузерными заголовками (для HTML страниц)
+local function httpGet(url)
+    return http_get(url, { headers = browserHeaders })
+end
+
 -- ── Каталог ──────────────────────────────────────────────────────────────────
 function getCatalogList(index)
     local page = index + 1
     local url = baseUrl .. "/browse?page=" .. tostring(page)
-    local r = http_get(url)
+    local r = httpGet(url)
     if not r or not r.success then return { items = {}, hasNext = false } end
 
     -- Ищем все карточки новелл: ссылки /novel/{slug}, у которых внутри есть h3
@@ -85,7 +114,8 @@ end
 -- ── Поиск ────────────────────────────────────────────────────────────────────
 function getCatalogSearch(index, query)
     if index > 0 then return { items = {}, hasNext = false } end
-    local r = http_get(baseUrl .. "/api/search/autocomplete?q=" .. (url_encode and url_encode(query) or query))
+    local url = baseUrl .. "/api/search/autocomplete?q=" .. (url_encode and url_encode(query) or query)
+    local r = http_get(url, { headers = browserHeaders })
     if not r or not r.success then return { items = {}, hasNext = false } end
     
     local ok, results = pcall(json_parse, r.body)
@@ -108,21 +138,21 @@ end
 
 -- ── Детали книги ─────────────────────────────────────────────────────────────
 function getBookTitle(bookUrl)
-    local r = http_get(bookUrl)
+    local r = httpGet(bookUrl)
     if not r or not r.success then return nil end
     local el = html_select_first(r.body, "h1")
     return el and string_clean(el.text) or nil
 end
 
 function getBookCoverImageUrl(bookUrl)
-    local r = http_get(bookUrl)
+    local r = httpGet(bookUrl)
     if not r or not r.success then return nil end
     local cover = html_attr(r.body, "main img", "src")
     return cover ~= "" and absUrl(cover) or nil
 end
 
 function getBookDescription(bookUrl)
-    local r = http_get(bookUrl)
+    local r = httpGet(bookUrl)
     if not r or not r.success then return nil end
     local cleaned = html_remove(r.body, "script", "style", "nav", "footer", "header")
     local mainEl = html_select_first(cleaned, "main")
@@ -140,7 +170,7 @@ function getBookDescription(bookUrl)
 end
 
 function getBookGenres(bookUrl)
-    local r = http_get(bookUrl)
+    local r = httpGet(bookUrl)
     if not r or not r.success then return {} end
     local genres = {}
     local genreLinks = html_select(r.body, "a[href*='/browse?genre=']")
@@ -166,7 +196,7 @@ function getChapterList(bookUrl)
     while hasMore do
         local apiUrl = baseUrl .. "/api/chapters/" .. novelSlug
             .. "?skip=" .. skip .. "&take=" .. take .. "&order=asc"
-        local r = http_get(apiUrl)
+        local r = http_get(apiUrl, { headers = apiHeaders })
         if not r or not r.success then break end
         
         local ok, data = pcall(json_parse, r.body)
@@ -196,7 +226,8 @@ function getChapterListHash(bookUrl)
     local novelSlug = extractNovelSlug(bookUrl)
     if novelSlug == "" then return nil end
     
-    local r = http_get(baseUrl .. "/api/chapters/" .. novelSlug .. "?skip=0&take=1&order=desc")
+    local apiUrl = baseUrl .. "/api/chapters/" .. novelSlug .. "?skip=0&take=1&order=desc"
+    local r = http_get(apiUrl, { headers = apiHeaders })
     if not r or not r.success then return nil end
     
     local ok, data = pcall(json_parse, r.body)
@@ -211,7 +242,7 @@ function getChapterText(html, chapterUrl)
     local apiPath = extractChapterApiPath(chapterUrl)
     if apiPath == "" then return "" end
     
-    local r = http_get(baseUrl .. "/api/chapters/" .. apiPath)
+    local r = http_get(baseUrl .. "/api/chapters/" .. apiPath, { headers = apiHeaders })
     if not r or not r.success then
         -- Fallback: пробуем загрузить через HTML если API не работает
         if html and html ~= "" then
@@ -341,7 +372,7 @@ function getCatalogFiltered(index, filters)
     if #genres_inc  > 0 then url = url .. "&genres=" .. table.concat(genres_inc, ",") end
     if #genres_exc  > 0 then url = url .. "&excludeGenres=" .. table.concat(genres_exc, ",") end
 
-    local r = http_get(url)
+    local r = httpGet(url)
     if not r or not r.success then return { items = {}, hasNext = false } end
 
     -- Парсим HTML результаты поиска
