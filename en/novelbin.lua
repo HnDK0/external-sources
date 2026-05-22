@@ -1,7 +1,7 @@
 ﻿-- ── Метаданные ────────────────────────────────────────────────────────────────
 id        = "NovelBin"
 name      = "Novel Bin"
-version   = "1.0.7"
+version   = "1.0.8"
 baseUrl   = "https://novelbin.com/"
 language  = "en"
 icon      = "https://raw.githubusercontent.com/HnDK0/external-sources/main/icons/novelbin.png"
@@ -135,7 +135,12 @@ function getChapterList(bookUrl)
   end
 
   local ajaxUrl = "https://novelbin.com/ajax/chapter-archive?novelId=" .. m[1]
-  local ar = http_get(ajaxUrl)
+  local ar = http_get(ajaxUrl, {
+    headers = {
+      ["Referer"]          = bookUrl,
+      ["X-Requested-With"] = "XMLHttpRequest",
+    }
+  })
   if not ar.success then
     log_error("getChapterList: AJAX failed code=" .. tostring(ar.code))
     return {}
@@ -143,7 +148,20 @@ function getChapterList(bookUrl)
 
   local chapters = {}
   for _, a in ipairs(html_select(ar.body, "ul.list-chapter li a")) do
-    local title = string_trim(a.text)
+    -- Сначала пробуем взять текст из span внутри ссылки
+    local spanEl = html_select_first(a.html, "span.nchr-text")
+    local title = ""
+    if spanEl then
+      title = string_trim(spanEl.text)
+    end
+    -- Фоллбэк: атрибут title у самого <a>
+    if title == "" then
+      title = html_attr(a.html, "a", "title")
+    end
+    -- Последний фоллбэк: весь текст ссылки
+    if title == "" then
+      title = string_trim(a.text)
+    end
     if title == "" then title = a.href end
     table.insert(chapters, { title = title, url = a.href })
   end
