@@ -1,7 +1,7 @@
 ﻿-- ── Метаданные ────────────────────────────────────────────────────────────────
 id        = "NovelBin"
 name      = "Novel Bin"
-version   = "1.0.9"
+version   = "1.1.0"
 baseUrl   = "https://novelbin.com/"
 language  = "en"
 icon      = "https://raw.githubusercontent.com/HnDK0/external-sources/main/icons/novelbin.png"
@@ -144,7 +144,6 @@ end
 -- ── Список глав (AJAX) ────────────────────────────────────────────────────────
 
 function getChapterList(bookUrl)
-  -- fetchPage — уже закэшировано если детали книги запрашивались раньше
   local body = fetchPage(bookUrl)
   if not body then
     log_error("getChapterList: failed to load " .. bookUrl)
@@ -175,23 +174,26 @@ function getChapterList(bookUrl)
     return {}
   end
 
+  -- Главы внутри <template>, берём его innerHTML напрямую
+  local tmpl = html_select_first(ar.body, "template[data-chapter-item-template]")
+  if not tmpl then
+    log_error("getChapterList: template element not found")
+    return {}
+  end
+
   local chapters = {}
-  for _, li in ipairs(html_select(ar.body, "ul.list-chapter li[data-chapter-item]")) do
-    local a = html_select_first(li.html, "a")
-    if a then
-      local span = html_select_first(li.html, "span.nchr-text")
-      local title = span and string_trim(span.text) or ""
-      if title == "" then title = string_trim(html_attr(li.html, "a", "title")) end
-      if title == "" then title = string_trim(a.text) end
-      if title == "" then title = a.href end
-      table.insert(chapters, { title = title, url = a.href })
-    end
+  for _, a in ipairs(html_select(tmpl.html, "a[href]")) do
+    local span = html_select_first(a.html, "span.nchr-text")
+    local title = span and string_trim(span.text) or ""
+    if title == "" then title = string_trim(a.title or "") end
+    if title == "" then title = string_trim(a.text) end
+    if title == "" then title = a.href end
+    table.insert(chapters, { title = title, url = a.href })
   end
 
   log_error("getChapterList: found " .. tostring(#chapters) .. " chapters")
   return chapters
 end
-
 -- ── Хэш для обновлений ────────────────────────────────────────────────────────
 
 function getChapterListHash(bookUrl)
