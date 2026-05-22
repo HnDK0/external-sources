@@ -197,9 +197,9 @@ end
 -- ── Хэш для обновлений ────────────────────────────────────────────────────────
 
 function getChapterListHash(bookUrl)
-  local body = fetchPage(bookUrl)
-  if not body then return nil end
-  local el = html_select_first(body, ".l-chapter a.chapter-title")
+  local r = http_get(bookUrl)
+  if not r.success then return nil end
+  local el = html_select_first(r.body, ".l-chapter a.chapter-title")
   return el and el.href or nil
 end
 
