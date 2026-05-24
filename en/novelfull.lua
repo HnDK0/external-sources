@@ -16,9 +16,10 @@ end
 
 -- novelBinCoverUrl: используется только для каталога и поиска
 local function transformCatalogCover(bookUrl)
-    if not bookUrl or bookUrl == "" then return "" end
-    local slug = bookUrl:match("([^/]+)$"):gsub("%.html$", "")
-    return "https://images.novelbin.me/novel/" .. slug .. ".jpg"
+  if not bookUrl or bookUrl == "" then return "" end
+  local slug = bookUrl:match("([^/?#]+)%.html$") or bookUrl:match("([^/?#]+)/?$")
+  if not slug then return "" end
+  return "https://images.novelbin.me/novel/" .. slug .. ".jpg"
 end
 
 local function applyStandardContentTransforms(text)
@@ -113,11 +114,12 @@ function getChapterList(bookUrl)
     local r = http_get(bookUrl)
     if not r.success then return {} end
 
-    local maxPage = 1
-    local lastPageEl = html_select_first(r.body, "#list-chapter > ul:nth-child(3) > li.last > a")
-    if lastPageEl then
-        maxPage = tonumber(lastPageEl.href:match("page=(%d+)")) or 1
-    end
+  local maxPage = 1
+  local lastPageEl = html_select_first(r.body, "#list-chapter > ul:nth-child(3) > li.last > a")
+  if lastPageEl then
+    local href = lastPageEl.href or ""
+    maxPage = tonumber(href:match("page=(%d+)")) or 1
+  end
 
     local function parsePage(html)
         local res = {}

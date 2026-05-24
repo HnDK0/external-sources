@@ -26,6 +26,30 @@ local function applyStandardContentTransforms(text)
   return text
 end
 
+local function parseCatalogItems(body, preferDataSrc)
+  local items = {}
+  for _, a in ipairs(html_select(body, ".listupd > .maindet .mdthumb a")) do
+    local bookUrl = absUrl(a.href)
+    local title = html_attr(a.html, "img", "title")
+    if title == "" then title = html_attr(a.html, "img", "alt") end
+    local cover = ""
+    if preferDataSrc then
+      cover = html_attr(a.html, "img[data-src]", "data-src")
+    end
+    if cover == "" then
+      cover = html_attr(a.html, "img[src]", "src")
+    end
+    if bookUrl ~= "" then
+      table.insert(items, {
+        title = string_clean(title),
+        url   = bookUrl,
+        cover = absUrl(cover)
+      })
+    end
+  end
+  return items
+end
+
 -- ── Каталог ───────────────────────────────────────────────────────────────────
 
 function getCatalogList(index)
@@ -39,22 +63,7 @@ function getCatalogList(index)
   local r = http_get(url)
   if not r.success then return { items = {}, hasNext = false } end
 
-  local items = {}
-  for _, a in ipairs(html_select(r.body, ".listupd > .maindet .mdthumb a")) do
-    local bookUrl = absUrl(a.href)
-    local title = html_attr(a.html, "img", "title")
-    if title == "" then title = html_attr(a.html, "img", "alt") end
-    local cover = html_attr(a.html, "img", "src")
-    if cover == "" then cover = html_attr(a.html, "img", "data-src") end
-    if bookUrl ~= "" then
-      table.insert(items, {
-        title = string_clean(title),
-        url   = bookUrl,
-        cover = absUrl(cover)
-      })
-    end
-  end
-
+  local items = parseCatalogItems(r.body, true)
   return { items = items, hasNext = #items > 0 }
 end
 
@@ -71,22 +80,7 @@ function getCatalogSearch(index, query)
   local r = http_get(url)
   if not r.success then return { items = {}, hasNext = false } end
 
-  local items = {}
-  for _, a in ipairs(html_select(r.body, ".listupd > .maindet .mdthumb a")) do
-    local bookUrl = absUrl(a.href)
-    local title = html_attr(a.html, "img", "title")
-    if title == "" then title = html_attr(a.html, "img", "alt") end
-    local cover = html_attr(a.html, "img", "src")
-    if cover == "" then cover = html_attr(a.html, "img", "data-src") end
-    if bookUrl ~= "" then
-      table.insert(items, {
-        title = string_clean(title),
-        url   = bookUrl,
-        cover = absUrl(cover)
-      })
-    end
-  end
-
+  local items = parseCatalogItems(r.body, false)
   return { items = items, hasNext = #items > 0 }
 end
 

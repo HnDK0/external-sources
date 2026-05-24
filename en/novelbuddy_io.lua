@@ -30,6 +30,9 @@ local function resolveCover(raw, slug)
     elseif type(raw) == "string" then
         cover = raw
     end
+    if cover ~= "" then
+        cover = absUrl(cover)
+    end
     if cover == "" and slug and slug ~= "" then
         cover = "https://static.novelbuddy.com/thumb/" .. slug .. ".png"
     end
@@ -37,7 +40,8 @@ local function resolveCover(raw, slug)
 end
 
 local function slugFromUrl(bookUrl)
-    local path = bookUrl:match("^[^?#]+") or bookUrl
+    local path = (bookUrl or ""):match("^[^?#]+") or (bookUrl or "")
+    path = path:gsub("/+$", "")
     return path:match("/([^/]+)$") or ""
 end
 

@@ -31,7 +31,7 @@ end
 
 local function transformCoverUrl(coverUrl, bookUrl)
   if not bookUrl or bookUrl == "" then return coverUrl end
-  local slug = bookUrl:match("([^/]+)%.html$") or bookUrl:match("([^/]+)$")
+  local slug = bookUrl:match("([^/?#]+)%.html$") or bookUrl:match("([^/?#]+)/?$")
   if slug then
     return "https://images.novelbin.me/novel/" .. slug .. ".jpg"
   end
@@ -162,7 +162,7 @@ function getChapterList(bookUrl)
     return {}
   end
 
-  local ajaxUrl = "https://novelbin.com/ajax/chapter-archive?novelId=" .. m[1]
+  local ajaxUrl = baseUrl:gsub("/$", "") .. "/ajax/chapter-archive?novelId=" .. m[1]
   local ar = http_get(ajaxUrl, {
     headers = {
       ["Referer"]          = bookUrl,

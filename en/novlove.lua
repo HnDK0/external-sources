@@ -17,7 +17,8 @@ end
 
 local function transformCoverUrl(coverUrl, bookUrl)
   if not bookUrl or bookUrl == "" then return coverUrl end
-  local slug = bookUrl:match("([^/]+)$"):gsub("%.html$", "")
+  local slug = bookUrl:match("([^/?#]+)%.html$") or bookUrl:match("([^/?#]+)/?$")
+  if not slug then return coverUrl end
   return "https://images.novelbin.me/novel/" .. slug .. ".jpg"
 end
 

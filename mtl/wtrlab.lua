@@ -20,7 +20,7 @@ end
 -- ── Вспомогательные функции ──────────────────────────────────────────────────
 
 local function absUrl(href)
-    if href == "" then return "" end
+    if not href or href == "" then return "" end
     if string_starts_with(href, "http") then return href end
     if string_starts_with(href, "//") then return "https:" .. href end
     return url_resolve(baseUrl, href)
@@ -127,6 +127,10 @@ function getChapterList(bookUrl)
         return {}
     end
     local slug = string.match(bookUrl, "/novel/%d+/([^/?#]+)") or ""
+    if slug == "" then
+        log_error("wtrlab: cannot extract slug from " .. bookUrl)
+        return {}
+    end
 
     sleep(300)
 

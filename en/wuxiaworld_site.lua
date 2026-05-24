@@ -30,7 +30,7 @@ end
 
 function getCatalogList(index)
   local page = index + 1
-  local url = "https://wuxiaworld.site/novel/?m_orderby=trending"
+  local url = baseUrl .. "novel/?m_orderby=trending"
   if page > 1 then url = url .. "&page=" .. tostring(page) end
 
   local r = http_get(url)

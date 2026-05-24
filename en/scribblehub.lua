@@ -120,7 +120,7 @@ function getChapterList(bookUrl)
     headers = {
       ["Content-Type"]    = "application/x-www-form-urlencoded",
       ["X-Requested-With"] = "XMLHttpRequest",
-      ["Origin"]          = "https://www.scribblehub.com",
+      ["Origin"]          = baseUrl:gsub("/$", ""),
       ["Referer"]         = bookUrl,
       ["Accept"]          = "*/*",
       ["Accept-Language"] = "en-US,en;q=0.9"

@@ -138,7 +138,8 @@ function getChapterList(bookUrl)
         .. "&post_id=" .. postId
         .. "&only_bookmark=false"
 
-    local bookSlug = bookUrl:match("/([^/]+)$")
+    local bookSlug = bookUrl:match("/([^/?#]+)") or ""
+    if bookSlug == "" then return {} end
     local ar = http_get(ajaxUrl .. "?" .. params)
     if not ar.success then return {} end
 
@@ -169,7 +170,8 @@ end
 --[[ Старый способ через HTML пагинацию (на случай если AJAX сломается)
 
 function getChapterList(bookUrl)
-    local bookSlug = bookUrl:match("/([^/]+)$")
+    local bookSlug = bookUrl:match("/([^/?#]+)") or ""
+    if bookSlug == "" then return {} end
     local firstPageUrl = baseUrl .. "/book/" .. bookSlug .. "/chapters?page=1"
 
     local r = http_get(firstPageUrl)

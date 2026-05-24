@@ -18,8 +18,7 @@ end
 -- novelBinCoverUrl: строим URL обложки из слага книги (src из каталога игнорируем)
 local function transformCover(bookUrl)
   if not bookUrl or bookUrl == "" then return "" end
-  local slug = string.match(bookUrl, "/([^/]+)$") or ""
-  slug = slug:gsub("%.html$", "")
+  local slug = string.match(bookUrl, "/([^/?#]+)%.html$") or string.match(bookUrl, "/([^/?#]+)/?$") or ""
   if slug == "" then return "" end
   return "https://images.novelbin.me/novel/" .. slug .. ".jpg"
 end
@@ -126,7 +125,8 @@ function getChapterList(bookUrl)
   local maxPage = 1
   local lastPageEl = html_select_first(r.body, "#list-chapter > ul:nth-child(3) > li.last > a")
   if lastPageEl then
-    local p = string.match(lastPageEl.href, "[?&]page=(%d+)")
+    local href = lastPageEl.href or ""
+    local p = string.match(href, "[?&]page=(%d+)")
     if p then maxPage = tonumber(p) or 1 end
   end
 
