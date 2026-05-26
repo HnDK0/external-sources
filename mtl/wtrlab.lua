@@ -1,7 +1,7 @@
 ﻿-- ── Метаданные ───────────────────────────────────────────────────────────────
 id       = "wtrlab"
 name     = "WTR-LAB"
-version  = "1.1.0"
+version  = "1.1.1"
 baseUrl  = "https://wtr-lab.com/"
 language = "MTL"
 icon     = "https://raw.githubusercontent.com/HnDK0/external-sources/main/icons/wtr-lab.png"
@@ -38,17 +38,17 @@ function getCatalogList(index)
     end
 
     local items = {}
-    for _, card in ipairs(html_select(r.body, "div.serie-item")) do
-        local titleEl = html_select_first(card.html, "a.title")
-        if titleEl then
-            local cover = html_attr(card.html, ".image-wrap img", "src")
-            table.insert(items, {
-                title = string_trim(titleEl.text),
-                url   = absUrl(titleEl.href),
-                cover = absUrl(cover)
-            })
-        end
+    for _, card in ipairs(html_select(r.body, "div.series-list [data-slot='card']")) do
+    local titleEl = html_select_first(card.html, "a[href*='/novel/']")
+    if titleEl then
+        local cover = html_attr(card.html, ".image-wrap img[alt]:not([aria-hidden])", "src")
+        table.insert(items, {
+            title = string_trim((html_select_first(card.html, "h3") or titleEl).text),
+            url   = absUrl(titleEl.href),
+            cover = absUrl(cover)
+        })
     end
+end
 
     return { items = items, hasNext = #items > 0 }
 end
@@ -65,17 +65,17 @@ function getCatalogSearch(index, query)
     end
 
     local items = {}
-    for _, card in ipairs(html_select(r.body, "div.serie-item")) do
-        local titleEl = html_select_first(card.html, "a.title")
-        if titleEl then
-            local cover = html_attr(card.html, ".image-wrap img", "src")
-            table.insert(items, {
-                title = string_trim(titleEl.text),
-                url   = absUrl(titleEl.href),
-                cover = absUrl(cover)
-            })
-        end
+    for _, card in ipairs(html_select(r.body, "div.series-list [data-slot='card']")) do
+    local titleEl = html_select_first(card.html, "a[href*='/novel/']")
+    if titleEl then
+        local cover = html_attr(card.html, ".image-wrap img[alt]:not([aria-hidden])", "src")
+        table.insert(items, {
+            title = string_trim((html_select_first(card.html, "h3") or titleEl).text),
+            url   = absUrl(titleEl.href),
+            cover = absUrl(cover)
+        })
     end
+end
 
     return { items = items, hasNext = #items > 0 }
 end
