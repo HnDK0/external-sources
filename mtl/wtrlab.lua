@@ -1,7 +1,7 @@
 ﻿-- ── Метаданные ───────────────────────────────────────────────────────────────
 id = "wtrlab"
 name = "WTR-LAB"
-version = "1.1.1"
+version = "1.1.2"
 baseUrl = "https://wtr-lab.com/"
 language = "MTL"
 icon = "https://raw.githubusercontent.com/HnDK0/external-sources/main/icons/wtr-lab.png"
@@ -561,37 +561,20 @@ end
 -- ── Жанры на странице книги ───────────────────────────────────────────────────
 
 function getBookGenres(bookUrl)
-    local r = http_get(bookUrl)
-    if not r.success then
+    local body = fetchPage(bookUrl)
+    if not body then
         return {}
     end
 
     local genres = {}
+    local seen = {}
 
-    -- Основной способ: таблица с td "Genre" → следующий td → ссылки
-    for _, row in ipairs(html_select(r.body, "tr")) do
-        local tds = html_select(row.html, "td")
-        if #tds >= 2 then
-            local label = string_trim(tds[1].text)
-            if label == "Genre" or label == "Genres" then
-                for _, a in ipairs(html_select(tds[2].html, "a")) do
-                    local g = string_trim(a.text):gsub(",$", "")
-                    if g ~= "" then
-                        table.insert(genres, g)
-                    end
-                end
-                break
-            end
-        end
-    end
-
-    -- Запасной: .genre или .genres .genre
-    if #genres == 0 then
-        for _, el in ipairs(html_select(r.body, ".genre")) do
-            local g = string_trim(el.text):gsub(",$", "")
-            if g ~= "" then
-                table.insert(genres, g)
-            end
+    -- Спаны с жанрами/тегами внутри flex-wrap контейнера
+    for _, el in ipairs(html_select(body, "div.flex.flex-wrap span")) do
+        local label = string_trim(el.text)
+        if label ~= "" and not seen[label] then
+            seen[label] = true
+            table.insert(genres, label)
         end
     end
 
