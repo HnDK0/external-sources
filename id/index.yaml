@@ -9,7 +9,7 @@ sources:
     language: "id"
   - id: "indowebnovel"
     name: "Indowebnovel"
-    version: "1.0.0"
+    version: "1.0.1"
     url: "https://raw.githubusercontent.com/HnDK0/external-sources/refs/heads/main/id/indowebnovel.lua"
     icon: "https://raw.githubusercontent.com/HnDK0/external-sources/main/icons/indowebnovel.png"
     language: "id"
