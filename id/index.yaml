@@ -15,7 +15,7 @@ sources:
     language: "id"
   - id: "meionovels"
     name: "MeioNovels"
-    version: "1.0.0"
+    version: "1.0.1"
     url: "https://raw.githubusercontent.com/HnDK0/external-sources/refs/heads/main/id/meionovels.lua"
     icon: "https://raw.githubusercontent.com/HnDK0/external-sources/main/icons/meionovels.png"
     language: "id"
