@@ -1,6 +1,6 @@
 id       = "meionovels"
 name     = "MeioNovels"
-version  = "1.0.0"
+version  = "1.0.1"
 baseUrl  = "https://meionovels.com"
 language = "id"
 icon     = "https://raw.githubusercontent.com/HnDK0/external-sources/main/icons/meionovels.png"
@@ -159,13 +159,28 @@ end
 -- ── Список глав ───────────────────────────────────────────────────────────────
 
 function getChapterList(bookUrl)
-    local body = fetchPage(bookUrl)
-    if not body then return {} end
+    -- Извлекаем slug из URL книги
+    local slug = bookUrl:match("/novel/([^/]+)/?$")
+    if not slug then
+        slug = bookUrl:match("/novel/([^/]+)")
+    end
+    if not slug then return {} end
+
+    -- POST на AJAX-эндпоинт, отдаёт все главы одной порцией
+    local r = http_post(baseUrl .. "/novel/" .. slug .. "/ajax/chapters/", "", {
+        headers = {
+            ["X-Requested-With"] = "XMLHttpRequest",
+            ["Referer"]          = bookUrl
+        },
+        charset = "UTF-8"
+    })
+
+    if not r.success then return {} end
 
     local chapters = {}
 
-    -- Парсим все главы (с учётом вложенности Volume > Chapter)
-    for _, li in ipairs(html_select(body, ".listing-chapters_wrap .wp-manga-chapter")) do
+    -- Парсим главы из AJAX-ответа (с учётом вложенности Volume > Chapter)
+    for _, li in ipairs(html_select(r.body, ".wp-manga-chapter")) do
         local a = html_select_first(li.html, "a")
         if a and a.href and a.href ~= "" then
             table.insert(chapters, {
@@ -177,7 +192,7 @@ function getChapterList(bookUrl)
 
     -- Если глав не нашлось через плоский список, пробуем вложенную структуру
     if #chapters == 0 then
-        for _, vol in ipairs(html_select(body, ".listing-chapters_wrap .has-child")) do
+        for _, vol in ipairs(html_select(r.body, ".listing-chapters_wrap .has-child")) do
             for _, li in ipairs(html_select(vol.html, ".wp-manga-chapter")) do
                 local a = html_select_first(li.html, "a")
                 if a and a.href and a.href ~= "" then
