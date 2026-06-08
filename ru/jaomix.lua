@@ -1,7 +1,7 @@
-﻿-- ── Метаданные ────────────────────────────────────────────────────────────────
+-- ── Метаданные ────────────────────────────────────────────────────────────────
 id       = "jaomix"
 name     = "Jaomix"
-version  = "1.0.2"
+version  = "1.0.3"
 baseUrl  = "https://jaomix.ru/"
 language = "ru"
 icon     = "https://raw.githubusercontent.com/HnDK0/external-sources/main/icons/jaomix.png"
@@ -34,9 +34,9 @@ end
 
 local AJAX_HEADERS = {
   headers = {
-    ["User-Agent"]       = "Mozilla/5.0 (Linux; Android 14; Pixel 8 Pro Build/UQ1A.240205.004) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/132.0.6834.83 Mobile Safari/537.36",
+    -- User-Agent, Referer, Accept-Language подставляются движком автоматически.
+    -- Указывай их здесь только если нужно переопределить дефолт.
     ["Accept"]           = "text/html, */*; q=0.01",
-    ["Accept-Language"]  = "ru-RU,ru;q=0.9,en-US;q=0.8,en;q=0.7",
     ["X-Requested-With"] = "XMLHttpRequest",
     ["Origin"]           = "https://jaomix.ru",
     ["Sec-Fetch-Dest"]   = "empty",
@@ -151,73 +151,88 @@ function getBookGenres(bookUrl)
   return genres
 end
 
--- ── Список глав (AJAX POST, постранично от конца к началу) ────────────────────
+-- ── Количество AJAX-страниц ───────────────────────────────────────────────────
 
-function getChapterList(bookUrl)
-  -- Загружаем страницу книги чтобы узнать количество страниц
+local function getTotalPages(bookUrl)
   local r = http_get(bookUrl)
-  if not r.success then return {} end
+  if not r.success then return 1 end
 
-  local maxPage = 10 -- fallback
   local opts = html_select(r.body, "select.sel-toc option")
   if #opts == 0 then
     opts = html_select(r.body, "select[onchange*='loadChaptList'] option")
   end
-  if #opts > 0 then maxPage = #opts end
+  if #opts > 0 then return #opts end
+  return 1
+end
 
+-- ── Парсинг одной AJAX-страницы ───────────────────────────────────────────────
+
+local function fetchAjaxPage(bookUrl, page)
   local ajaxUrl = baseUrl .. "wp-admin/admin-ajax.php"
-  local allChapters = {}
+  local headers = {}
+  for k, v in pairs(AJAX_HEADERS.headers) do headers[k] = v end
+  headers["Referer"] = bookUrl
 
-  -- Загружаем от последней страницы к первой
-  for page = maxPage, 1, -1 do
-    local headers = AJAX_HEADERS.headers
-    headers["Referer"] = bookUrl
+  local pr = http_post(
+    ajaxUrl,
+    "action=loadpagenavchapstt&page=" .. tostring(page),
+    { headers = headers }
+  )
+  if not pr.success then return {} end
 
-    local pr = http_post(
-      ajaxUrl,
-      "action=loadpagenavchapstt&page=" .. tostring(page),
-      {
-        headers = headers
-      }
-    )
-
-    if not pr.success then break end
-
-    -- Собираем главы страницы
-    local pageChapters = {}
-    for _, a in ipairs(html_select(pr.body, "div.title a[href]")) do
-      local chUrl = absUrl(a.href)
-      if chUrl ~= "" then
-        local titleEl = html_select_first(a.html, "h2")
-        table.insert(pageChapters, {
-          title = titleEl and string_clean(titleEl.text) or string_clean(a.text),
-          url   = chUrl
-        })
-      end
+  local chapters = {}
+  for _, a in ipairs(html_select(pr.body, "div.title a[href]")) do
+    local chUrl = absUrl(a.href)
+    if chUrl ~= "" then
+      local titleEl = html_select_first(a.html, "h2")
+      table.insert(chapters, {
+        title = titleEl and string_clean(titleEl.text) or string_clean(a.text),
+        url   = chUrl
+      })
     end
+  end
+  return chapters
+end
 
-    if #pageChapters == 0 then break end
+-- ── parsePage — пагинированный список глав ────────────────────────────────────
+--
+-- Вызывается движком вместо getChapterList.
+-- Возвращает { chapters = [...], totalPages = N }.
+--
+-- Сайт отдаёт главы в порядке "новые сверху" внутри каждой AJAX-страницы,
+-- а сами страницы тоже идут от новых к старым (страница 1 = самые новые).
+-- Мы разворачиваем оба уровня чтобы список глав шёл от старых к новым.
+--
+-- @param bookUrl   URL страницы книги
+-- @param page      номер страницы (1-based), запрошенный движком
+--
+function parsePage(bookUrl, page)
+  local totalPages = getTotalPages(bookUrl)
 
-    -- Внутри страницы разворачиваем (newest→oldest), затем добавляем
-    for i = #pageChapters, 1, -1 do
-      table.insert(allChapters, pageChapters[i])
-    end
+  -- Движок запрашивает страницы в порядке 1, 2, 3...
+  -- На сайте страница 1 = самые новые, поэтому маппим:
+  --   движок page 1  →  сайт page totalPages  (самые старые)
+  --   движок page 2  →  сайт page totalPages-1
+  --   ...
+  --   движок page N  →  сайт page 1           (самые новые)
+  local sitePage = totalPages - page + 1
 
-    sleep(math.random(150, 350))
+  local raw = fetchAjaxPage(bookUrl, sitePage)
+
+  -- Разворачиваем: сайт отдаёт новые сверху, нам нужны старые сверху
+  local chapters = {}
+  for i = #raw, 1, -1 do
+    table.insert(chapters, raw[i])
   end
 
-  return allChapters
+  sleep(math.random(150, 300))
+
+  return {
+    chapters   = chapters,
+    totalPages = totalPages,
+  }
 end
 
--- ── Хэш для обновлений ────────────────────────────────────────────────────────
-
-function getChapterListHash(bookUrl)
-  local r = http_get(bookUrl)
-  if not r.success then return nil end
-  local el = html_select_first(r.body, ".block-toc-out .columns-toc:first-child .flex-dow-txt:first-child a")
-  if el then return el.href end
-  return nil
-end
 
 -- ── Текст главы ───────────────────────────────────────────────────────────────
 
@@ -227,6 +242,7 @@ function getChapterText(html, url)
   if not el then return "" end
   return applyStandardContentTransforms(html_text(el.html))
 end
+
 -- ── Список фильтров ───────────────────────────────────────────────────────────
 
 function getFilterList()
