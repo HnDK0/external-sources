@@ -1,7 +1,7 @@
 -- ── Метаданные ────────────────────────────────────────────────────────────────
 id       = "NovelArrow"
 name     = "Novel Arrow"
-version  = "1.0.1"
+version  = "1.0.2"
 baseUrl  = "https://novelarrow.com/"
 language = "en"
 icon     = "https://raw.githubusercontent.com/HnDK0/external-sources/main/icons/novelbin.png"
@@ -121,7 +121,13 @@ end
 
 function getCatalogSearch(index, query)
     local page = index + 1
-    local url = apiBase .. "novels?keyword=" .. url_encode(query) .. "&page=" .. tostring(page) .. "&limit=20"
+    -- Те же параметры, что использует сайт для поиска по ключевому слову
+    -- (novels?...&sort=SEARCH_KEYWORD&keyword=...&status=all&genre=ALL).
+    local url = apiBase .. "novels?keyword=" .. url_encode(query)
+               .. "&page=" .. tostring(page) .. "&limit=20"
+               .. "&sort=SEARCH_KEYWORD"
+               .. "&status=all"
+               .. "&genre=ALL"
     local r = http_get(url)
     if not r.success then
         log_error("novelarrow: getCatalogSearch failed code=" .. tostring(r.code))
@@ -129,6 +135,7 @@ function getCatalogSearch(index, query)
     end
     local data = json_parse(r.body)
     if not data or not data.items then return { items = {}, hasNext = false } end
+
     local items = parseNovelItems(data.items)
     local hasNext = data.pagination and (data.pagination.page < data.pagination.totalPages) or false
     return { items = items, hasNext = hasNext }
