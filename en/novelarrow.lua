@@ -1,7 +1,7 @@
 -- ── Метаданные ────────────────────────────────────────────────────────────────
 id       = "NovelArrow"
 name     = "Novel Arrow"
-version  = "1.0.0"
+version  = "1.0.1"
 baseUrl  = "https://novelarrow.com/"
 language = "en"
 icon     = "https://raw.githubusercontent.com/HnDK0/external-sources/main/icons/novelbin.png"
@@ -281,15 +281,15 @@ function getFilterList()
             label        = "Sort By",
             defaultValue = "LASTEST",
             options = {
-                { value = "LASTEST",   label = "Latest Update"  },
-                { value = "HOT",       label = "Hot"            },
-                { value = "POPULAR",   label = "Popular"        },
-                { value = "WEEKLY",    label = "Weekly"         },
-                { value = "MONTHLY",   label = "Monthly"        },
-                { value = "ALL_TIME",  label = "All Time"       },
-                { value = "NEW",       label = "New"            },
-                { value = "RATING",    label = "Rating"         },
-                { value = "CHAPTERS",  label = "Most Chapters"  },
+                { value = "LASTEST",  label = "Latest Update" },
+                { value = "HOT",      label = "Hot"           },
+                { value = "POPULAR",  label = "Popular"       },
+                { value = "WEEKLY",   label = "Weekly"        },
+                { value = "MONTHLY",  label = "Monthly"       },
+                { value = "ALL_TIME", label = "All Time"      },
+                { value = "NEW",      label = "New"           },
+                { value = "RATING",   label = "Rating"        },
+                { value = "CHAPTERS", label = "Most Chapters" },
             }
         },
         {
@@ -304,56 +304,65 @@ function getFilterList()
             }
         },
         {
-            type        = "checkbox",
-            key         = "genre",
-            label       = "Genre",
-            multiselect = false,
+            type         = "select",
+            key          = "genre_mode",
+            label        = "Genre Mode",
+            defaultValue = "AND",
             options = {
-                { value = "action",         label = "Action"         },
-                { value = "adult",          label = "Adult"          },
-                { value = "adventure",      label = "Adventure"      },
-                { value = "comedy",         label = "Comedy"         },
-                { value = "drama",          label = "Drama"          },
-                { value = "eastern",        label = "Eastern"        },
-                { value = "fan-fiction",    label = "Fan-fiction"    },
-                { value = "fantasy",        label = "Fantasy"        },
-                { value = "game",           label = "Game"           },
-                { value = "gender-bender",  label = "Gender Bender"  },
-                { value = "harem",          label = "Harem"          },
-                { value = "historical",     label = "Historical"     },
-                { value = "horror",         label = "Horror"         },
-                { value = "isekai",         label = "Isekai"         },
-                { value = "josei",          label = "Josei"          },
-                { value = "litrpg",         label = "LitRPG"         },
-                { value = "magic",          label = "Magic"          },
-                { value = "martial-arts",   label = "Martial Arts"   },
-                { value = "mature",         label = "Mature"         },
-                { value = "mecha",          label = "Mecha"          },
-                { value = "military",       label = "Military"       },
-                { value = "modern-life",    label = "Modern Life"    },
-                { value = "mystery",        label = "Mystery"        },
-                { value = "psychological",  label = "Psychological"  },
-                { value = "reincarnation",  label = "Reincarnation"  },
-                { value = "romance",        label = "Romance"        },
-                { value = "school-life",    label = "School Life"    },
-                { value = "sci-fi",         label = "Sci-fi"         },
-                { value = "seinen",         label = "Seinen"         },
-                { value = "shoujo",         label = "Shoujo"         },
-                { value = "shounen",        label = "Shounen"        },
-                { value = "slice-of-life",  label = "Slice of Life"  },
-                { value = "smut",           label = "Smut"           },
-                { value = "sports",         label = "Sports"         },
-                { value = "supernatural",   label = "Supernatural"   },
-                { value = "system",         label = "System"         },
-                { value = "thriller",       label = "Thriller"       },
-                { value = "tragedy",        label = "Tragedy"        },
-                { value = "urban-life",     label = "Urban Life"     },
-                { value = "war",            label = "War"            },
-                { value = "wuxia",          label = "Wuxia"          },
-                { value = "xianxia",        label = "Xianxia"        },
-                { value = "xuanhuan",       label = "Xuanhuan"       },
-                { value = "yaoi",           label = "Yaoi"           },
-                { value = "yuri",           label = "Yuri"           },
+                { value = "AND", label = "AND (all selected)" },
+                { value = "OR",  label = "OR (any selected)"  },
+            }
+        },
+        {
+            type  = "tristate",
+            key   = "genres",
+            label = "Genres",
+            options = {
+                { value = "ACTION",        label = "Action"        },
+                { value = "ADULT",         label = "Adult"         },
+                { value = "ADVENTURE",     label = "Adventure"     },
+                { value = "COMEDY",        label = "Comedy"        },
+                { value = "DRAMA",         label = "Drama"         },
+                { value = "EASTERN",       label = "Eastern"       },
+                { value = "FAN-FICTION",   label = "Fan-fiction"   },
+                { value = "FANTASY",       label = "Fantasy"       },
+                { value = "GAME",          label = "Game"          },
+                { value = "GENDER-BENDER", label = "Gender Bender" },
+                { value = "HAREM",         label = "Harem"         },
+                { value = "HISTORICAL",    label = "Historical"    },
+                { value = "HORROR",        label = "Horror"        },
+                { value = "ISEKAI",        label = "Isekai"        },
+                { value = "JOSEI",         label = "Josei"         },
+                { value = "LITRPG",        label = "LitRPG"        },
+                { value = "MAGIC",         label = "Magic"         },
+                { value = "MARTIAL-ARTS",  label = "Martial Arts"  },
+                { value = "MATURE",        label = "Mature"        },
+                { value = "MECHA",         label = "Mecha"         },
+                { value = "MILITARY",      label = "Military"      },
+                { value = "MODERN-LIFE",   label = "Modern Life"   },
+                { value = "MYSTERY",       label = "Mystery"       },
+                { value = "PSYCHOLOGICAL", label = "Psychological" },
+                { value = "REINCARNATION", label = "Reincarnation" },
+                { value = "ROMANCE",       label = "Romance"       },
+                { value = "SCHOOL-LIFE",   label = "School Life"   },
+                { value = "SCI-FI",        label = "Sci-fi"        },
+                { value = "SEINEN",        label = "Seinen"        },
+                { value = "SHOUJO",        label = "Shoujo"        },
+                { value = "SHOUNEN",       label = "Shounen"       },
+                { value = "SLICE-OF-LIFE", label = "Slice of Life" },
+                { value = "SMUT",          label = "Smut"          },
+                { value = "SPORTS",        label = "Sports"        },
+                { value = "SUPERNATURAL",  label = "Supernatural"  },
+                { value = "SYSTEM",        label = "System"        },
+                { value = "THRILLER",      label = "Thriller"      },
+                { value = "TRAGEDY",       label = "Tragedy"       },
+                { value = "URBAN-LIFE",    label = "Urban Life"    },
+                { value = "WAR",           label = "War"           },
+                { value = "WUXIA",         label = "Wuxia"         },
+                { value = "XIANXIA",       label = "Xianxia"       },
+                { value = "XUANHUAN",      label = "Xuanhuan"      },
+                { value = "YAOI",          label = "Yaoi"          },
+                { value = "YURI",          label = "Yuri"          },
             }
         },
     }
@@ -362,16 +371,24 @@ end
 -- ── Каталог с фильтрами ───────────────────────────────────────────────────────
 
 function getCatalogFiltered(index, filters)
-    local page   = index + 1
-    local sort   = filters["sort"]   or "LASTEST"
-    local status = filters["status"] or "all"
-    local genres = filters["genre_included"] or {}
-    local genre  = genres[1] or "ALL"
+    local page       = index + 1
+    local sort       = filters["sort"]       or "LASTEST"
+    local status     = filters["status"]     or "all"
+    local genre_mode = filters["genre_mode"] or "AND"
+    local genres_inc = filters["genres_included"] or {}
+    local genres_exc = filters["genres_excluded"] or {}
 
     local url = apiBase .. "novels?page=" .. tostring(page) .. "&limit=20"
-               .. "&sort="   .. url_encode(sort)
-               .. "&status=" .. url_encode(status)
-               .. "&genre="  .. url_encode(genre)
+               .. "&sort="       .. url_encode(sort)
+               .. "&status="     .. url_encode(status)
+               .. "&genre_mode=" .. url_encode(genre_mode)
+
+    for _, g in ipairs(genres_inc) do
+        url = url .. "&genres=" .. url_encode(g)
+    end
+    for _, g in ipairs(genres_exc) do
+        url = url .. "&genres_exclude=" .. url_encode(g)
+    end
 
     local r = http_get(url)
     if not r.success then
