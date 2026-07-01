@@ -50,13 +50,14 @@ function getCatalogSearch(index, query) ... end
 function getBookTitle(bookUrl) ... end
 function getBookCoverImageUrl(bookUrl) ... end
 function getBookDescription(bookUrl) ... end
-function getChapterList(bookUrl) ... end
+function getChapterList(bookUrl) ... end      -- нужен ТОЛЬКО если нет parsePage (см. ниже)
 function getChapterText(html, url) ... end
 
 -- 4. ОПЦИОНАЛЬНЫЕ ФУНКЦИИ
 function getBookGenres(bookUrl) ... end
-function getChapterListHash(bookUrl) ... end
-function parsePage(bookUrl, page) ... end     -- список глав с пагинацией
+function getChapterListHash(bookUrl) ... end  -- нужен ТОЛЬКО если нет parsePage (см. ниже)
+function parsePage(bookUrl, page) ... end     -- список глав с пагинацией; если есть — полностью
+                                               -- заменяет getChapterList и getChapterListHash
 function getFilterList() ... end
 function getCatalogFiltered(index, filters) ... end
 function getSettingsSchema() ... end
@@ -846,6 +847,7 @@ end
 
 > Используй только если у сайта список глав разбит на несколько страниц через AJAX или пагинацию.
 > Большинству плагинов это не нужно — `getChapterList` достаточно.
+> Если `parsePage` реализован — `getChapterList` и `getChapterListHash` для этого плагина писать не нужно, движок их не вызовет.
 
 ### Зачем
 
@@ -967,34 +969,27 @@ function parsePage(bookUrl, page)
 end
 ```
 
-### getChapterList — оставляем как запасной вариант
+### getChapterList — не нужен, если есть parsePage
 
-Движок один и тот же: если плагин не объявляет функцию `parsePage`,
-`bookChaptersPage()` вернёт `null` и движок автоматически переключится
-на `getChapterList`. Оставь его — это обеспечивает работу плагина
-на любой версии приложения и для книг, у которых `parsePage` ещё не
-запускался.
+Движок сам определяет, что использовать: если плагин объявляет `parsePage`,
+движок **всегда** вызывает его (и для первой загрузки, и для обновлений),
+`getChapterList` при этом не вызывается вообще. Объявлять `getChapterList`
+"на всякий случай" не нужно — это мёртвый код, который никогда не выполнится,
+пока в файле есть `parsePage`.
 
-```lua
--- Пример для сайта с обратным порядком (jaomix-style)
-function getChapterList(bookUrl)
-    local totalPages = getTotalPages(bookUrl)
-    local allChapters = {}
-    for page = totalPages, 1, -1 do      -- от старых к новым
-        local raw = fetchAjaxPage(bookUrl, page)
-        for i = #raw, 1, -1 do           -- разворачиваем страницу
-            table.insert(allChapters, raw[i])
-        end
-        sleep(math.random(150, 350))
-    end
-    return allChapters
-end
-```
+`getChapterList` нужен только плагинам **без** `parsePage` — то есть тем,
+у кого список глав отдаётся одним запросом или сайт не поддерживает
+постраничную подгрузку.
 
-### getChapterListHash при parsePage
+### getChapterListHash — тоже не нужен при parsePage
 
-Используется только старым движком. Достаточно вернуть что-то уникальное
-для последнего состояния — URL первой новой главы или счётчик глав:
+`getChapterListHash` — это механизм обнаружения обновлений для плагинов
+**без** `parsePage`. Если `parsePage` реализован, движок сам следит
+за обновлениями через него: перечитывает последнюю известную страницу
+и сравнивает `totalPages`/главы напрямую — отдельный хэш ему не требуется,
+и `getChapterListHash` для такого плагина писать не нужно.
+
+Пример ниже актуален только для плагинов без `parsePage`:
 
 ```lua
 -- Вариант 1: URL последней главы через быстрый запрос (jaomix)
