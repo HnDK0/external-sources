@@ -1,4 +1,7 @@
 languages:
+  ar:
+    name: "Arabic"
+    url: "https://raw.githubusercontent.com/HnDK0/external-sources/refs/heads/main/ar/index.yaml"
   en:
     name: "English"
     url: "https://raw.githubusercontent.com/HnDK0/external-sources/refs/heads/main/en/index.yaml"
