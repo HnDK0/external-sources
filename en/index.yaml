@@ -9,7 +9,7 @@ sources:
     language: "en"
   - id: "freewebnovel"
     name: "FreeWebNovel"
-    version: "1.0.1"
+    version: "1.0.2"
     url: "https://raw.githubusercontent.com/HnDK0/external-sources/refs/heads/main/en/freewebnovel.lua"
     icon: "https://raw.githubusercontent.com/HnDK0/external-sources/main/icons/freewebnovel.png"
     language: "en"
