@@ -123,6 +123,14 @@ end
 local CHAPTERS_PAGE_SIZE = 200
 
 local function fetchChaptersAjax(bookUrl, page, pageSize)
+  -- Небольшая случайная задержка перед каждым ajax-запросом глав:
+  -- не даём Cloudflare заметить равномерный "ботовский" поток запросов.
+  -- Первую страницу не тормозим — она обычно единственная, что нужна сразу.
+  -- Диапазон как в гайде для агрессивно блокирующих сайтов (см. jaomix).
+  if page > 1 then
+    sleep(math.random(150, 350))
+  end
+
   local sep = bookUrl:find("?") and "&" or "?"
   local url = bookUrl .. sep .. "ajax=chapters&page=" .. tostring(page) .. "&pageSize=" .. tostring(pageSize)
 
@@ -133,6 +141,8 @@ local function fetchChaptersAjax(bookUrl, page, pageSize)
     }
   })
   if not r.success then
+    -- Если это 429/CF-челлендж — приложение само поднимет вебвью для
+    -- ручного/автоматического прохождения на уровне сети, retry здесь не нужен.
     log_error("freewebnovel: chapters ajax failed code=" .. tostring(r.code) .. " page=" .. tostring(page))
     return nil
   end
