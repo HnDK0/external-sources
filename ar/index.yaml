@@ -1,0 +1,9 @@
+language: "ar"
+name: "Arabic"
+sources:
+  - id: "truthnovel"
+    name: "Truth Novel"
+    version: "1.1.0"
+    url: "https://raw.githubusercontent.com/HnDK0/external-sources/refs/heads/main/ar/truthnovel.lua"
+    icon: "https://raw.githubusercontent.com/HnDK0/external-sources/main/icons/truthnovel.png"
+    language: "ar"
