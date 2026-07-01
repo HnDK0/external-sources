@@ -5,6 +5,7 @@ baseUrl  = "https://truthnovel.top"
 language = "ar"
 icon     = "https://raw.githubusercontent.com/HnDK0/external-sources/main/icons/truthnovel.png"
 
+local _cover = baseUrl .. "/wp-content/uploads/2024/12/نسخة-الفصل-الف-الصغيرة-للموقع-العربي.jpg"
 local _pageCache = {}
 local function fetchPage(url)
     if _pageCache[url] then return _pageCache[url] end
@@ -42,7 +43,7 @@ function getCatalogList(index)
             {
                 title = "Lord of Truth",
                 url   = baseUrl .. "/list/257/",
-                cover = icon
+                cover = _cover
             }
         },
         hasNext = false
@@ -58,7 +59,7 @@ function getBookTitle(bookUrl)
 end
 
 function getBookCoverImageUrl(bookUrl)
-    return icon
+    return _cover
 end
 
 function getBookDescription(bookUrl)
@@ -70,6 +71,7 @@ function getBookGenres(bookUrl)
 end
 
 function getChapterList(bookUrl)
+    bookUrl = bookUrl:gsub("/?$", "/")
     local r = http_get(bookUrl)
     if not r.success then
         log_error("truthnovel: getChapterList failed for " .. bookUrl)
@@ -105,6 +107,7 @@ function getChapterList(bookUrl)
 end
 
 function getChapterListHash(bookUrl)
+    bookUrl = bookUrl:gsub("/?$", "/")
     local r = http_get(bookUrl)
     if not r.success then return nil end
     local links = html_select(r.body, "a.w4pl_post_title")
