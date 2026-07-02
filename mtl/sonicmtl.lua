@@ -59,7 +59,7 @@ local function parseCatalogItems(body)
 end
 
 local function hasNextPage(body)
-    local nextLink = html_select_first(body, ".nav-previous a")
+    local nextLink = html_select_first(body, ".nav-next a")
     return nextLink ~= nil
 end
 
