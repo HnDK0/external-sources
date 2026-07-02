@@ -3,7 +3,7 @@ name: "Mtl"
 sources:
   - id: "sonicmtl"
     name: "Sonic MTL"
-    version: "1.7.0"
+    version: "1.7.1"
     url: "https://raw.githubusercontent.com/HnDK0/external-sources/refs/heads/main/mtl/sonicmtl.lua"
     icon: "https://raw.githubusercontent.com/HnDK0/external-sources/main/icons/sonicmtl.png"
     language: "Mtl"

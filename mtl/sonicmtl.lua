@@ -1,6 +1,6 @@
 id       = "sonicmtl"
 name     = "Sonic MTL"
-version  = "1.7.0"
+version  = "1.7.1"
 baseUrl  = "https://www.sonicmtl.com"
 language = "Mtl"
 icon     = "https://raw.githubusercontent.com/HnDK0/external-sources/main/icons/sonicmtl.png"
@@ -48,19 +48,18 @@ local function parseCatalogItems(body)
             cover = html_attr(card.html, ".c-image-hover img", "src")
         end
         if titleEl then
-            table.insert(items, {
-                title = string_clean(titleEl.text),
-                url   = absUrl(titleEl.href),
-                cover = cover ~= "" and absUrl(cover) or nil
-            })
+            local t = string_clean(titleEl.text)
+            local u = absUrl(titleEl.href)
+            if t ~= "" and u ~= "" then
+                table.insert(items, {
+                    title = t,
+                    url   = u,
+                    cover = cover ~= "" and absUrl(cover) or nil
+                })
+            end
         end
     end
     return items
-end
-
-local function hasNextPage(body)
-    local nextLink = html_select_first(body, ".nav-next a")
-    return nextLink ~= nil
 end
 
 -- ── Каталог ───────────────────────────────────────────────────────────────────
@@ -76,7 +75,7 @@ function getCatalogList(index)
     if not r.success then return { items = {}, hasNext = false } end
 
     local items = parseCatalogItems(r.body)
-    return { items = items, hasNext = hasNextPage(r.body) }
+    return { items = items, hasNext = #items > 0 }
 end
 
 -- ── Поиск ─────────────────────────────────────────────────────────────────────
@@ -92,7 +91,7 @@ function getCatalogSearch(index, query)
     if not r.success then return { items = {}, hasNext = false } end
 
     local items = parseCatalogItems(r.body)
-    return { items = items, hasNext = hasNextPage(r.body) }
+    return { items = items, hasNext = #items > 0 }
 end
 
 -- ── Детали книги ──────────────────────────────────────────────────────────────
@@ -440,5 +439,5 @@ function getCatalogFiltered(index, filters)
     if not r.success then return { items = {}, hasNext = false } end
 
     local items = parseCatalogItems(r.body)
-    return { items = items, hasNext = hasNextPage(r.body) }
+    return { items = items, hasNext = #items > 0 }
 end
