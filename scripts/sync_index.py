@@ -10,6 +10,9 @@ sync_index.py — генерация index.yaml из .lua плагинов.
 
 refs/heads/main вместо main — обходит кэш raw.githubusercontent.com,
 файлы отдаются сразу без задержек.
+
+Плагины с полем status = "dead" в метаданных остаются в репозитории
+(как рабочий пример / история), но не попадают в index.yaml.
 """
 
 import os, re, sys, subprocess
@@ -91,6 +94,7 @@ def parse_lua(filepath: Path) -> dict | None:
         "name":    field("name") or plugin_id,
         "version": version,
         "icon":    field("icon") or "",
+        "status":  field("status"),  # None, если поля нет; "dead" если плагин мёртв
     }
 
 # ── Генерация index.yaml ──────────────────────────────────────────────────────
@@ -150,6 +154,11 @@ def sync(root: Path):
             meta = parse_lua(lua_file)
             if not meta:
                 continue
+
+            if meta["status"] == "dead":
+                print(f"  [SKIP] {meta['id']} — status=dead, не включаем в индекс")
+                continue
+
             icon = meta["icon"] or f"{raw_base}/icons/{meta['id']}.png"
             plugins.append({
                 "id":      meta["id"],
