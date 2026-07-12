@@ -1,7 +1,7 @@
 ﻿-- ── Метаданные ────────────────────────────────────────────────────────────────
 id       = "ranobelib"
 name     = "RanobeLib"
-version  = "1.0.5"
+version  = "1.0.6"
 baseUrl  = "https://ranobelib.me/"
 language = "ru"
 icon     = "https://raw.githubusercontent.com/HnDK0/external-sources/main/icons/ranobelib.png"
