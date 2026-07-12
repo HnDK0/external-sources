@@ -42,7 +42,7 @@ local function applyStandardContentTransforms(text)
   if not text or text == "" then return "" end
   text = string_normalize(text)
   local domain = baseUrl:gsub("https?://", ""):gsub("^www%.", ""):gsub("/$", "")
-  text = regex_replace(text, "(?i)" .. domain .. ".*?\\n", "")
+  text = regex_replace(text, "(?i)(?:^|\\n)[^<\\n]*" .. domain .. ".*?\\n", "\n")
   text = regex_replace(text, "(?i)\\A[\\s\\p{Z}\\uFEFF]*((Глава\\s+\\d+|Chapter\\s+\\d+)[^\\n\\r]*[\\n\\r\\s]*)+", "")
   text = string_trim(text)
   return text
