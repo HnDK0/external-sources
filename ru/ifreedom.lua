@@ -1,7 +1,7 @@
 -- ── Метаданные ────────────────────────────────────────────────────────────────
 id       = "ifreedom"
 name     = "iFreedom"
-version  = "1.1.2"
+version  = "1.1.3"
 baseUrl  = "https://ifreedom.su/"
 language = "ru"
 icon     = "https://raw.githubusercontent.com/HnDK0/external-sources/main/icons/ifreedom.png"
@@ -13,6 +13,15 @@ local function absUrl(href)
   if string_starts_with(href, "http") then return href end
   if string_starts_with(href, "//") then return "https:" .. href end
   return url_resolve(baseUrl, href)
+end
+
+local function normalizeNovelUrl(url)
+  if not url or url == "" then return "" end
+  if url:find("%?") then return url end
+  if url:sub(-1) ~= "/" then
+    return url .. "/"
+  end
+  return url
 end
 
 local function applyStandardContentTransforms(text)
@@ -27,8 +36,6 @@ local function applyStandardContentTransforms(text)
   return text
 end
 
-
-
 -- ── Каталог ───────────────────────────────────────────────────────────────────
 
 function getCatalogList(index)
@@ -41,7 +48,7 @@ function getCatalogList(index)
   local items = {}
   for _, card in ipairs(html_select(r.body, ".booksearch .item-book-slide")) do
     local titleEl = html_select_first(card.html, ".block-book-slide-title")
-    local bookUrl = absUrl(html_attr(card.html, "a", "href"))
+    local bookUrl = normalizeNovelUrl(absUrl(html_attr(card.html, "a", "href")))
     local cover   = absUrl(html_attr(card.html, "img", "src"))
     if titleEl and bookUrl ~= "" then
       table.insert(items, {
@@ -66,7 +73,7 @@ function getCatalogSearch(index, query)
   local items = {}
   for _, card in ipairs(html_select(r.body, ".booksearch .item-book-slide")) do
     local titleEl = html_select_first(card.html, ".block-book-slide-title")
-    local bookUrl = absUrl(html_attr(card.html, "a", "href"))
+    local bookUrl = normalizeNovelUrl(absUrl(html_attr(card.html, "a", "href")))
     local cover   = absUrl(html_attr(card.html, "img", "src"))
     if titleEl and bookUrl ~= "" then
       table.insert(items, {
@@ -83,6 +90,8 @@ end
 -- ── Детали книги ──────────────────────────────────────────────────────────────
 
 function getBookTitle(bookUrl)
+  bookUrl = normalizeNovelUrl(bookUrl)
+
   local r = http_get(bookUrl)
   if not r.success then return nil end
   local el = html_select_first(r.body, "h1")
@@ -91,6 +100,8 @@ function getBookTitle(bookUrl)
 end
 
 function getBookCoverImageUrl(bookUrl)
+  bookUrl = normalizeNovelUrl(bookUrl)
+
   local r = http_get(bookUrl)
   if not r.success then return nil end
   local el = html_select_first(r.body, "div.book-img.block-book-slide-img > img")
@@ -99,6 +110,8 @@ function getBookCoverImageUrl(bookUrl)
 end
 
 function getBookDescription(bookUrl)
+  bookUrl = normalizeNovelUrl(bookUrl)
+
   local r = http_get(bookUrl)
   if not r.success then return nil end
   local el = html_select_first(r.body, "[data-name=\"Описание\"]")
@@ -107,11 +120,12 @@ function getBookDescription(bookUrl)
 end
 
 function getBookGenres(bookUrl)
+  bookUrl = normalizeNovelUrl(bookUrl)
+
   local r = http_get(bookUrl)
   if not r.success then return {} end
 
   local genres = {}
-  -- ifreedom: div.book-info-list содержит svg.icon-tabler-tag, после него идут ссылки жанров
   for _, block in ipairs(html_select(r.body, "div.book-info-list")) do
     local icon = html_select_first(block.html, "svg.icon-tabler-tag")
     if icon then
@@ -122,7 +136,6 @@ function getBookGenres(bookUrl)
     end
   end
 
-  -- ifreedom: альтернативный селектор через genreslist
   if #genres == 0 then
     for _, a in ipairs(html_select(r.body, "div.genreslist a")) do
       local label = string_trim(a.text)
@@ -136,6 +149,8 @@ end
 -- ── Список глав ───────────────────────────────────────────────────────────────
 
 function getChapterList(bookUrl)
+  bookUrl = normalizeNovelUrl(bookUrl)
+
   local r = http_get(bookUrl)
   if not r.success then return {} end
 
@@ -151,13 +166,17 @@ function getChapterList(bookUrl)
   end
 
   local reversed = {}
-  for i = #chapters, 1, -1 do table.insert(reversed, chapters[i]) end
+  for i = #chapters, 1, -1 do
+    table.insert(reversed, chapters[i])
+  end
   return reversed
 end
 
 -- ── Хэш для обновлений ────────────────────────────────────────────────────────
 
 function getChapterListHash(bookUrl)
+  bookUrl = normalizeNovelUrl(bookUrl)
+
   local r = http_get(bookUrl)
   if not r.success then return nil end
   local el = html_select_first(r.body, "div.book-info-list:has(svg.icon-tabler-list-check) div")
@@ -289,7 +308,7 @@ function getCatalogFiltered(index, filters)
   local items = {}
   for _, card in ipairs(html_select(r.body, ".booksearch .item-book-slide")) do
     local titleEl = html_select_first(card.html, ".block-book-slide-title")
-    local bookUrl = absUrl(html_attr(card.html, "a", "href"))
+    local bookUrl = normalizeNovelUrl(absUrl(html_attr(card.html, "a", "href")))
     local cover   = absUrl(html_attr(card.html, "img", "src"))
     if titleEl and bookUrl ~= "" then
       table.insert(items, {
