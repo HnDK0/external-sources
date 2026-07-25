@@ -17,7 +17,7 @@ sources:
     name: "MVLEMPYR"
     version: "1.0.12"
     url: "https://raw.githubusercontent.com/HnDK0/external-sources/refs/heads/main/en/mvlempyr.lua"
-    icon: "src/en/mvlempyr/icon.png"
+    icon: "https://raw.githubusercontent.com/HnDK0/external-sources/main/icons/mvlempyr.webp"
     language: "en"
   - id: "nobadnovel"
     name: "NoBadNovel"
