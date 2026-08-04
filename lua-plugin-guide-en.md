@@ -61,6 +61,7 @@ function parsePage(bookUrl, page) ... end     -- paginated chapter list; if pres
 function getFilterList() ... end
 function getCatalogFiltered(index, filters) ... end
 function getSettingsSchema() ... end
+function getUserAgentPreset() ... end         -- name of the UA preset, see "Working with HTTP"
 ```
 
 The adapter automatically determines the subclass based on which functions are present:
@@ -230,6 +231,39 @@ local r = http_post(ajaxUrl, body, {
     }
 })
 ```
+
+### Overriding the User-Agent (getUserAgentPreset)
+
+Some sites serve different layouts depending on the User-Agent (mobile/desktop), and the app's global UA isn't enough. For that, the plugin declares a function:
+
+```lua
+function getUserAgentPreset()
+  return "Safari Mobile"
+end
+```
+
+Mechanics (`LuaSourceAdapter.registerUAPreset`):
+- Called **once** when the adapter is created, with no arguments.
+- The returned preset name is registered against the source **`id`** and the **host from `baseUrl`** — it applies to all requests of the source, including image loads on the same domain.
+- An invalid/blank name is ignored (a warning is written to the log).
+
+Valid names (`UAPresets`):
+
+| Preset (full name) | Alias |
+|---|---|
+| `Chrome 150 (Windows)` | `Chrome Desktop` |
+| `Safari 18 (macOS)` | `Safari Desktop` |
+| `Firefox 152 (Windows)` | `Firefox Desktop` |
+| `Edge 150 (Windows)` | `Edge Desktop` |
+| `Chrome 150 (Android)` | `Chrome Mobile` |
+| `Safari 18 (iOS)` | `Safari Mobile` |
+| `Firefox 152 (Android)` | `Firefox Mobile` |
+| `Edge 150 (Android)` | `Edge Mobile` |
+| `Samsung Internet 30.0 (Android)` | `Samsung Mobile` |
+
+User-Agent priority for a request: value from the plugin's `config.headers` → preset by source id → preset by host → the app's global UA. In other words, **if the plugin manually sets `User-Agent` in `headers`, the preset won't apply** — use `getUserAgentPreset` instead of hardcoding a UA, so the user's global settings aren't overridden.
+
+Repo example — `en/readfrom.lua` (mobile layout of readfrom.net).
 
 ### http_get(url [, config])
 
@@ -1359,6 +1393,12 @@ end
 
 ## Full API Reference
 
+### Plugin functions (called by the engine)
+
+| Function                            | Description                                                                           |
+| ------------------------------------- | --------------------------------------------------------------------------------------- |
+| `getUserAgentPreset()`              | Name of the UA preset (e.g. `"Safari Mobile"`) — applies to all source requests and its domain. See "Working with HTTP" |
+
 ### HTTP
 
 | Function                           | Description                                          |
@@ -1794,6 +1834,15 @@ local r = http_post(ajaxUrl, body, {
         ["X-Requested-With"] = "XMLHttpRequest",
     }
 })
+```
+
+**If a site needs a specific User-Agent (mobile/desktop layout) — don't hardcode it in `headers`.** Declare `getUserAgentPreset()` and the engine will apply the preset to all source requests without breaking global settings:
+
+```lua
+-- ✅ Built-in mechanism: the preset applies to all source requests and its domain
+function getUserAgentPreset()
+    return "Safari Mobile"
+end
 ```
 
 ### 8. Missing log_error while debugging

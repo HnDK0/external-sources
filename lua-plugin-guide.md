@@ -61,6 +61,7 @@ function parsePage(bookUrl, page) ... end     -- список глав с паг
 function getFilterList() ... end
 function getCatalogFiltered(index, filters) ... end
 function getSettingsSchema() ... end
+function getUserAgentPreset() ... end         -- имя UA-пресета, см. «Работа с HTTP»
 ```
 
 Адаптер автоматически определяет подкласс по наличию функций:
@@ -229,6 +230,39 @@ local r = http_post(ajaxUrl, body, {
     }
 })
 ```
+
+### Переопределение User-Agent (getUserAgentPreset)
+
+Иногда сайт отдаёт разную вёрстку в зависимости от User-Agent (мобильную/десктопную), и глобального UA приложения не хватает. Для этого плагин объявляет функцию:
+
+```lua
+function getUserAgentPreset()
+  return "Safari Mobile"
+end
+```
+
+Механизм (`LuaSourceAdapter.registerUAPreset`):
+- Вызывается **один раз** при создании адаптера, без аргументов.
+- Возвращённое имя пресета регистрируется на **`id` источника** и на **хост из `baseUrl`** — пресет применяется ко всем запросам источника, включая загрузку картинок на том же домене.
+- Невалидное/пустое имя → пресет игнорируется (в лог пишется предупреждение).
+
+Допустимые имена (`UAPresets`):
+
+| Пресет (полное имя) | Алиас |
+|---|---|
+| `Chrome 150 (Windows)` | `Chrome Desktop` |
+| `Safari 18 (macOS)` | `Safari Desktop` |
+| `Firefox 152 (Windows)` | `Firefox Desktop` |
+| `Edge 150 (Windows)` | `Edge Desktop` |
+| `Chrome 150 (Android)` | `Chrome Mobile` |
+| `Safari 18 (iOS)` | `Safari Mobile` |
+| `Firefox 152 (Android)` | `Firefox Mobile` |
+| `Edge 150 (Android)` | `Edge Mobile` |
+| `Samsung Internet 30.0 (Android)` | `Samsung Mobile` |
+
+Приоритет User-Agent для запроса: значение из `config.headers` плагина → пресет по id источника → пресет по хосту → глобальный UA приложения. То есть **если плагин вручную задал `User-Agent` в `headers`, пресет не применится** — используй `getUserAgentPreset`, а не хардкод UA, чтобы не перебивать глобальные настройки пользователя.
+
+Пример из репозитория — `en/readfrom.lua` (мобильная вёрстка readfrom.net).
 
 ### http_get(url [, config])
 
@@ -1355,6 +1389,12 @@ end
 
 ## Полный справочник API
 
+### Функции плагина (вызываются движком)
+
+| Функция | Описание |
+|---|---|
+| `getUserAgentPreset()` | Имя UA-пресета (например `"Safari Mobile"`) — применяется ко всем запросам источника и его домена. Подробнее в «Работа с HTTP» |
+
 ### HTTP
 
 | Функция | Описание |
@@ -1790,6 +1830,15 @@ local r = http_post(ajaxUrl, body, {
         ["X-Requested-With"] = "XMLHttpRequest",
     }
 })
+```
+
+**Если сайту нужен специфичный User-Agent (мобильная/десктопная вёрстка) — не хардкодь его в `headers`.** Объяви `getUserAgentPreset()` — движок применит пресет ко всем запросам источника, не ломая глобальные настройки:
+
+```lua
+-- ✅ Штатный механизм: пресет применяется ко всем запросам источника и его домена
+function getUserAgentPreset()
+    return "Safari Mobile"
+end
 ```
 
 ### 8. Отсутствие log_error при отладке
