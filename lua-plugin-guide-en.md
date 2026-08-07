@@ -124,8 +124,22 @@ end
 
 Return table:
 
-- `items` — an array of `{ title, url, cover }`, where `cover` is optional
+- `items` — an array of `{ title, url, cover, rating? }`, where `cover` and `rating` are optional
 - `hasNext` — `true` if there is a next page
+
+`rating` is a string (e.g. `"4.6"`) taken from the list card, **without** a separate
+request to the book page. If a card has no rating (e.g. in search results), simply
+omit the key. Numbers are accepted too and converted to strings.
+
+Rating formats (parsed by the app at display time):
+
+- `"4.3"` — a bare number = rating on a 0-5 scale (default type, backward compatible)
+- `"Rating: 4.3"` — a rating explicitly marked with the word `Rating`
+- `"Rating: 8.7/10"` — a rating on another scale: the `/N` suffix tells the app to rescale it to 0-5 (shown as `4.4/5`)
+- `"Rank: 3"` — a rank: the word `Rank` is required, shown as is
+
+The type is determined by the word: `rank` → rank, `rating` → rating, a bare number → rating.
+Garbage is not shown: a number outside 0-5 without an explicit scale, a number above its declared scale, or no number at all.
 
 ### getCatalogSearch(index, query)
 
@@ -171,6 +185,38 @@ function getBookDescription(bookUrl)
     return el and string_trim(el.text) or nil
 end
 ```
+
+### getBookRating(bookUrl) — optional
+
+Book rating (string, e.g. `"4.8"`) or `nil` if absent. Called when opening a book
+and for library backfill, so it must NOT parse the chapter list — only the rating.
+
+```
+function getBookRating(bookUrl)
+    local r = http_get(bookUrl)
+    if not r.success then return nil end
+    local el = html_select_first(r.body, ".rating .nub")
+    return el and string_clean(el.text) or nil
+end
+```
+
+Ready-to-use templates:
+
+```
+-- 1. Rating: a clean number from a card attribute
+rating = html_attr(card.html, ".info-rating", "data-rating")   -- "4.6"
+
+-- 2. Rating: extract the number from dirty text ("Rating: 4.6 of 5" → "4.6")
+local n = string.match(string_clean(el.text), "%d+%.?%d*")
+
+-- 3. Rating on a 10-point scale — the app rescales it to 0-5 itself
+rating = "Rating: " .. n .. "/10"                              -- "Rating: 8.7/10"
+
+-- 4. Rank (the word Rank is required)
+rating = "Rank: " .. n                                         -- "Rank: 3"
+```
+
+A comma as the decimal separator is handled too (`4,6` = `4.6`).
 
 ### getChapterList(bookUrl)
 
