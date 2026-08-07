@@ -1,7 +1,7 @@
 -- ── Метаданные ────────────────────────────────────────────────────────────────
 id       = "ranobehub"
 name     = "RanobeHub"
-version  = "1.0.2"
+version  = "1.0.3"
 baseUrl  = "https://ranobehub.org"
 language = "ru"
 icon     = "https://raw.githubusercontent.com/HnDK0/external-sources/main/icons/ranobehub.png"
@@ -60,14 +60,37 @@ end
 
 -- ── Каталог ───────────────────────────────────────────────────────────────────
 
-function getCatalogList(index)
-  local page = index + 1
-  local url = apiBase .. "search?page=" .. tostring(page) .. "&sort=computed_rating&status=0&take=40"
-  local r = http_get(url)
-  if not r.success then return { items = {}, hasNext = false } end
-  local data = json_parse(r.body)
+-- Собирает URL /api/search. Важно: API на page=1 отвечает 301 без тела
+-- (редиректит на URL без параметра page), поэтому для первой страницы page не
+-- передаём вовсе — это ровно цель редиректа; http_get движка может не следовать
+-- 301. Для остальных страниц page = N+1 (движок передаёт index с 0).
+local function searchUrl(page, queryString)
+  local url = apiBase .. "search?" .. queryString
+  if page > 1 then url = url .. "&page=" .. tostring(page) end
+  return url
+end
+
+local function defaultQueryString()
+  return "sort=computed_rating&status=0&take=40"
+end
+
+local function parseSearchResponse(body)
+  local data = json_parse(body)
+  if not data then return { items = {}, hasNext = false } end
   local items = parseResource(data)
-  return { items = items, hasNext = #items > 0 }
+  -- hasNext считаем по пагинации API (currentPage < lastPage), а не по наличию
+  -- items: на последней странице карточки ещё есть, но следующей страницы нет —
+  -- иначе движок сделает лишний запрос за концом списка.
+  local pag = data.pagination
+  local hasNext = (pag and pag.currentPage and pag.lastPage
+                   and pag.currentPage < pag.lastPage) or false
+  return { items = items, hasNext = hasNext }
+end
+
+function getCatalogList(index)
+  local r = http_get(searchUrl(index + 1, defaultQueryString()))
+  if not r.success then return { items = {}, hasNext = false } end
+  return parseSearchResponse(r.body)
 end
 
 -- ── Поиск ─────────────────────────────────────────────────────────────────────
@@ -628,8 +651,8 @@ end
 function getCatalogFiltered(index, filters)
   local page = index + 1
 
-  local sort       = filters["sort"] or "computed_rating"
-  local status     = filters["status"] or "0"
+  local sort        = filters["sort"] or "computed_rating"
+  local status      = filters["status"] or "0"
   local country_inc = filters["country_included"] or {}
 
   local tags_inc = {}
@@ -641,25 +664,22 @@ function getCatalogFiltered(index, filters)
     for i = 1, #exc do tags_exc[#tags_exc + 1] = exc[i] end
   end
 
-  local url = apiBase .. "search?page=" .. tostring(page)
-              .. "&sort=" .. url_encode(sort)
-              .. "&status=" .. status
-              .. "&take=40"
+  -- Параметры проверены на живом API: sort/status/country/tags:positive/
+  -- tags:negative реально фильтруют выдачу /api/search (см. фикстуры
+  -- rh_filt_* — страница 1 vs 2, только Япония, только «Завершено» и т.д.).
+  local qs = "sort=" .. url_encode(sort) .. "&status=" .. status .. "&take=40"
 
   if #country_inc > 0 then
-    url = url .. "&country=" .. table.concat(country_inc, ",")
+    qs = qs .. "&country=" .. table.concat(country_inc, ",")
   end
   if #tags_inc > 0 then
-    url = url .. "&tags:positive=" .. table.concat(tags_inc, ",")
+    qs = qs .. "&tags:positive=" .. table.concat(tags_inc, ",")
   end
   if #tags_exc > 0 then
-    url = url .. "&tags:negative=" .. table.concat(tags_exc, ",")
+    qs = qs .. "&tags:negative=" .. table.concat(tags_exc, ",")
   end
 
-  local r = http_get(url)
+  local r = http_get(searchUrl(page, qs))
   if not r.success then return { items = {}, hasNext = false } end
-
-  local data = json_parse(r.body)
-  local items = parseResource(data)
-  return { items = items, hasNext = #items > 0 }
+  return parseSearchResponse(r.body)
 end
