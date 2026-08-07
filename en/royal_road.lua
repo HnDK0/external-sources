@@ -1,7 +1,7 @@
 ﻿-- ── Метаданные ────────────────────────────────────────────────────────────────
 id       = "royal_road"
 name     = "Royal Road"
-version  = "1.0.2"
+version  = "1.1.0"
 baseUrl  = "https://www.royalroad.com"
 language = "en"
 icon     = "https://raw.githubusercontent.com/HnDK0/external-sources/main/icons/royalroad.png"
@@ -45,11 +45,23 @@ function getCatalogList(index)
     if titleEl then
       local bookUrl = absUrl(titleEl.href)
       local cover   = html_attr(card.html, "img", "src")
-      table.insert(items, {
+      -- Рейтинг из карточки: span.star[title="4.83"] либо div[aria-label="Rating: 4.83 out of 5"]
+      local rating = html_attr(card.html, "span.star[title]", "title")
+      if rating == "" then
+        local aria = html_attr(card.html, 'div[aria-label^="Rating:"]', "aria-label")
+        if aria ~= "" then
+          local m = regex_match(aria, "([\\d.]+)")
+          rating = m[1] or ""
+        end
+      end
+      local item = {
         title = string_clean(titleEl.text),
         url   = bookUrl,
         cover = absUrl(cover)
-      })
+      }
+      -- Рейтинга в карточке нет ("Too Few Ratings") — ключ не добавляем (контракт)
+      if rating ~= "" then item.rating = rating end
+      table.insert(items, item)
     end
   end
 
@@ -71,11 +83,23 @@ function getCatalogSearch(index, query)
     if titleEl then
       local bookUrl = absUrl(titleEl.href)
       local cover   = html_attr(card.html, "img", "src")
-      table.insert(items, {
+      -- Рейтинг из карточки: span.star[title="4.83"] либо div[aria-label="Rating: 4.83 out of 5"]
+      local rating = html_attr(card.html, "span.star[title]", "title")
+      if rating == "" then
+        local aria = html_attr(card.html, 'div[aria-label^="Rating:"]', "aria-label")
+        if aria ~= "" then
+          local m = regex_match(aria, "([\\d.]+)")
+          rating = m[1] or ""
+        end
+      end
+      local item = {
         title = string_clean(titleEl.text),
         url   = bookUrl,
         cover = absUrl(cover)
-      })
+      }
+      -- Рейтинга в карточке нет ("Too Few Ratings") — ключ не добавляем (контракт)
+      if rating ~= "" then item.rating = rating end
+      table.insert(items, item)
     end
   end
 
@@ -160,6 +184,19 @@ function getBookGenres(bookUrl)
     if label ~= "" then table.insert(genres, label) end
   end
   return genres
+end
+
+-- ── Рейтинг ────────────────────────────────────────────────────────────────
+
+-- Рейтинг книги со страницы книги: <span class="star" aria-label="4.83 stars">
+-- Только рейтинг, список глав не парсим (контракт lua-plugin-guide.md:188-192)
+function getBookRating(bookUrl)
+  local r = http_get(bookUrl)
+  if not r.success then return nil end
+  local label = html_attr(r.body, "span.star[aria-label]", "aria-label")
+  if label == "" then return nil end
+  local m = regex_match(label, "([\\d.]+)")
+  return m[1] and string_trim(m[1]) or nil
 end
 
 -- ── Список фильтров ───────────────────────────────────────────────────────────
@@ -417,11 +454,23 @@ function getCatalogFiltered(index, filters)
     if titleEl then
       local bookUrl = absUrl(titleEl.href)
       local cover   = html_attr(card.html, "img", "src")
-      table.insert(items, {
+      -- Рейтинг из карточки: span.star[title="4.83"] либо div[aria-label="Rating: 4.83 out of 5"]
+      local rating = html_attr(card.html, "span.star[title]", "title")
+      if rating == "" then
+        local aria = html_attr(card.html, 'div[aria-label^="Rating:"]', "aria-label")
+        if aria ~= "" then
+          local m = regex_match(aria, "([\\d.]+)")
+          rating = m[1] or ""
+        end
+      end
+      local item = {
         title = string_clean(titleEl.text),
         url   = bookUrl,
         cover = absUrl(cover)
-      })
+      }
+      -- Рейтинга в карточке нет ("Too Few Ratings") — ключ не добавляем (контракт)
+      if rating ~= "" then item.rating = rating end
+      table.insert(items, item)
     end
   end
 

@@ -1,7 +1,7 @@
 ﻿-- ── Метаданные ────────────────────────────────────────────────────────────────
 id       = "wuxia_world_site"
 name     = "WuxiaWorld.site"
-version  = "1.0.2"
+version  = "1.1.0"
 baseUrl  = "https://wuxiaworld.site/"
 language = "en"
 icon     = "https://raw.githubusercontent.com/HnDK0/external-sources/main/icons/wuxiaworld.site.png"
@@ -13,6 +13,19 @@ local function absUrl(href)
   if string_starts_with(href, "http") then return href end
   if string_starts_with(href, "//") then return "https:" .. href end
   return url_resolve(baseUrl, href)
+end
+
+-- Рейтинг из карточки каталога/поиска или со страницы книги:
+-- <div class="post-total-rating allow_vote"><span class="score font-meta total_votes">4.1</span></div>
+-- На странице книги селектор .score.font-meta.total_votes встречается дважды
+-- (рейтинг и виджет «Your Rating»), поэтому берём именно вложенный в .post-total-rating.
+local function extractRating(html)
+  local el = html_select_first(html, ".post-total-rating .score")
+  if el then
+    local r = string_clean(el.text)
+    if r ~= "" then return r end
+  end
+  return nil
 end
 
 local function applyStandardContentTransforms(text)
@@ -45,7 +58,10 @@ function getCatalogList(index)
       if cover == "" then cover = html_attr(card.html, ".c-image-hover img", "src") end
       local t = string_clean(titleEl.text)
       if bookUrl ~= "" and t ~= "" then
-        table.insert(items, { title = t, url = bookUrl, cover = absUrl(cover) })
+        local item = { title = t, url = bookUrl, cover = absUrl(cover) }
+        local rating = extractRating(card.html)
+        if rating then item.rating = rating end
+        table.insert(items, item)
       end
     end
   end
@@ -76,7 +92,10 @@ function getCatalogSearch(index, query)
       if cover == "" then cover = html_attr(card.html, ".c-image-hover img", "src") end
       local t = string_clean(titleEl.text)
       if bookUrl ~= "" and t ~= "" then
-        table.insert(items, { title = t, url = bookUrl, cover = absUrl(cover) })
+        local item = { title = t, url = bookUrl, cover = absUrl(cover) }
+        local rating = extractRating(card.html)
+        if rating then item.rating = rating end
+        table.insert(items, item)
       end
     end
   end
@@ -109,6 +128,16 @@ function getBookDescription(bookUrl)
   local el = html_select_first(r.body, ".summary__content")
   if el then return string_trim(el.text) end
   return nil
+end
+
+-- ── Рейтинг книги ─────────────────────────────────────────────────────────────
+
+-- Рейтинг со страницы книги: <span class="score font-meta total_votes">4.1</span>
+-- внутри .post-total-rating. Только рейтинг, список глав не трогаем; nil при ошибке.
+function getBookRating(bookUrl)
+  local r = http_get(bookUrl)
+  if not r.success then return nil end
+  return extractRating(r.body)
 end
 
 -- ── Список глав (POST AJAX) ───────────────────────────────────────────────────
@@ -300,7 +329,10 @@ function getCatalogFiltered(index, filters)
       if cover == "" then cover = html_attr(card.html, ".tab-thumb img", "src") end
       local t = string_clean(titleEl.text)
       if bookUrl ~= "" and t ~= "" then
-        table.insert(items, { title = t, url = bookUrl, cover = absUrl(cover) })
+        local item = { title = t, url = bookUrl, cover = absUrl(cover) }
+        local rating = extractRating(card.html)
+        if rating then item.rating = rating end
+        table.insert(items, item)
       end
     end
   end

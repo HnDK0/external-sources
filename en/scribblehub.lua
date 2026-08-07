@@ -1,7 +1,7 @@
 ﻿-- ── Метаданные ────────────────────────────────────────────────────────────────
 id       = "scribblehub"
 name     = "ScribbleHub"
-version  = "1.0.1"
+version  = "1.0.2"
 baseUrl  = "https://www.scribblehub.com/"
 language = "en"
 icon     = "https://raw.githubusercontent.com/HnDK0/external-sources/main/icons/scribblehub.png"
@@ -52,10 +52,16 @@ function getCatalogList(index)
 end
 
 -- ── Поиск ─────────────────────────────────────────────────────────────────────
+--
+-- Обычный WP-поиск ?s=<q>&post_type=fictionposts на сайте сломан (страница
+-- «Search Results» пустая даже в живом браузере). Рабочий поиск — series-finder
+-- с параметром sh=<query> (проверено на живом сайте: sh=god → 25 релевантных
+-- серий на страницу, пагинация через pg=).
 
 function getCatalogSearch(index, query)
   local page = index + 1
-  local url = baseUrl .. "?s=" .. url_encode(query) .. "&post_type=fictionposts&paged=" .. tostring(page)
+  local url = baseUrl .. "series-finder/?sf=1&sh=" .. url_encode(query) ..
+              "&sort=ratings&order=desc&pg=" .. tostring(page)
 
   local r = http_get(url)
   if not r.success then return { items = {}, hasNext = false } end

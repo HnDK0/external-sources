@@ -1,7 +1,7 @@
 -- ── Metadata ────────────────────────────────────────────────────────────────
 id       = "novelight"
 name     = "Novelight"
-version  = "1.0.6"
+version  = "1.0.7"
 baseUrl  = "https://novelight.net/"
 language = "en"
 icon     = "https://raw.githubusercontent.com/HnDK0/external-sources/main/icons/novelight.png"
@@ -245,6 +245,18 @@ function getBookGenres(bookUrl)
     if label ~= "" then table.insert(genres, label) end
   end
   return genres
+end
+
+-- Рейтинг книги: блок оценки на странице книги, .block.appreciate .text
+-- отдаёт "4.7/5" (число + "/5"). Извлекаем только ведущее число.
+-- В карточках каталога рейтинга нет, поэтому ключ rating в items не добавляем.
+function getBookRating(bookUrl)
+  local body = fetchPage(bookUrl)
+  if not body then return nil end
+  local el = html_select_first(body, ".block.appreciate .text")
+  if not el then return nil end
+  local text = string_clean(el.text)
+  return text:match("^(%d+%.?%d*)") or nil
 end
 
 -- ── Chapter list (paginated, via parsePage) ─────────────────────────────────

@@ -5,6 +5,9 @@ version  = "1.0.3"
 baseUrl  = "https://allnovel.org/"
 language = "en"
 icon     = "https://raw.githubusercontent.com/HnDK0/external-sources/main/icons/allnovel.png"
+-- status = "dead"  -- домен allnovel.org мёртв: редиректит на novelfull.com,
+--                    который покрыт отдельным плагином en/novelfull.lua
+status   = "dead"
 
 -- ── Хелперы ───────────────────────────────────────────────────────────────────
 

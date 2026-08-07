@@ -1,7 +1,7 @@
 -- ── Метаданные ────────────────────────────────────────────────────────────────
 id       = "ifreedom"
 name     = "iFreedom"
-version  = "1.1.3"
+version  = "1.1.4"
 baseUrl  = "https://ifreedom.su/"
 language = "ru"
 icon     = "https://raw.githubusercontent.com/HnDK0/external-sources/main/icons/ifreedom.png"
@@ -157,7 +157,9 @@ function getChapterList(bookUrl)
   local chapters = {}
   for _, a in ipairs(html_select(r.body, "div.chapterinfo a")) do
     local chUrl = absUrl(a.href)
-    if chUrl ~= "" then
+    -- Платные главы ведут на /koshelek/ (страница абонемента), а не на главу —
+    -- пропускаем их, иначе движок откроет страницу оплаты вместо текста
+    if chUrl ~= "" and not chUrl:find("koshelek") then
       table.insert(chapters, {
         title = string_clean(a.text),
         url   = chUrl

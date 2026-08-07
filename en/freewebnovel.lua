@@ -1,6 +1,6 @@
 id       = "freewebnovel"
 name     = "FreeWebNovel"
-version  = "1.0.3"
+version  = "1.0.4"
 baseUrl  = "https://freewebnovel.com"
 language = "en"
 icon     = "https://raw.githubusercontent.com/HnDK0/external-sources/main/icons/freewebnovel.png"
@@ -48,10 +48,15 @@ local function parseItems(html)
     local titleEl = html_select_first(row.html, ".tit a")
     if titleEl then
       local cover = absUrl(html_attr(row.html, ".pic img", "src"))
+      -- Рейтинг из карточки (каталог, поиск, фильтры):
+      -- <div class="core"><span>3.8</span></div>
+      local ratingEl = html_select_first(row.html, ".core span")
+      local rating = ratingEl and string_clean(ratingEl.text) or ""
       table.insert(items, {
         title = string_clean(titleEl.text),
         url   = absUrl(titleEl.href),
-        cover = cover
+        cover = cover,
+        rating = rating
       })
     end
   end
@@ -117,6 +122,19 @@ function getBookGenres(bookUrl)
     end
   end
   return genres
+end
+
+-- ── Rating ──────────────────────────────────────────────────────────────
+
+-- Рейтинг книги со страницы книги: <p class="vote">3.8 / 5 ( 653 votes )</p>
+-- внутри .score. Извлекаем голое число (шкала 0-5).
+function getBookRating(bookUrl)
+  local r = http_get(bookUrl)
+  if not r.success then return nil end
+  local el = html_select_first(r.body, ".score .vote")
+  if not el then return nil end
+  local n = string.match(string_clean(el.text), "%d+%.?%d*")
+  return n or nil
 end
 
 local CHAPTERS_PAGE_SIZE = 200

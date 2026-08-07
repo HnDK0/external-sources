@@ -1,7 +1,7 @@
 -- ── Метаданные ────────────────────────────────────────────────────────────────
 id       = "ranobehub"
 name     = "RanobeHub"
-version  = "1.0.1"
+version  = "1.0.2"
 baseUrl  = "https://ranobehub.org"
 language = "ru"
 icon     = "https://raw.githubusercontent.com/HnDK0/external-sources/main/icons/ranobehub.png"
@@ -152,6 +152,21 @@ function getBookGenres(bookUrl)
   return genres
 end
 
+-- ── Рейтинг книги ─────────────────────────────────────────────────────────────
+
+function getBookRating(bookUrl)
+  -- На странице книги в строке «Оценки» — «Качество перевода» («8.1 (36)»):
+  -- оценка читателей по шкале 1-10, скрыта при <3 голосах. Поле rating в JSON
+  -- API — счётчик лайков, рейтингом не является, поэтому читаем только HTML.
+  local r = http_get(bookUrl)
+  if not r.success then return nil end
+  local el = html_select_first(r.body, "div[data-tippy-content='Качество перевода']")
+  if not el then return nil end
+  local score = string.match(string_clean(el.text), "%d+%.?%d*")
+  if not score then return nil end
+  return "Rating: " .. score .. "/10"
+end
+
 -- ── Список глав ───────────────────────────────────────────────────────────────
 
 function getChapterList(bookUrl)
@@ -208,7 +223,7 @@ function getChapterText(html, url)
   local cleaned = html_remove(html, "script", "style", ".ads-desktop", ".ads-mobile")
   local el = html_select_first(cleaned, "div.ui.text.container[data-container]")
   if el then
-    local inner = html_remove(el.html, ".title-wrapper", ".chapter-hoticons")
+    local inner = html_remove(el.html, ".title-wrapper", ".chapter-hoticons", ".tablet.or.lower.hidden")
     return applyStandardContentTransforms(html_text(inner))
   end
   return ""

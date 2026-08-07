@@ -1,7 +1,7 @@
 -- ── Метаданные ────────────────────────────────────────────────────────────────
 id       = "NovelArrow"
 name     = "Novel Arrow"
-version  = "1.0.2"
+version  = "1.0.3"
 baseUrl  = "https://novelarrow.com/"
 language = "en"
 icon     = "https://raw.githubusercontent.com/HnDK0/external-sources/main/icons/novelarrow.png"
@@ -84,6 +84,19 @@ local function applyStandardContentTransforms(text)
 end
 
 -- Парсит items[] из ответа /api-web/novels в таблицу плагина
+-- Рейтинг (avgPoint, шкала 0-5): карточки сайта показывают его с 1 десятичным
+-- знаком ("★ 3.9"), поэтому округляем так же; 0 (нет голосов) → ключ не ставим.
+local function extractRating(novel)
+    local avg = novel.avgPoint
+    if type(avg) ~= "table" then return nil end
+    local s = avg["$numberDecimal"]
+    if not s then return nil end
+    local n = tonumber(s)
+    if not n or n <= 0 then return nil end
+    n = math.floor(n * 10 + 0.5) / 10
+    return tostring(n)
+end
+
 local function parseNovelItems(items)
     local result = {}
     for _, novel in ipairs(items) do
@@ -91,9 +104,10 @@ local function parseNovelItems(items)
         local title = novel.novel_name or ""
         if nid ~= "" and title ~= "" then
             table.insert(result, {
-                title = string_clean(title),
-                url   = baseUrl .. "novel/" .. nid,
-                cover = coverUrl(nid)
+                title  = string_clean(title),
+                url    = baseUrl .. "novel/" .. nid,
+                cover  = coverUrl(nid),
+                rating = extractRating(novel)
             })
         end
     end
@@ -184,6 +198,20 @@ function getBookGenres(bookUrl)
         end
     end
     return genres
+end
+
+-- ── Rating ─────────────────────────────────────────────────────────────
+
+-- Рейтинг со страницы книги: <meta itemProp="ratingValue" content="4.4"/>
+-- (значение уже округлено сайтом до 1 знака, шкала 0-5).
+-- Прямой http_get страницы книги — без fetchBookData и без парсинга глав.
+function getBookRating(bookUrl)
+    local r = http_get(bookUrl)
+    if not r.success then return nil end
+    local v = html_attr(r.body, "meta[itemprop='ratingValue']", "content")
+    -- "0" = нет голосов: сайт число не показывает, и мы не возвращаем
+    if v == "" or v == "0" then return nil end
+    return v
 end
 
 -- ── Список глав (parsePage) ───────────────────────────────────────────────────

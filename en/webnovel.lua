@@ -1,7 +1,7 @@
 -- ── Метаданные ────────────────────────────────────────────────────────────────
 id       = "webnovel"
 name     = "WebNovel"
-version  = "1.0.0"
+version  = "1.1.0"
 baseUrl  = "https://www.webnovel.com/"
 language = "en"
 icon     = "https://raw.githubusercontent.com/HnDK0/external-sources/main/icons/webnovel.png"
@@ -84,11 +84,17 @@ function getCatalogList(index)
       if title ~= "" and href ~= "" then
         local cover = html_attr(li.html, ".g_thumb img", "data-original")
         if cover == "" then cover = html_attr(li.html, ".g_thumb img", "src") end
-        table.insert(items, {
+        -- Рейтинг: первый strong внутри p.df.aic → span "4.71" (второй strong — главы)
+        local rating = ""
+        local rs = html_select_first(li.html, "p.df.aic strong span")
+        if rs then rating = string_clean(rs.text) end
+        local item = {
           title = string_clean(title),
           url   = absUrl(href),
           cover = absUrl(cover),
-        })
+        }
+        if rating ~= "" then item.rating = rating end
+        table.insert(items, item)
       end
     end
   end
@@ -118,11 +124,17 @@ function getCatalogSearch(index, query)
         if img then
           cover = img.src or ""
         end
-        table.insert(items, {
+        -- Рейтинг в карточке поиска: p.g_star_num → "4.57" (у фанфиков его нет)
+        local rating = ""
+        local rs = html_select_first(li.html, ".g_star_num")
+        if rs then rating = string_clean(rs.text) end
+        local item = {
           title = string_clean(title),
           url   = absUrl(href),
           cover = absUrl(cover),
-        })
+        }
+        if rating ~= "" then item.rating = rating end
+        table.insert(items, item)
       end
     end
   end
@@ -328,11 +340,17 @@ function getCatalogFiltered(index, filters)
       if title ~= "" and href ~= "" then
         local cover = html_attr(li.html, ".g_thumb img", "data-original")
         if cover == "" then cover = html_attr(li.html, ".g_thumb img", "src") end
-        table.insert(items, {
+        -- Рейтинг: первый strong внутри p.df.aic → span "4.71"
+        local rating = ""
+        local rs = html_select_first(li.html, "p.df.aic strong span")
+        if rs then rating = string_clean(rs.text) end
+        local item = {
           title = string_clean(title),
           url   = absUrl(href),
           cover = absUrl(cover),
-        })
+        }
+        if rating ~= "" then item.rating = rating end
+        table.insert(items, item)
       end
     end
   end
@@ -379,6 +397,26 @@ function getBookGenres(bookUrl)
     if g ~= "" then table.insert(genres, g) end
   end
   return genres
+end
+
+-- ── Rating ─────────────────────────────────────────────────────────────────────
+
+-- Рейтинг книги со страницы книги: <p class="_score">…<strong>4.71</strong></p>
+-- (сильное — точное число; если рейтинга нет, strong пустой и сайт показывает
+-- "Not enough ratings" — тогда nil).
+-- Фолбэк: JSON-LD AggregateRating (только если ._score отсутствует вовсе).
+function getBookRating(bookUrl)
+  local body = fetchBookPage(bookUrl)
+  if not body then return nil end
+  local strong = html_select_first(body, "._score strong")
+  if strong then
+    local v = string_clean(strong.text)
+    if v ~= "" then return v end
+    return nil
+  end
+  local m = regex_match(body, '"aggregateRating"\\s*:\\s*\\{[^}]*?"ratingValue"\\s*:\\s*"([^"]+)"')
+  if m then return m[1] or nil end
+  return nil
 end
 
 -- ── Список глав ───────────────────────────────────────────────────────────────

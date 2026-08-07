@@ -1,8 +1,8 @@
 ﻿-- Метаданные
 id       = "novelbuddy"
 name     = "NovelBuddy"
-version  = "3.0.0"
-baseUrl  = "https://novelbuddy.com"
+version  = "3.0.2"
+baseUrl  = "https://novelbuddy.me"
 language = "en"
 icon     = "https://raw.githubusercontent.com/HnDK0/external-sources/main/icons/novelbuddy.png"
 
@@ -12,7 +12,8 @@ cf_options = {
     ignore_markers = { "turnstile", "Ray ID" }
 }
 
-local API_BASE = "https://api.novelbuddy.com/"
+-- API на отдельном домене (сайт переехал с .com на .me, api.novelbuddy.com мёртв)
+local API_BASE = "https://api.novelbuddy.me/"
 
 -- ── Хелперы ──────────────────────────────────────────────────────────────────
 
@@ -163,7 +164,14 @@ function getCatalogList(index, filters)
         local cover   = resolveCover(novel.cover, slug)
         local title   = novel.name or ""
         if slug ~= "" and title ~= "" then
-            table.insert(items, { title = title, url = bookUrl, cover = cover })
+            -- Рейтинг из карточки: поле rating API (шкала 0-5), ключ только если > 0
+            local rating = novel.rating or 0
+            if tonumber(rating) > 0 then
+                table.insert(items, { title = title, url = bookUrl, cover = cover,
+                                      rating = tostring(rating) })
+            else
+                table.insert(items, { title = title, url = bookUrl, cover = cover })
+            end
         end
     end
 
@@ -190,7 +198,14 @@ function getCatalogSearch(index, query)
         local cover   = resolveCover(novel.cover, slug)
         local title   = novel.name or novel.title or ""
         if slug ~= "" and title ~= "" then
-            table.insert(items, { title = title, url = bookUrl, cover = cover })
+            -- Рейтинг из карточки: поле rating API (шкала 0-5), ключ только если > 0
+            local rating = novel.rating or 0
+            if tonumber(rating) > 0 then
+                table.insert(items, { title = title, url = bookUrl, cover = cover,
+                                      rating = tostring(rating) })
+            else
+                table.insert(items, { title = title, url = bookUrl, cover = cover })
+            end
         end
     end
 
@@ -257,6 +272,24 @@ function getBookGenres(bookUrl)
         end
     end
     return genres
+end
+
+-- ── Rating ──────────────────────────────────────────────────────────────
+
+-- Рейтинг книги: читаем __NEXT_DATA__ со страницы книги (прямой http_get,
+-- список глав не парсим). manga.rating — число по шкале 0-5; 0 = нет оценок.
+function getBookRating(bookUrl)
+    local r = http_get(bookUrl)
+    if not r or not r.success then return nil end
+    local json_str = r.body:match('<script[^>]+id="__NEXT_DATA__"[^>]*>([^<]+)</script>')
+    if not json_str then return nil end
+    local data = json_parse(json_str)
+    if not data then return nil end
+    local manga = data.props and data.props.pageProps and data.props.pageProps.initialManga
+    if not manga then return nil end
+    local rating = manga.rating or 0
+    if tonumber(rating) <= 0 then return nil end
+    return tostring(rating)
 end
 
 -- ── Список глав ───────────────────────────────────────────────────────────────

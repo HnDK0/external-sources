@@ -1,7 +1,7 @@
 -- ── Metadata ────────────────────────────────────────────────────────────────
 id       = "faqwiki"
 name     = "FAQ Wiki"
-version  = "1.6.3"
+version  = "1.6.4"
 baseUrl  = "https://faqwiki.us/novel"
 language = "en"
 icon     = "https://raw.githubusercontent.com/HnDK0/external-sources/main/icons/faqwiki.png"
@@ -86,13 +86,15 @@ function getCatalogSearch(index, query)
   if not r.success then return { items = {}, hasNext = false } end
 
   local items = {}
-  for _, article in ipairs(html_select(r.body, "article.post") or {}) do
-    local titleEl = html_select_first(article.html, "h2.entry-title a, h1.entry-title a")
+  for _, article in ipairs(html_select(r.body, "article.hitmag-post, article.post") or {}) do
+    local titleEl = html_select_first(article.html, "h3.entry-title a, h2.entry-title a, h1.entry-title a")
     if not titleEl then
       titleEl = html_select_first(article.html, "a[rel='bookmark']")
     end
     if titleEl and titleEl.href and titleEl.href ~= "" then
       local title = string_clean(titleEl.text)
+      title = regex_replace(title, "(?i)\\s*Novel\\s*[-–—]?\\s*All\\s*Chapters\\s*$", "")
+      title = regex_replace(title, "(?i)\\s*[-–—]\\s*All\\s*Chapters\\s*$", "")
       local cover = html_attr(article.html, "img", "src")
       table.insert(items, {
         title = title,
@@ -133,8 +135,9 @@ function getBookTitle(bookUrl)
   end
   if not el then return nil end
   local title = string_clean(el.text)
-  title = regex_replace(title, "(?i)\\s*[-–—]\\s*All\\s*Chapters\\s*$", "")
+  -- сначала целиком "Novel - All Chapters", потом одиночный "- All Chapters"
   title = regex_replace(title, "(?i)\\s*Novel\\s*[-–—]?\\s*All\\s*Chapters\\s*$", "")
+  title = regex_replace(title, "(?i)\\s*[-–—]\\s*All\\s*Chapters\\s*$", "")
   return string_clean(title)
 end
 
@@ -145,12 +148,11 @@ function getBookCoverImageUrl(bookUrl)
   local src = html_attr(body, "meta[property='og:image']", "content")
   if src and src ~= "" then return absUrl(src) end
 
-  local img = html_select_first(body, "div.entry-content div.wp-block-image figure img, div.entry-content img.wp-image-\\d+, div.entry-content img, img.wp-image-\\d+")
-  if img and img.src and img.src ~= "" then return absUrl(img.src) end
-
   src = html_attr(body, "meta[name='twitter:image']", "content")
   if src and src ~= "" then return absUrl(src) end
 
+  -- JSON-LD thumbnailUrl — надёжнее, чем img в entry-content (там первым идёт
+  -- gtranslate-флаг, а не обложка)
   local script = html_select_first(body, "script[type='application/ld+json']")
   if script then
     local thumb = regex_match(script.text, '"thumbnailUrl"\\s*:\\s*"([^"]+)"')
@@ -158,6 +160,9 @@ function getBookCoverImageUrl(bookUrl)
       return absUrl(thumb[1])
     end
   end
+
+  local img = html_select_first(body, "div.entry-content div.wp-block-image figure img, div.entry-content img.wp-image-\\d+, div.entry-content img, img.wp-image-\\d+")
+  if img and img.src and img.src ~= "" then return absUrl(img.src) end
 
   return nil
 end

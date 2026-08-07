@@ -1,6 +1,6 @@
 ﻿id       = "novelfire"
 name     = "NovelFire"
-version  = "1.0.6"
+version  = "1.0.7"
 baseUrl  = "https://novelfire.net"
 language = "en"
 icon     = "https://raw.githubusercontent.com/HnDK0/external-sources/main/icons/novelfire.png"
@@ -40,12 +40,15 @@ function getCatalogList(index)
         local linkEl  = html_select_first(card.html, ".novel-title a")
         local cover   = html_attr(card.html, "img", "data-src")
         if cover == "" then cover = html_attr(card.html, "img", "src") end
+        -- Рейтинг из карточки каталога: <span class="info-rating" data-rating="4.6">
+        local rating  = html_attr(card.html, ".info-rating", "data-rating")
         
         if titleEl and linkEl then
             table.insert(items, {
                 title = string_clean(titleEl.text),
                 url   = absUrl(linkEl.href),
-                cover = absUrl(cover)
+                cover = absUrl(cover),
+                rating = rating
             })
         end
     end
@@ -54,6 +57,8 @@ end
 
 -- ── Поиск ─────────────────────────────────────────────────────────────────────
 
+-- Поиск идёт на /search?keyword= — в карточках этого списка (.novel-list.chapters)
+-- рейтинга нет (только Rank и Chapters), поэтому ключ rating здесь не заполняется.
 function getCatalogSearch(index, query)
     local page = index + 1
     local url = baseUrl .. "/search?keyword=" .. url_encode(query) .. "&page=" .. page
@@ -252,6 +257,16 @@ function getBookGenres(bookUrl)
   return genres
 end
 
+-- ── Rating ─────────────────────────────────────────────────────────────────────
+
+-- Рейтинг книги со страницы книги: <strong class="nub">4.6</strong>
+function getBookRating(bookUrl)
+  local r = http_get(bookUrl)
+  if not r.success then return nil end
+  local el = html_select_first(r.body, ".rating .nub")
+  return el and string_clean(el.text) or nil
+end
+
 -- ── Список фильтров ───────────────────────────────────────────────────────────
 
 function getFilterList()
@@ -433,11 +448,14 @@ function getCatalogFiltered(index, filters)
     local linkEl  = html_select_first(card.html, ".novel-title a")
     local cover   = html_attr(card.html, "img", "data-src")
     if cover == "" then cover = html_attr(card.html, "img", "src") end
+    -- Рейтинг из карточки каталога: <span class="info-rating" data-rating="4.6">
+    local rating  = html_attr(card.html, ".info-rating", "data-rating")
     if titleEl and linkEl then
       table.insert(items, {
         title = string_clean(titleEl.text),
         url   = absUrl(linkEl.href),
-        cover = absUrl(cover)
+        cover = absUrl(cover),
+        rating = rating
       })
     end
   end

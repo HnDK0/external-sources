@@ -1,7 +1,7 @@
 id       = "novelnice"
 name     = "NovelNice"
-version  = "1.0.0"
-baseUrl  = "https://novelnice.com"
+version  = "1.1.0"
+baseUrl  = "https://novelnice.com/"
 language = "en"
 icon     = "https://raw.githubusercontent.com/HnDK0/external-sources/main/icons/novelnice.png"
 
@@ -50,25 +50,36 @@ local function parseCoverSrc(body)
     return cover ~= "" and absUrl(cover) or nil
 end
 
+-- Рейтинг в карточке/на книге: span.score.font-meta.total_votes внутри
+-- .post-total-rating. Возвращаем nil, если голосов нет (значение "0").
+local function parseRating(body)
+    local el = html_select_first(body, ".post-total-rating .total_votes")
+    if not el then return nil end
+    local v = string_trim(el.text)
+    if v == "" or v == "0" or v == "0.0" then return nil end
+    return v
+end
+
+-- Карточки каталога: .item-summary (заголовок .post-title h3.h5 a,
+-- рейтинг .post-total-rating .total_votes). Обложек в карточках нет.
 local function parseCatalogItems(body)
     local items = {}
-    for _, card in ipairs(html_select(body, ".c-tabs-item__content")) do
-        local titleEl = html_select_first(card.html, ".post-title h3.h4 a")
-        local cover   = html_attr(card.html, ".tab-thumb img", "src")
-        if cover == "" then
-            cover = html_attr(card.html, ".c-image-hover img", "src")
-        end
+    for _, card in ipairs(html_select(body, ".item-summary")) do
+        local titleEl = html_select_first(card.html, ".post-title h3.h5 a")
         if titleEl then
-            table.insert(items, {
+            local item = {
                 title = string_clean(titleEl.text),
                 url   = absUrl(titleEl.href),
-                cover = cover ~= "" and absUrl(cover) or nil
-            })
+            }
+            local rating = parseRating(card.html)
+            if rating then item.rating = rating end
+            table.insert(items, item)
         end
     end
     return items
 end
 
+-- Пагинация Madara: .nav-previous a ведёт на СЛЕДУЮЩУЮ страницу (Older)
 local function hasNextPage(body)
     local nextLink = html_select_first(body, ".nav-previous a")
     return nextLink ~= nil
@@ -78,9 +89,10 @@ end
 
 function getCatalogList(index)
     local page = index + 1
-    local url = baseUrl .. "/?s&post_type=wp-manga&m_orderby=rating"
+    -- Каталог живёт на /read/ (запросы с post_type=wp-manga блокирует Cloudflare → 403)
+    local url = baseUrl .. "read/?m_orderby=rating"
     if page > 1 then
-        url = baseUrl .. "/page/" .. page .. "/?s&post_type=wp-manga&m_orderby=rating"
+        url = baseUrl .. "read/page/" .. page .. "/?m_orderby=rating"
     end
 
     local r = http_get(url)
@@ -93,10 +105,14 @@ end
 -- ── Поиск ─────────────────────────────────────────────────────────────────────
 
 function getCatalogSearch(index, query)
+    -- Поиск на сайте фактически не работает: сайт ищет через
+    -- ?s=<q>&post_type=wp-manga, а CF блокирует параметр post_type (403).
+    -- Без него WordPress ищет только по обычным постам → всегда пусто.
+    -- Оставляем вызов, чтобы движок не падал; результатов не будет.
     local page = index + 1
-    local url = baseUrl .. "/?s=" .. url_encode(query) .. "&post_type=wp-manga"
+    local url = baseUrl .. "?s=" .. url_encode(query)
     if page > 1 then
-        url = baseUrl .. "/page/" .. page .. "/?s=" .. url_encode(query) .. "&post_type=wp-manga"
+        url = baseUrl .. "page/" .. page .. "/?s=" .. url_encode(query)
     end
 
     local r = http_get(url)
@@ -140,6 +156,12 @@ function getBookGenres(bookUrl)
     return genres
 end
 
+function getBookRating(bookUrl)
+    local body = fetchPage(bookUrl)
+    if not body then return nil end
+    return parseRating(body)
+end
+
 -- ── Хэш списка глав (прямой запрос, не кэш!) ────────────────────────────────
 
 function getChapterListHash(bookUrl)
@@ -164,7 +186,7 @@ end
 -- ── Список глав ───────────────────────────────────────────────────────────────
 
 function getChapterList(bookUrl)
-    -- AJAX-эндпоинт: {bookUrl}/ajax/chapters/?t=1
+    -- AJAX-эндпоинт: {bookUrl}/ajax/chapters/?t=1 (POST, как делает сам сайт)
     local ajaxUrl = bookUrl:gsub("/?$", "") .. "/ajax/chapters/?t=1"
 
     local r = http_post(ajaxUrl, "", {
@@ -187,21 +209,6 @@ function getChapterList(bookUrl)
                 title = string_clean(a.text),
                 url   = absUrl(a.href)
             })
-        end
-    end
-
-    -- Если глав не нашлось через плоский список, пробуем вложенную структуру с томами
-    if #chapters == 0 then
-        for _, vol in ipairs(html_select(r.body, ".listing-chapters_wrap .has-child")) do
-            for _, li in ipairs(html_select(vol.html, ".wp-manga-chapter")) do
-                local a = html_select_first(li.html, "a")
-                if a and a.href and a.href ~= "" then
-                    table.insert(chapters, {
-                        title = string_clean(a.text),
-                        url   = absUrl(a.href)
-                    })
-                end
-            end
         end
     end
 
@@ -348,25 +355,21 @@ function getCatalogFiltered(index, filters)
     local op      = filters["op"] or ""
     local adult   = filters["adult"] or ""
     local author  = filters["author"] or ""
-    local artist  = filters["artist"] or ""
     local release = filters["release"] or ""
     local genres  = filters["genre_included"] or {}
     local statuses = filters["status_included"] or {}
 
-    local basePath = ""
+    -- Каталог с фильтрами тоже на /read/ (без post_type — CF блокирует)
+    local url = baseUrl .. "read/"
     if page > 1 then
-        basePath = "/page/" .. page .. "/"
+        url = baseUrl .. "read/page/" .. page .. "/"
     end
-    local url = baseUrl .. basePath .. "?s&post_type=wp-manga"
-                .. "&m_orderby=" .. url_encode(orderby)
+    url = url .. "?m_orderby=" .. url_encode(orderby)
                 .. "&op=" .. url_encode(op)
                 .. "&adult=" .. url_encode(adult)
 
     if author ~= "" then
         url = url .. "&author=" .. url_encode(author)
-    end
-    if artist ~= "" then
-        url = url .. "&artist=" .. url_encode(artist)
     end
     if release ~= "" then
         url = url .. "&release=" .. url_encode(release)

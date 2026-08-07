@@ -1,6 +1,6 @@
 id       = "lightnovelpub"
 name     = "LightNovelPub"
-version  = "1.0.0"
+version  = "1.0.1"
 baseUrl  = "https://lightnovelpub.org"
 language = "en"
 icon     = "https://raw.githubusercontent.com/HnDK0/external-sources/main/icons/lightnovelpub.png"
@@ -45,11 +45,20 @@ local function parseCatalogCards(body)
         local cover   = html_attr(card.html, ".card-cover img", "src")
         if cover == "" then cover = html_attr(card.html, "img", "src") end
         if linkEl and titleEl then
-            table.insert(items, {
+            local item = {
                 title = string_clean(titleEl.text),
                 url   = absUrl(linkEl.href),
                 cover = absUrl(cover)
-            })
+            }
+            -- Рейтинг из карточки каталога: <div class="card-rating">★ 4.72</div>.
+            -- На genre-all карточки показывают рейтинг, на advanced-search — нет,
+            -- поэтому ключ rating добавляем только если значение реально нашлось.
+            local ratingEl = html_select_first(card.html, ".card-rating")
+            if ratingEl then
+                local n = string.match(string_clean(ratingEl.text), "%d+%.?%d*")
+                if n then item.rating = n end
+            end
+            table.insert(items, item)
         end
     end
     return items
@@ -68,6 +77,8 @@ end
 
 -- ── Search ───────────────────────────────────────────────────────────────────
 
+-- Поиск идёт через JSON API /api/search/ — в объектах novels рейтинга нет
+-- (только rank), поэтому ключ rating здесь не заполняется.
 function getCatalogSearch(index, query)
     if index > 0 then return { items = {}, hasNext = false } end
 
@@ -122,6 +133,18 @@ function getBookGenres(bookUrl)
         if label ~= "" then table.insert(genres, label) end
     end
     return genres
+end
+
+-- ── Rating ───────────────────────────────────────────────────────────────────
+
+-- Рейтинг книги со страницы книги: <span class="rating-number">4.72</span>
+-- внутри <div class="star-rating">. Прямой http_get (без fetchPage — кэш
+-- не нужен, движок вызывает функцию отдельным запросом), список глав не парсит.
+function getBookRating(bookUrl)
+    local r = http_get(bookUrl)
+    if not r.success then return nil end
+    local el = html_select_first(r.body, ".star-rating .rating-number")
+    return el and string_clean(el.text) or nil
 end
 
 -- ── Chapter list (parsePage) ─────────────────────────────────────────────────

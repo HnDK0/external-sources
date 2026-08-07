@@ -1,6 +1,6 @@
 id       = "mvlempyr.com"
 name     = "MVLEMPYR"
-version  = "1.0.3"
+version  = "1.0.4"
 baseUrl  = "https://www.mvlempyr.io"
 language = "en"
 icon     = "https://raw.githubusercontent.com/HnDK0/external-sources/main/icons/mvlempyr.webp"
@@ -120,11 +120,19 @@ local function normalizeList(list)
 end
 
 local function novelToItem(novel)
-    return {
+    local item = {
         title = novel.name,
         url   = baseUrl .. "/" .. novel.path,
         cover = novel.cover
     }
+    -- Рейтинг из поля average-review API: карточки каталога/поиска на сайте
+    -- рендерятся клиентом из этого же поля (см. шаблон "${e["average-review"].toFixed(1)}"
+    -- на странице книги), поэтому ключ заполняется и в каталоге, и в поиске.
+    -- Голое число по шкале 0-5; при отсутствии отзывов (0) ключ не указываем.
+    if (novel.avgReview or 0) > 0 then
+        item.rating = tostring(novel.avgReview)
+    end
+    return item
 end
 
 -- ── Load all novels from WP REST API ────────────────────────────────────────
@@ -576,6 +584,18 @@ function getBookGenres(bookUrl)
         if label ~= "" then table.insert(genres, label) end
     end
     return genres
+end
+
+-- ── Rating ─────────────────────────────────────────────────────────────────
+
+-- Рейтинг книги со страницы книги: <div id="avg-rating">4</div>
+-- (значение совпадает с полем average-review из API каталога, шкала 0-5).
+function getBookRating(bookUrl)
+    local r = http_get(bookUrl)
+    if not r.success then return nil end
+    if checkCaptcha(r.body) then return nil end
+    local el = html_select_first(r.body, "#avg-rating")
+    return el and string_clean(el.text) or nil
 end
 
 -- ── Chapter list (paginated via parsePage) ─────────────────────────────────

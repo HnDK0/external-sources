@@ -1,7 +1,7 @@
 ﻿-- ── Метаданные ────────────────────────────────────────────────────────────────
 id       = "read_novel_full"
 name     = "ReadNovelFull"
-version  = "1.0.3"
+version  = "1.1.0"
 baseUrl  = "https://readnovelfull.com/"
 language = "en"
 icon     = "https://raw.githubusercontent.com/HnDK0/external-sources/main/icons/readnovelfull.png"
@@ -109,6 +109,21 @@ function getBookDescription(bookUrl)
   if not r.success then return nil end
   local el = html_select_first(r.body, "#tab-description")
   return el and string_trim(el.text) or nil
+end
+
+-- ── Рейтинг книги ─────────────────────────────────────────────────────────────
+
+-- Рейтинг со страницы книги: <span itemprop="ratingValue">8.7</span> (шкала 10,
+-- bestRating=10). Формат "Rating: 8.7/10" — приложение само пересчитает к 0-5
+-- (голое число вне 0-5 без явной шкалы движок не показывает).
+function getBookRating(bookUrl)
+  local r = http_get(bookUrl)
+  if not r.success then return nil end
+  local el = html_select_first(r.body, 'span[itemprop="ratingValue"]')
+  if not el then return nil end
+  local n = string.match(string_clean(el.text), "%d+%.?%d*")
+  if not n then return nil end
+  return "Rating: " .. n .. "/10"
 end
 
 -- ── Список глав (AJAX) ────────────────────────────────────────────────────────

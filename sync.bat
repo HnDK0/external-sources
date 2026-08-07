@@ -11,6 +11,13 @@ if "%~1"=="" (
     set "REPO_ROOT=%~1"
 )
 
+REM Убираем хвостовой backslash — иначе он экранирует закрывающую кавычку
+REM при передаче пути в Python ("...\" -> "..."").
+if "%REPO_ROOT:~-1%"=="\" set "REPO_ROOT=%REPO_ROOT:~0,-1%"
+
+REM Юникод-вывод (──, ├── и т.п.) в консоли Windows
+set "PYTHONIOENCODING=utf-8"
+
 echo === sync_index ===
 echo Корень репо: %REPO_ROOT%
 echo.
