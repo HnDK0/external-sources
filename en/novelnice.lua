@@ -1,6 +1,6 @@
 id       = "novelnice"
 name     = "NovelNice"
-version  = "1.1.0"
+version  = "1.3.0"
 baseUrl  = "https://novelnice.com/"
 language = "en"
 icon     = "https://raw.githubusercontent.com/HnDK0/external-sources/main/icons/novelnice.png"
@@ -60,17 +60,20 @@ local function parseRating(body)
     return v
 end
 
--- Карточки каталога: .item-summary (заголовок .post-title h3.h5 a,
--- рейтинг .post-total-rating .total_votes). Обложек в карточках нет.
+-- Карточки каталога: .page-item-detail (обложка .item-thumb img,
+-- заголовок .item-summary .post-title h3.h5 a, рейтинг
+-- .item-summary .post-total-rating .total_votes).
 local function parseCatalogItems(body)
     local items = {}
-    for _, card in ipairs(html_select(body, ".item-summary")) do
-        local titleEl = html_select_first(card.html, ".post-title h3.h5 a")
+    for _, card in ipairs(html_select(body, ".page-item-detail")) do
+        local titleEl = html_select_first(card.html, ".item-summary .post-title h3.h5 a")
         if titleEl then
             local item = {
                 title = string_clean(titleEl.text),
                 url   = absUrl(titleEl.href),
             }
+            local cover = html_attr(card.html, ".item-thumb img", "src")
+            if cover ~= "" then item.cover = absUrl(cover) end
             local rating = parseRating(card.html)
             if rating then item.rating = rating end
             table.insert(items, item)
@@ -162,47 +165,44 @@ function getBookRating(bookUrl)
     return parseRating(body)
 end
 
--- ── Хэш списка глав (прямой запрос, не кэш!) ────────────────────────────────
+-- ── Количество AJAX-страниц глав ──────────────────────────────────────────────
 
-function getChapterListHash(bookUrl)
+-- Счётчик глав на странице книги (.post-content_item → "Chapters: N"),
+-- страниц = ceil(N / 200) — AJAX-эндпоинт отдаёт по 200 глав на страницу.
+local function getTotalPages(bookUrl)
     local r = http_get(bookUrl)
-    if not r.success then return nil end
+    if not r.success then return 1 end
 
-    local chapterCount = ""
     for _, item in ipairs(html_select(r.body, ".post-content_item")) do
         local heading = html_select_first(item.html, ".summary-heading h5")
         if heading and string_trim(heading.text) == "Chapters" then
             local content = html_select_first(item.html, ".summary-content")
-            if content then
-                chapterCount = string_trim(content.text)
-            end
+            local count = content and tonumber(string_trim(content.text)) or 0
+            if count and count > 0 then return math.ceil(count / 200) end
             break
         end
     end
-
-    return chapterCount ~= "" and "chapters_" .. chapterCount or nil
+    return 1
 end
 
--- ── Список глав ───────────────────────────────────────────────────────────────
+-- ── Парсинг одной AJAX-страницы глав ──────────────────────────────────────────
 
-function getChapterList(bookUrl)
-    -- AJAX-эндпоинт: {bookUrl}/ajax/chapters/?t=1 (POST, как делает сам сайт)
-    local ajaxUrl = bookUrl:gsub("/?$", "") .. "/ajax/chapters/?t=1"
-
-    local r = http_post(ajaxUrl, "", {
-        headers = {
-            ["X-Requested-With"] = "XMLHttpRequest",
-            ["Referer"]          = bookUrl
-        },
-        charset = "UTF-8"
-    })
-
-    if not r.success then return {} end
+local function fetchAjaxPage(bookUrl, sitePage)
+    local pr = http_post(
+        bookUrl:gsub("/?$", "") .. "/ajax/chapters/?t=" .. tostring(sitePage),
+        "",
+        {
+            headers = {
+                ["X-Requested-With"] = "XMLHttpRequest",
+                ["Referer"]          = bookUrl
+            },
+            charset = "UTF-8"
+        }
+    )
+    if not pr.success then return {} end
 
     local chapters = {}
-
-    -- Парсим главы из AJAX-ответа
-    for _, li in ipairs(html_select(r.body, ".wp-manga-chapter")) do
+    for _, li in ipairs(html_select(pr.body, ".wp-manga-chapter")) do
         local a = html_select_first(li.html, "a")
         if a and a.href and a.href ~= "" then
             table.insert(chapters, {
@@ -211,13 +211,40 @@ function getChapterList(bookUrl)
             })
         end
     end
+    return chapters
+end
 
-    -- Разворачиваем (сайт отдаёт от новых к старым → хронологический порядок)
-    local reversed = {}
-    for i = #chapters, 1, -1 do
-        table.insert(reversed, chapters[i])
+-- ── parsePage — пагинированный список глав ────────────────────────────────────
+--
+-- Вызывается движком вместо getChapterList (см. гайд, «Paginated Chapter List»).
+-- Возвращает { chapters = [...], totalPages = N }.
+--
+-- Сайт отдаёт новые главы на странице 1 AJAX-пагинации (t=1 = самые новые),
+-- внутри каждой страницы тоже новые сверху. Инвертируем оба уровня.
+
+function parsePage(bookUrl, page)
+    local totalPages = getTotalPages(bookUrl)
+
+    -- Движок запрашивает страницы 1, 2, 3... (1 = самые старые главы).
+    -- На сайте страница 1 = самые новые, поэтому маппим:
+    --   движок page 1  →  сайт page totalPages  (самые старые)
+    --   движок page N  →  сайт page 1           (самые новые)
+    local sitePage = totalPages - page + 1
+
+    local raw = fetchAjaxPage(bookUrl, sitePage)
+
+    -- Разворачиваем: сайт отдаёт новые сверху, нам нужны старые сверху
+    local chapters = {}
+    for i = #raw, 1, -1 do
+        table.insert(chapters, raw[i])
     end
-    return reversed
+
+    sleep(math.random(150, 300))
+
+    return {
+        chapters   = chapters,
+        totalPages = totalPages,
+    }
 end
 
 -- ── Текст главы ───────────────────────────────────────────────────────────────
