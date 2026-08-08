@@ -1,7 +1,7 @@
 -- ── Метаданные ────────────────────────────────────────────────────────────────
 id       = "quanben5"
 name     = "Quanben5"
-version  = "1.0.0"
+version  = "1.0.2"
 baseUrl  = "https://big5.quanben5.com/"
 language = "zh"
 icon     = "https://raw.githubusercontent.com/HnDK0/external-sources/main/icons/quanben5.png"
@@ -13,6 +13,17 @@ local function absUrl(href)
   if string_starts_with(href, "http") then return href end
   if string_starts_with(href, "//") then return "https:" .. href end
   return url_resolve(baseUrl, href)
+end
+
+-- Нормализация URL книги: сайт отдаёт 404, если у /n/<slug> нет завершающего
+-- слэша (https://big5.quanben5.com/n/yishixiejun → 404, .../n/yishixiejun/ → 200).
+-- Движок может обрезать trailing slash при сохранении URL, поэтому добавляем его
+-- обратно для путей книг (но не трогаем ссылки на главы с расширением .html).
+local function normalizeBookUrl(url)
+  if not url or url == "" then return url end
+  if string_ends_with(url, ".html") then return url end
+  if string_ends_with(url, "/") then return url end
+  return url .. "/"
 end
 
 local function applyStandardContentTransforms(text)
@@ -114,7 +125,7 @@ function getCatalogList(index)
   for _, card in ipairs(html_select(r.body, ".pic_txt_list")) do
     local titleEl = html_select_first(card.html, "h3 a")
     if titleEl then
-      local bookUrl = absUrl(titleEl.href)
+      local bookUrl = normalizeBookUrl(absUrl(titleEl.href))
       local cover   = html_attr(card.html, ".pic img", "src")
       local t = string_clean(titleEl.text)
       if bookUrl ~= "" and t ~= "" then
@@ -176,7 +187,7 @@ function getCatalogSearch(index, query)
     if titleEl then
       local href = titleEl.href
       if href == "" then href = html_attr(card.html, "h3 a", "href") end
-      local bookUrl = absUrl(href)
+      local bookUrl = normalizeBookUrl(absUrl(href))
       local cover   = html_attr(card.html, ".pic img", "src")
       local t = string_clean(titleEl.text)
       if bookUrl ~= "" and t ~= "" then
@@ -191,15 +202,15 @@ end
 -- ── Детали книги ──────────────────────────────────────────────────────────────
 
 function getBookTitle(bookUrl)
-  local r = http_get(bookUrl)
+  local r = http_get(normalizeBookUrl(bookUrl))
   if not r.success then return nil end
-  local el = html_select_first(r.body, "span.name")
+  local el = html_select_first(r.body, "h1")
   if el then return string_clean(el.text) end
   return nil
 end
 
 function getBookCoverImageUrl(bookUrl)
-  local r = http_get(bookUrl)
+  local r = http_get(normalizeBookUrl(bookUrl))
   if not r.success then return nil end
   local src = html_attr(r.body, ".box .pic img", "src")
   if src ~= "" then return absUrl(src) end
@@ -207,7 +218,7 @@ function getBookCoverImageUrl(bookUrl)
 end
 
 function getBookDescription(bookUrl)
-  local r = http_get(bookUrl)
+  local r = http_get(normalizeBookUrl(bookUrl))
   if not r.success then return nil end
   local cleaned = html_remove(r.body, ".box .description h2")
   local el = html_select_first(cleaned, ".box .description")
@@ -218,7 +229,7 @@ end
 -- ── Список глав (отдельная страница /xiaoshuo.html) ───────────────────────────
 
 function getChapterList(bookUrl)
-  local chaptersUrl = bookUrl:gsub("/?$", "") .. "/xiaoshuo.html"
+  local chaptersUrl = normalizeBookUrl(bookUrl):gsub("/?$", "") .. "/xiaoshuo.html"
 
   local r = http_get(chaptersUrl)
   if not r.success then
@@ -241,7 +252,7 @@ end
 -- ── Хэш для обновлений ────────────────────────────────────────────────────────
 
 function getChapterListHash(bookUrl)
-  local r = http_get(bookUrl)
+  local r = http_get(normalizeBookUrl(bookUrl))
   if not r.success then return nil end
   -- Берём href последней главы из списка на странице книги
   local els = html_select(r.body, "ul.list li a")

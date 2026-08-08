@@ -15,7 +15,7 @@ sources:
     language: "zh"
   - id: "quanben5"
     name: "Quanben5"
-    version: "1.0.0"
+    version: "1.0.2"
     url: "https://raw.githubusercontent.com/HnDK0/external-sources/refs/heads/main/zh/quanben5.lua"
     icon: "https://raw.githubusercontent.com/HnDK0/external-sources/main/icons/quanben5.png"
     language: "zh"
