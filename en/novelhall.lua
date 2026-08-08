@@ -1,14 +1,9 @@
-﻿id       = "novelhall"
+id       = "novelhall"
 name     = "NovelHall"
-version  = "1.0.1"
+version  = "1.0.2"
 baseUrl  = "https://www.novelhall.com"
 language = "en"
 icon     = "https://raw.githubusercontent.com/HnDK0/external-sources/main/icons/novelhall.png"
--- status = "dead"  -- сайт стал работать плохо: список глав не загружается даже
---                    в живом браузере (AJAX-эндпоинт глав не отдаёт данные, контейнер
---                    #morelist остаётся пустым, вызовы book_N() падают) — плагин
---                    не может получить главы ни одним способом
-status   = "dead"
 
 -- ── Хелперы ───────────────────────────────────────────────────────────────────
 
