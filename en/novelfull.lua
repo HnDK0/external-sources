@@ -1,4 +1,4 @@
-﻿id       = "novelfull"
+id       = "novelfull"
 name     = "NovelFull"
 version  = "1.0.3"
 baseUrl  = "https://novelfull.net/"

@@ -1,4 +1,4 @@
-﻿-- Метаданные
+-- Метаданные
 id       = "novelbuddy"
 name     = "NovelBuddy"
 version  = "3.0.2"
