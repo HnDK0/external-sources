@@ -1,7 +1,7 @@
 -- ── Метаданные ───────────────────────────────────────────────────────────────
 id       = "shuba69"
 name     = "69shuba"
-version  = "1.0.1"
+version  = "1.0.2"
 baseUrl  = "https://www.69shuba.com/"
 language = "zh"
 icon     = "https://raw.githubusercontent.com/HnDK0/external-sources/main/icons/69shuba.png"
@@ -135,20 +135,9 @@ end
 
 -- ── Текст главы ─────────────────────────────────────────────────────────────
 
-function getChapterText(html)
-    -- Пытаемся получить URL текущей страницы из HTML
-    local pageUrl = html_attr(html, "link[rel='canonical']", "href")
-    if pageUrl == "" then
-        pageUrl = html_attr(html, "meta[property='og:url']", "content")
-    end
-
-    -- Если нашли URL — перезагружаем страницу с правильной кодировкой
-    if pageUrl ~= "" then
-        local r = http_get(pageUrl, { charset = "GBK" })
-        if r.success then
-            html = r.body
-        end
-    end
+function getChapterText(html, url)
+    -- Движок сам декодирует ответ по charset = "GBK" из метаданных,
+    -- html уже в UTF-8 — парсим напрямую
 
     -- Очистка от мусора
     local cleaned = html_remove(html,
