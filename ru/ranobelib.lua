@@ -1,7 +1,7 @@
 -- ── Метаданные ────────────────────────────────────────────────────────────────
 id       = "ranobelib"
 name     = "RanobeLib"
-version  = "1.0.6"
+version  = "1.0.7"
 baseUrl  = "https://ranobelib.me/"
 language = "ru"
 icon     = "https://raw.githubusercontent.com/HnDK0/external-sources/main/icons/ranobelib.png"
@@ -36,6 +36,16 @@ local function normalizeCover(raw)
   if string_starts_with(raw, "//")   then return "https:" .. raw end
   if string_starts_with(raw, "http") then return raw end
   return "https://" .. raw
+end
+
+-- Обложки лежат на cover.cdnlibs.org, который отдаёт 403 без заголовка Referer
+-- (DDoS-Guard), а движок при загрузке картинок Referer не шлёт (Coil).
+-- Проксируем через images.weserv.nl: URL без схемы weserv понимает и сам
+-- добавляет https. Проверено на живых обложках (thumb и default).
+local function proxyCover(raw)
+  if not raw or raw == "" then return "" end
+  local url = normalizeCover(raw)
+  return "https://images.weserv.nl/?url=" .. url:gsub("^https?://", "")
 end
 
 local function applyStandardContentTransforms(text)
@@ -74,6 +84,13 @@ local function getPath(tbl, path)
   return cur
 end
 
+-- Рейтинг сайта — по 10-балльной шкале ("9.7"). Движок понимает формат "9.7/10"
+-- (сам нормализует к 5-балльной). "0"/пусто — рейтинга ещё нет.
+local function formatRating(avg)
+  if not avg or avg == "" or avg == "0" then return nil end
+  return avg .. "/10"
+end
+
 -- ── Каталог (JSON API) ────────────────────────────────────────────────────────
 
 function getCatalogList(index)
@@ -94,11 +111,14 @@ function getCatalogList(index)
     local slug  = novel.slug or novel.slug_url or ""
     local cover = getPath(novel, "cover.default") or ""
     if title ~= "" and slug ~= "" then
-      table.insert(items, {
+      local item = {
         title = string_clean(title),
         url   = baseUrl .. "ru/" .. slug,
-        cover = normalizeCover(cover)
-      })
+        cover = proxyCover(cover)
+      }
+      local avg = getPath(novel, "rating.average")
+      item.rating = formatRating(avg)
+      table.insert(items, item)
     end
   end
 
@@ -126,11 +146,14 @@ function getCatalogSearch(index, query)
     local slug  = novel.slug_url or novel.slug or ""
     local cover = getPath(novel, "cover.default") or ""
     if title ~= "" and slug ~= "" then
-      table.insert(items, {
+      local item = {
         title = string_clean(title),
         url   = baseUrl .. "ru/" .. slug,
-        cover = normalizeCover(cover)
-      })
+        cover = proxyCover(cover)
+      }
+      local avg = getPath(novel, "rating.average")
+      item.rating = formatRating(avg)
+      table.insert(items, item)
     end
   end
 
@@ -167,7 +190,7 @@ function getBookCoverImageUrl(bookUrl)
   local data = fetchBookJson(bookUrl)
   if not data then return nil end
   local cover = getPath(data, "cover.default") or ""
-  return cover ~= "" and normalizeCover(cover) or nil
+  return cover ~= "" and proxyCover(cover) or nil
 end
 
 function getBookDescription(bookUrl)
@@ -205,6 +228,26 @@ function getBookGenres(bookUrl)
   addList(data.tags)
 
   return genres
+end
+
+-- ── Рейтинг (JSON API, поля rate_avg/rate) ───────────────────────────────────
+-- Базовая книга /api/manga/{slug} рейтинг не содержит — SPA запрашивает
+-- ?fields[]=rate_avg&fields[]=rate, тогда в data появляется rating.average
+-- (проверено на живом API и на странице сайта).
+
+function getBookRating(bookUrl)
+  local slug = extractSlug(bookUrl)
+  if not slug then return nil end
+
+  local r = http_get(
+    apiBase .. slug .. "?fields[]=rate_avg&fields[]=rate",
+    { headers = apiHeaders }
+  )
+  if not r.success then return nil end
+
+  local parsed = json_parse(r.body)
+  local avg = getPath(parsed, "data.rating.average")
+  return formatRating(avg)
 end
 
 -- ── Список глав (JSON API /api/manga/{slug}/chapters) ────────────────────────
@@ -663,11 +706,14 @@ function getCatalogFiltered(index, filters)
     local slug  = novel.slug_url or novel.slug or ""
     local cover = getPath(novel, "cover.default") or ""
     if title ~= "" and slug ~= "" then
-      table.insert(items, {
+      local item = {
         title = string_clean(title),
         url   = baseUrl .. "ru/" .. slug,
-        cover = normalizeCover(cover)
-      })
+        cover = proxyCover(cover)
+      }
+      local avg = getPath(novel, "rating.average")
+      item.rating = formatRating(avg)
+      table.insert(items, item)
     end
   end
 
