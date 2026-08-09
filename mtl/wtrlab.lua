@@ -1,7 +1,7 @@
 -- ── Метаданные ───────────────────────────────────────────────────────────────
 id = "wtrlab"
 name = "WTR-LAB"
-version = "1.1.4"
+version = "1.1.5"
 baseUrl = "https://wtr-lab.com/"
 language = "MTL"
 icon = "https://raw.githubusercontent.com/HnDK0/external-sources/main/icons/wtr-lab.png"
@@ -44,11 +44,28 @@ local function absUrl(href)
     return url_resolve(baseUrl, href)
 end
 
+-- Рейтинг из блока метрик "Rating ★ 3.9 (563)" — такой блок есть и на странице
+-- книги, и в карточках каталога/поиска. У книги без оценок блока нет вообще.
+local function extractRating(html)
+    for _, el in ipairs(html_select(html, "div.items-center.text-center")) do
+        local label = html_select_first(el.html, "span[translate='no']")
+        if label and string_trim(label.text) == "Rating" then
+            -- regex_match возвращает массив совпадений (см. гайд), берём первый элемент
+            local m = regex_match(html_text(el.html), "([\\d.]+)")
+            if m then
+                return m[1]
+            end
+        end
+    end
+    return nil
+end
+
 -- ── Каталог ──────────────────────────────────────────────────────────────────
 
 function getCatalogList(index)
     local page = index + 1
-    local url = baseUrl .. "novel-list?page=" .. tostring(page)
+    -- orderBy=reader — сортировка по количеству читателей, стандартный каталог сайта
+    local url = baseUrl .. "novel-list?page=" .. tostring(page) .. "&orderBy=reader"
     local r = http_get(url)
     if not r.success then
         log_error("wtrlab getCatalogList failed: " .. url .. " code=" .. tostring(r.code))
@@ -63,11 +80,16 @@ function getCatalogList(index)
         local titleEl = html_select_first(card.html, "a[href*='/novel/']")
         if titleEl then
             local cover = html_attr(card.html, ".image-wrap img[alt]:not([aria-hidden])", "src")
-            table.insert(items, {
+            local item = {
                 title = string_trim((html_select_first(card.html, "h3") or titleEl).text),
                 url = absUrl(titleEl.href),
                 cover = absUrl(cover)
-            })
+            }
+            local rating = extractRating(card.html)
+            if rating then
+                item.rating = rating
+            end
+            table.insert(items, item)
         end
     end
 
@@ -96,11 +118,16 @@ function getCatalogSearch(index, query)
         local titleEl = html_select_first(card.html, "a[href*='/novel/']")
         if titleEl then
             local cover = html_attr(card.html, ".image-wrap img[alt]:not([aria-hidden])", "src")
-            table.insert(items, {
+            local item = {
                 title = string_trim((html_select_first(card.html, "h3") or titleEl).text),
                 url = absUrl(titleEl.href),
                 cover = absUrl(cover)
-            })
+            }
+            local rating = extractRating(card.html)
+            if rating then
+                item.rating = rating
+            end
+            table.insert(items, item)
         end
     end
 
@@ -551,6 +578,16 @@ function getBookGenres(bookUrl)
     end
 
     return genres
+end
+
+-- ── Рейтинг ─────────────────────────────────────────────────────────────────
+
+function getBookRating(bookUrl)
+    local body = fetchPage(bookUrl)
+    if not body then
+        return nil
+    end
+    return extractRating(body)
 end
 
 -- ── Список фильтров ───────────────────────────────────────────────────────────
@@ -1359,11 +1396,16 @@ function getCatalogFiltered(index, filters)
             local title = (novel.data and novel.data.title) or ""
             local cover = (novel.data and novel.data.image) or ""
             local slug = novel.slug or ""
-            table.insert(items, {
+            local item = {
                 title = string_clean(title),
                 url = baseUrl .. "en/novel/" .. rawId .. "/" .. slug,
                 cover = absUrl(cover)
-            })
+            }
+            -- Рейтинг из JSON-каталога (может быть null у новых книг)
+            if novel.rating ~= nil then
+                item.rating = tostring(novel.rating)
+            end
+            table.insert(items, item)
         end
     end
 

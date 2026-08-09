@@ -1,6 +1,6 @@
 id       = "sonicmtl"
 name     = "Sonic MTL"
-version  = "1.7.1"
+version  = "1.8.0"
 baseUrl  = "https://www.sonicmtl.com"
 language = "Mtl"
 icon     = "https://raw.githubusercontent.com/HnDK0/external-sources/main/icons/sonicmtl.png"
@@ -47,14 +47,18 @@ local function parseCatalogItems(body)
         if cover == "" then
             cover = html_attr(card.html, ".c-image-hover img", "src")
         end
+        -- Оценка из карточки каталога: <div class="post-total-rating"><span class="score">4.6</span>
+        local ratingEl = html_select_first(card.html, ".post-total-rating .score")
+        local rating   = ratingEl and string_clean(ratingEl.text) or ""
         if titleEl then
             local t = string_clean(titleEl.text)
             local u = absUrl(titleEl.href)
             if t ~= "" and u ~= "" then
                 table.insert(items, {
-                    title = t,
-                    url   = u,
-                    cover = cover ~= "" and absUrl(cover) or nil
+                    title  = t,
+                    url    = u,
+                    cover  = cover ~= "" and absUrl(cover) or nil,
+                    rating = rating ~= "" and rating or nil
                 })
             end
         end
@@ -130,6 +134,17 @@ function getBookGenres(bookUrl)
         if label ~= "" then table.insert(genres, label) end
     end
     return genres
+end
+
+-- ── Рейтинг ─────────────────────────────────────────────────────────────────
+
+function getBookRating(bookUrl)
+    local body = fetchPage(bookUrl)
+    if not body then return nil end
+    local score = html_select_first(body, ".post-total-rating .score")
+    if not score then return nil end
+    local rating = string_clean(score.text)
+    return rating ~= "" and rating or nil
 end
 
 -- ── Хэш списка глав (прямой запрос, не кэш!) ────────────────────────────────
