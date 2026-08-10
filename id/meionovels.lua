@@ -1,6 +1,6 @@
 id       = "meionovels"
 name     = "MeioNovels"
-version  = "1.0.2"
+version  = "1.1.0"
 baseUrl  = "https://meionovels.com"
 language = "id"
 icon     = "https://raw.githubusercontent.com/HnDK0/external-sources/main/icons/meionovels.png"
@@ -59,10 +59,13 @@ local function parseCatalogItems(body)
             cover = html_attr(card.html, ".c-image-hover img", "src")
         end
         if titleEl then
+            -- Рейтинг из карточки (шкала 0-5, голое число)
+            local rEl = html_select_first(card.html, '.post-total-rating .score')
             table.insert(items, {
-                title = string_clean(titleEl.text),
-                url   = absUrl(titleEl.href),
-                cover = cover ~= "" and absUrl(cover) or nil
+                title  = string_clean(titleEl.text),
+                url    = absUrl(titleEl.href),
+                cover  = cover ~= "" and absUrl(cover) or nil,
+                rating = rEl and string_clean(rEl.text) or nil
             })
         end
     end
@@ -132,6 +135,15 @@ function getBookGenres(bookUrl)
         if label ~= "" then table.insert(genres, label) end
     end
     return genres
+end
+
+-- ── Рейтинг ────────────────────────────────────────────────────────────────────
+
+function getBookRating(bookUrl)
+    local body = fetchPage(bookUrl)
+    if not body then return nil end
+    local el = html_select_first(body, ".post-total-rating .score")
+    return el and string_clean(el.text) or nil
 end
 
 -- ── Хэш списка глав (прямой запрос, не кэш!) ────────────────────────────────
