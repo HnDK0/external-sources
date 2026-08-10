@@ -1,7 +1,7 @@
 -- ── Метаданные ────────────────────────────────────────────────────────────────
 id       = "indowebnovel"
 name     = "Indowebnovel"
-version  = "1.0.1"
+version  = "1.1.1"
 baseUrl  = "https://indowebnovel.id/"
 language = "id"
 icon     = "https://raw.githubusercontent.com/HnDK0/external-sources/main/icons/indowebnovel.png"
@@ -55,11 +55,14 @@ local function parseCatalogItems(body)
         if titleEl then title = titleEl.text end
       end
       local cover   = html_attr(el.html, ".flexbox2-thumb img", "src")
+      -- рейтинг в карточке каталога: <div class="score">4.4</div>
+      local rEl = html_select_first(el.html, ".score")
       if bookUrl ~= "" and title ~= "" then
         table.insert(items, {
-          title = string_clean(title),
-          url   = bookUrl,
-          cover = absUrl(cover)
+          title  = string_clean(title),
+          url    = bookUrl,
+          cover  = absUrl(cover),
+          rating = rEl and string_clean(rEl.text) or nil
         })
       end
     end
@@ -154,6 +157,15 @@ function getBookDescription(bookUrl)
   return nil
 end
 
+function getBookRating(bookUrl)
+  local body = fetchPage(bookUrl)
+  if not body then return nil end
+  -- голое число (шкала 0-5); ratingCount не трогаем — он отдаёт PHP-варнинг
+  local el = html_select_first(body, ".series-infoz span[itemprop=\"ratingValue\"]")
+  if el then return string_clean(el.text) end
+  return nil
+end
+
 function getBookGenres(bookUrl)
   local body = fetchPage(bookUrl)
   if not body then return {} end
@@ -172,11 +184,14 @@ function getChapterList(bookUrl)
   if not body then return {} end
 
   local chapters = {}
-  for _, a in ipairs(html_select(body, ".series-chapterlist li a")) do
+  -- реальный класс списка — .series-chapterlists (с «s»), не .series-chapterlist
+  for _, a in ipairs(html_select(body, ".series-chapterlists li a")) do
     local chUrl = absUrl(a.href)
     if chUrl ~= "" then
+      -- заголовок в первом <span>; второй span.date — дата публикации
+      local titleEl = html_select_first(a.html, "span")
       table.insert(chapters, {
-        title = string_clean(a.text),
+        title = titleEl and string_clean(titleEl.text) or string_clean(a.text),
         url   = chUrl
       })
     end
@@ -195,7 +210,7 @@ function getChapterListHash(bookUrl)
   local r = http_get(bookUrl)
   if not r.success then return nil end
   -- Берём href первой (самой новой) главы — уникален для каждого обновления
-  local el = html_select_first(r.body, ".series-chapterlist li:first-child a")
+  local el = html_select_first(r.body, ".series-chapterlists li:first-child a")
   if el and el.href ~= "" then return el.href end
   return nil
 end
