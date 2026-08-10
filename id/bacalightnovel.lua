@@ -1,7 +1,7 @@
 -- ── Метаданные ────────────────────────────────────────────────────────────────
 id       = "baca_lightnovel"
 name     = "Baca Lightnovel"
-version  = "1.0.1"
+version  = "1.1.1"
 baseUrl  = "https://bacalightnovel.co/"
 language = "id"
 icon     = "https://raw.githubusercontent.com/HnDK0/external-sources/main/icons/bacalightnovel.png"
@@ -28,23 +28,32 @@ end
 
 local function parseCatalogItems(body, preferDataSrc)
   local items = {}
-  for _, a in ipairs(html_select(body, ".listupd > .maindet .mdthumb a")) do
-    local bookUrl = absUrl(a.href)
-    local title = html_attr(a.html, "img", "title")
-    if title == "" then title = html_attr(a.html, "img", "alt") end
-    local cover = ""
-    if preferDataSrc then
-      cover = html_attr(a.html, "img[data-src]", "data-src")
-    end
-    if cover == "" then
-      cover = html_attr(a.html, "img[src]", "src")
-    end
-    if bookUrl ~= "" then
-      table.insert(items, {
-        title = string_clean(title),
-        url   = bookUrl,
-        cover = absUrl(cover)
-      })
+  for _, card in ipairs(html_select(body, ".listupd > .maindet")) do
+    local a = html_select_first(card.html, ".mdthumb a")
+    if a then
+      local bookUrl = absUrl(a.href)
+      local title = html_attr(a.html, "img", "title")
+      if title == "" then title = html_attr(a.html, "img", "alt") end
+      local cover = ""
+      if preferDataSrc then
+        cover = html_attr(a.html, "img[data-src]", "data-src")
+      end
+      if cover == "" then
+        cover = html_attr(a.html, "img[src]", "src")
+      end
+      -- рейтинг лежит вне ссылки — в соседнем блоке .mdinfodet .mdminf.
+      -- Сайт отдаёт шкалу 10 (7, 8.2, 9.0): голое число вне 0-5 приложение
+      -- отбрасывает, поэтому явно помечаем шкалу /10
+      local rEl = html_select_first(card.html, ".mdinfodet .mdminf")
+      local rating = rEl and ("Rating: " .. string_clean(rEl.text) .. "/10") or nil
+      if bookUrl ~= "" then
+        table.insert(items, {
+          title  = string_clean(title),
+          url    = bookUrl,
+          cover  = absUrl(cover),
+          rating = rating
+        })
+      end
     end
   end
   return items
@@ -169,6 +178,17 @@ function getBookGenres(bookUrl)
   return genres
 end
 
+-- ── Рейтинг книги ──────────────────────────────────────────────────────────────
+
+function getBookRating(bookUrl)
+  local r = http_get(bookUrl)
+  if not r.success then return nil end
+  -- строго .rating.serrate .numscore: те же классы без .serrate есть в виджетах «популярное»
+  local el = html_select_first(r.body, ".rating.serrate .numscore")
+  if el then return "Rating: " .. string_clean(el.text) .. "/10" end
+  return nil
+end
+
 -- ── Список фильтров ───────────────────────────────────────────────────────────
 
 function getFilterList()
@@ -275,8 +295,11 @@ function getCatalogFiltered(index, filters)
       if cover == "" then cover = html_attr(article.html, ".mdthumb img", "data-src") end
       local titleEl = html_select_first(article.html, ".mdinfo h2 a")
       local title   = titleEl and string_clean(titleEl.text) or ""
+      -- рейтинг из соседнего блока .mdinfodet .mdminf (шкала 10 → явно /10)
+      local rEl     = html_select_first(article.html, ".mdinfodet .mdminf")
+      local rating  = rEl and ("Rating: " .. string_clean(rEl.text) .. "/10") or nil
       if bookUrl ~= "" and title ~= "" then
-        table.insert(items, { title = title, url = bookUrl, cover = absUrl(cover) })
+        table.insert(items, { title = title, url = bookUrl, cover = absUrl(cover), rating = rating })
       end
     end
   end
