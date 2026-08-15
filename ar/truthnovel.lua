@@ -1,6 +1,6 @@
 id       = "truthnovel"
 name     = "Truth Novel"
-version  = "1.1.0"
+version  = "1.1.1"
 baseUrl  = "https://truthnovel.top"
 language = "ar"
 icon     = "https://raw.githubusercontent.com/HnDK0/external-sources/main/icons/truthnovel.png"
@@ -29,7 +29,16 @@ local function applyStandardContentTransforms(text)
     text = regex_replace(text, "(?i)\\A[\\s\\p{Z}\\uFEFF]*((Chapter\\s+\\d+)[^\\n\\r]*[\\n\\r\\s]*)+", "")
     text = regex_replace(text, "(?im)^\\s*(Translator|Editor|Proofreader|Read\\s+(at|on|latest))[:\\s][^\\n\\r]{0,70}(\\r?\\n|$)", "")
     text = regex_replace(text, "(?m)^\\s*اذكر الله\\s*/+\\s*\\n?", "")
-    text = regex_replace(text, "(?s)\\n={3,}.*", "")
+    -- Remove standalone separator lines (=, ~, -, —) wherever they appear
+    -- (old regex "(?s)\\n={3,}.*" cut everything after the FIRST separator line,
+    -- which swallowed the whole chapter when a "=======" line appears near the top)
+    text = regex_replace(text, "(?m)^\\s*[=~\\-—_]{3,}\\s*(\\r?\\n|$)", "")
+    -- Drop empty &nbsp; paragraphs
+    text = regex_replace(text, "(?m)^[\\s\\p{Z}\\uFEFF]*&nbsp;[\\s\\p{Z}\\uFEFF]*(\\r?\\n|$)", "")
+    -- Cut the site footer ("لدعم هذا العمل مادياً/معنوياً ..." with payment links)
+    text = regex_replace(text, "(?s)\\n\\s*لدعم هذا العمل.*", "")
+    -- Collapse leftover blank runs
+    text = regex_replace(text, "\\n{3,}", "\n\n")
     text = string_trim(text)
     return text
 end
