@@ -55,6 +55,8 @@ function getChapterText(html, url) ... end
 
 -- 4. OPTIONAL FUNCTIONS
 function getBookGenres(bookUrl) ... end
+function getBookStatus(bookUrl) ... end       -- book status, see section below
+function getBookLastUpdate(bookUrl) ... end   -- last update date, see section below
 function getChapterListHash(bookUrl) ... end  -- only needed if there's no parsePage (see below)
 function parsePage(bookUrl, page) ... end     -- paginated chapter list; if present, it fully
                                                -- replaces getChapterList and getChapterListHash
@@ -88,6 +90,7 @@ language = "en"               -- ISO 639-1: "en", "ru", "ja", "zh", "id"
                               -- or "MTL" for machine translation
 icon     = "https://..."      -- icon URL (optional)
 charset  = "UTF-8"            -- response encoding (optional, default UTF-8)
+content_type = "manga"        -- ONLY for manga; omit for novels (default: novel)
 ```
 
 **Important about `id`:** it must match the `.lua` file name without the extension. If `id = "royal_road"`, the file must be named `royal_road.lua`.
@@ -217,6 +220,81 @@ rating = "Rank: " .. n                                         -- "Rank: 3"
 ```
 
 A comma as the decimal separator is handled too (`4,6` = `4.6`).
+
+### getBookStatus(bookUrl) — optional
+
+Book status: the text as the site provides it ("Ongoing", "Completed", "Анонс", "Завершён", etc.) or `nil` if the site doesn't show a status. No mapping to English values — the app shows the text as-is with a single generic status icon (the same for every status) and a "Status: %s" label.
+
+```
+function getBookStatus(bookUrl)
+    local html = fetchBookPage(bookUrl)
+    if not html then return nil end
+    local el = html_select_first(html, ".book-status")
+    return el and string_clean(el.text) or nil
+end
+```
+
+### getBookLastUpdate(bookUrl) — optional
+
+Last chapter update date normalized to `YYYY-MM-DD` (no time — keeps the UI string short), or `nil` if it can't be parsed.
+
+The golden rule — **implement only the format the site actually serves**. First find the date on the book page (or in the JSON API) in the fixture, then write a parser exactly for it. A universal "parse every format" helper is not needed: it bloats the plugin and silently lies (e.g. it treats an hourly relative date as days). Two verified references below — pick the one matching your site.
+
+Where to look:
+
+- the `meta[property='article:modified_time']` tag — almost always an ISO date with time;
+- a `<time>` element on the book page or next to the last chapter (its text or `datetime` attribute);
+- the book JSON API: `updatedAt`, `lastUpdated`, `last_update` fields. **Cross-check the field against what the page actually shows** — it may go stale (NovelArrow's `updated_date_webnovel` lagged a week behind the UI and can't be used).
+
+**Format 1 — ISO date in a meta tag** (`en/novelarrow.lua`). The site always serves `article:modified_time` as `2026-08-18T23:00:15.751Z` (the same value the book page shows) — just take the first 10 characters, no helper needed:
+
+```
+function getBookLastUpdate(bookUrl)
+    local html = fetchBookPage(bookUrl)
+    if not html then return nil end
+    local v = html_attr(html, "meta[property='article:modified_time']", "content")
+    local y, m, d = string.match(v, "(%d%d%d%d)%-(%d%d)%-(%d%d)")
+    return y and (y .. "-" .. m .. "-" .. d) or nil
+end
+```
+
+**Format 2 — relative date** (`en/novelphoenix.lua`). The site only shows strings like `Updated 8 hours ago`, `Updated 3 days ago`, `Updated 2 years ago` (verify the actual units: minutes/hours/days/weeks/months/years, singular and plural). Computed with `os.time()` (seconds) and `os.date()`, which are available in the engine sandbox; months and years are approximate (30/365 days):
+
+```
+-- Normalizes a relative site date to YYYY-MM-DD. Unrecognized → nil.
+local function normalizeUpdateDate(raw)
+    if not raw or raw == "" then return nil end
+    local n, unit = string.match(raw, "Updated%s+(%d+)%s+(%w+)%s+ago")
+    if not n then return nil end
+    local mult = {
+        minute = 60, minutes = 60,
+        hour = 3600, hours = 3600,
+        day = 86400, days = 86400,
+        week = 7 * 86400, weeks = 7 * 86400,
+        month = 30 * 86400, months = 30 * 86400,
+        year = 365 * 86400, years = 365 * 86400,
+    }
+    local secs = mult[unit]
+    if not secs then return nil end
+    return os.date("%Y-%m-%d", os.time() - n * secs)
+end
+```
+
+A page may contain several similar elements (NovelPhoenix has a second `p.update` — "Average score is 4.6" in the reviews block). Iterate all of them and take the first that passes the format — `normalizeUpdateDate` will discard the rest:
+
+```
+function getBookLastUpdate(bookUrl)
+    local html = fetchBookPage(bookUrl)
+    if not html then return nil end
+    for _, el in ipairs(html_select(html, ".update")) do
+        local d = normalizeUpdateDate(string_clean(el.text))
+        if d then return d end
+    end
+    return nil
+end
+```
+
+If the format doesn't match — return `nil`: the app simply won't show the date. Don't invent handling for formats the site doesn't have.
 
 ### getChapterList(bookUrl)
 
@@ -407,7 +485,7 @@ Use `sleep` between requests in `getChapterList` if the site aggressively blocks
 
 ## Page Caching (fetchPage)
 
-The engine calls `getBookTitle`, `getBookCoverImageUrl`, `getBookDescription`, `getBookGenres`, `getChapterListHash`, and `getChapterList` **in parallel** — each of them does its own `http_get(bookUrl)` by default. That's 5–6 identical requests to the same page.
+The engine calls `getBookTitle`, `getBookCoverImageUrl`, `getBookDescription`, `getBookGenres`, `getBookStatus`, `getBookLastUpdate`, `getChapterListHash`, and `getChapterList` **in parallel** — each of them does its own `http_get(bookUrl)` by default. That's 6–8 identical requests to the same page.
 
 The solution is a local cache via `fetchPage`. Add it to every plugin where several functions read the same book page.
 
@@ -1444,6 +1522,8 @@ end
 | Function                            | Description                                                                           |
 | ------------------------------------- | --------------------------------------------------------------------------------------- |
 | `getUserAgentPreset()`              | Name of the UA preset (e.g. `"Safari Mobile"`) — applies to all source requests and its domain. See "Working with HTTP" |
+| `getBookStatus(bookUrl)`            | Book status — the text as on the site, or `nil`. See "getBookStatus" |
+| `getBookLastUpdate(bookUrl)`        | Last chapter update date `YYYY-MM-DD` or `nil`. See "getBookLastUpdate" |
 
 ### HTTP
 
@@ -1633,6 +1713,26 @@ function getBookGenres(bookUrl)
         if label ~= "" then table.insert(genres, label) end
     end
     return genres
+end
+
+-- Status and last update date (optional): contract — the "getBookStatus" and
+-- "getBookLastUpdate" sections in this guide. The app shows them in the library.
+function getBookStatus(bookUrl)
+    local r = http_get(bookUrl)
+    if not r.success then return nil end
+    local el = html_select_first(r.body, ".book-status")
+    return el and string_clean(el.text) or nil
+end
+
+-- The site serves an ISO date with time in the meta article:modified_time —
+-- keep only YYYY-MM-DD (for relative dates like "Updated 3 days ago" see
+-- Format 2 in the "getBookLastUpdate" section).
+function getBookLastUpdate(bookUrl)
+    local r = http_get(bookUrl)
+    if not r.success then return nil end
+    local v = html_attr(r.body, "meta[property='article:modified_time']", "content")
+    local y, m, d = string.match(v, "(%d%d%d%d)%-(%d%d)%-(%d%d)")
+    return y and (y .. "-" .. m .. "-" .. d) or nil
 end
 
 -- ── Chapter list ───────────────────────────────────────────────────────────────

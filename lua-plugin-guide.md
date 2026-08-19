@@ -55,6 +55,8 @@ function getChapterText(html, url) ... end
 
 -- 4. ОПЦИОНАЛЬНЫЕ ФУНКЦИИ
 function getBookGenres(bookUrl) ... end
+function getBookStatus(bookUrl) ... end       -- статус книги, см. секцию ниже
+function getBookLastUpdate(bookUrl) ... end   -- дата обновления, см. секцию ниже
 function getChapterListHash(bookUrl) ... end  -- нужен ТОЛЬКО если нет parsePage (см. ниже)
 function parsePage(bookUrl, page) ... end     -- список глав с пагинацией; если есть — полностью
                                                -- заменяет getChapterList и getChapterListHash
@@ -88,6 +90,7 @@ language = "en"               -- ISO 639-1: "en", "ru", "ja", "zh", "id"
                               -- или "MTL" для машинного перевода
 icon     = "https://..."      -- URL иконки (опционально)
 charset  = "UTF-8"            -- кодировка ответов (опционально, default UTF-8)
+content_type = "manga"        -- ТОЛЬКО для манги; для новелл не указывать (default novel)
 ```
 
 **Важно про `id`:** должен совпадать с именем `.lua` файла без расширения. Если `id = "royal_road"`, файл должен называться `royal_road.lua`.
@@ -217,6 +220,81 @@ rating = "Rank: " .. n                                         -- "Rank: 3"
 ```
 
 Запятая как десятичный разделитель тоже понимается (`4,6` = `4.6`).
+
+### getBookStatus(bookUrl) — опционально
+
+Статус книги: текст как на сайте («Ongoing», «Completed», «Анонс», «Завершён» и т.п.) или `nil`, если сайт статус не показывает. Никакого маппинга на английские значения — приложение показывает текст как есть: общая иконка статуса (одинаковая для всех статусов) + подпись вида «Status: %s».
+
+```lua
+function getBookStatus(bookUrl)
+    local html = fetchBookPage(bookUrl)
+    if not html then return nil end
+    local el = html_select_first(html, ".book-status")
+    return el and string_clean(el.text) or nil
+end
+```
+
+### getBookLastUpdate(bookUrl) — опционально
+
+Дата обновления последней главы в едином виде `YYYY-MM-DD` (без времени — строка в UI не должна быть длинной) или `nil`, если распознать не удалось.
+
+Главное правило — **реализуй только тот формат, который сайт реально отдаёт**. Сначала найди дату на странице книги (или в JSON API) по фикстуре и напиши парсер ровно под неё. Универсальный «парсер всех форматов» не нужен: он раздувает плагин и незаметно врёт (например, относительную дату в часах посчитает днями). Ниже два проверенных эталона — возьми тот, что соответствует твоему сайту.
+
+Где искать:
+
+- мета-тег `meta[property='article:modified_time']` — почти всегда ISO-дата со временем;
+- `<time>` на странице книги или у последней главы (текст или атрибут `datetime`);
+- JSON API книги: поля `updatedAt`, `lastUpdated`, `last_update`. **Сверяй поле с тем, что реально показывает страница** — оно может устаревать (у NovelArrow `updated_date_webnovel` отставало от UI на неделю, использовать его нельзя).
+
+**Формат 1 — ISO-дата в мета-теге** (`en/novelarrow.lua`). Сайт всегда отдаёт `article:modified_time` в виде `2026-08-18T23:00:15.751Z` (это же значение показывает на странице книги) — достаточно вырезать первые 10 символов, хелпер не нужен:
+
+```lua
+function getBookLastUpdate(bookUrl)
+    local html = fetchBookPage(bookUrl)
+    if not html then return nil end
+    local v = html_attr(html, "meta[property='article:modified_time']", "content")
+    local y, m, d = string.match(v, "(%d%d%d%d)%-(%d%d)%-(%d%d)")
+    return y and (y .. "-" .. m .. "-" .. d) or nil
+end
+```
+
+**Формат 2 — относительная дата** (`en/novelphoenix.lua`). Сайт показывает только строки вида `Updated 8 hours ago`, `Updated 3 days ago`, `Updated 2 years ago` (проверь реальные единицы: minutes/hours/days/weeks/months/years, singular и plural). Считается через `os.time()` (секунды) и `os.date()` — они доступны в песочнице движка; месяцы и годы — приблизительно (30/365 дней):
+
+```lua
+-- Приводит относительную дату сайта к YYYY-MM-DD. Не распозналось → nil.
+local function normalizeUpdateDate(raw)
+    if not raw or raw == "" then return nil end
+    local n, unit = string.match(raw, "Updated%s+(%d+)%s+(%w+)%s+ago")
+    if not n then return nil end
+    local mult = {
+        minute = 60, minutes = 60,
+        hour = 3600, hours = 3600,
+        day = 86400, days = 86400,
+        week = 7 * 86400, weeks = 7 * 86400,
+        month = 30 * 86400, months = 30 * 86400,
+        year = 365 * 86400, years = 365 * 86400,
+    }
+    local secs = mult[unit]
+    if not secs then return nil end
+    return os.date("%Y-%m-%d", os.time() - n * secs)
+end
+```
+
+На странице может быть несколько похожих элементов (у NovelPhoenix есть второй `p.update` — «Average score is 4.6» в блоке отзывов). Перебирай все и бери первый, кто прошёл формат — `normalizeUpdateDate` сам отбросит чужое:
+
+```lua
+function getBookLastUpdate(bookUrl)
+    local html = fetchBookPage(bookUrl)
+    if not html then return nil end
+    for _, el in ipairs(html_select(html, ".update")) do
+        local d = normalizeUpdateDate(string_clean(el.text))
+        if d then return d end
+    end
+    return nil
+end
+```
+
+Если формат не совпал — возвращай `nil`: приложение просто не покажет дату. Не выдумывай обработку форматов, которых на сайте нет.
 
 ### getChapterList(bookUrl)
 
@@ -407,7 +485,7 @@ sleep(math.random(150, 350))      -- случайная задержка 150-350
 
 ## Кэширование страниц (fetchPage)
 
-Движок вызывает `getBookTitle`, `getBookCoverImageUrl`, `getBookDescription`, `getBookGenres`, `getChapterListHash` и `getChapterList` **параллельно** — каждая из них по умолчанию делает свой `http_get(bookUrl)`. Итого 5–6 одинаковых запросов к одной странице.
+Движок вызывает `getBookTitle`, `getBookCoverImageUrl`, `getBookDescription`, `getBookGenres`, `getBookStatus`, `getBookLastUpdate`, `getChapterListHash` и `getChapterList` **параллельно** — каждая из них по умолчанию делает свой `http_get(bookUrl)`. Итого 6–8 одинаковых запросов к одной странице.
 
 Решение — локальный кэш через `fetchPage`. Добавляй его в каждый плагин где несколько функций читают одну и ту же страницу книги.
 
@@ -1441,6 +1519,8 @@ end
 | Функция | Описание |
 |---|---|
 | `getUserAgentPreset()` | Имя UA-пресета (например `"Safari Mobile"`) — применяется ко всем запросам источника и его домена. Подробнее в «Работа с HTTP» |
+| `getBookStatus(bookUrl)` | Статус книги — текст как на сайте или `nil`. См. «getBookStatus» |
+| `getBookLastUpdate(bookUrl)` | Дата обновления последней главы `YYYY-MM-DD` или `nil`. См. «getBookLastUpdate» |
 
 ### HTTP
 
@@ -1630,6 +1710,26 @@ function getBookGenres(bookUrl)
         if label ~= "" then table.insert(genres, label) end
     end
     return genres
+end
+
+-- Статус и дата обновления (опционально): контракт — секции «getBookStatus»
+-- и «getBookLastUpdate» в гайде. Движок показывает их в библиотеке.
+function getBookStatus(bookUrl)
+    local r = http_get(bookUrl)
+    if not r.success then return nil end
+    local el = html_select_first(r.body, ".book-status")
+    return el and string_clean(el.text) or nil
+end
+
+-- Сайт отдаёт ISO-дату со временем в meta article:modified_time — оставляем
+-- только YYYY-MM-DD (для относительных дат вида «Updated 3 days ago» см.
+-- формат 2 в секции «getBookLastUpdate»).
+function getBookLastUpdate(bookUrl)
+    local r = http_get(bookUrl)
+    if not r.success then return nil end
+    local v = html_attr(r.body, "meta[property='article:modified_time']", "content")
+    local y, m, d = string.match(v, "(%d%d%d%d)%-(%d%d)%-(%d%d)")
+    return y and (y .. "-" .. m .. "-" .. d) or nil
 end
 
 -- ── Список глав ───────────────────────────────────────────────────────────────
