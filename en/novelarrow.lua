@@ -1,7 +1,7 @@
 -- ── Метаданные ────────────────────────────────────────────────────────────────
 id       = "NovelArrow"
 name     = "Novel Arrow"
-version  = "1.0.3"
+version  = "1.0.4"
 baseUrl  = "https://novelarrow.com/"
 language = "en"
 icon     = "https://raw.githubusercontent.com/HnDK0/external-sources/main/icons/novelarrow.png"
@@ -44,6 +44,20 @@ local function absUrl(href)
     if string_starts_with(href, "http") then return href end
     if string_starts_with(href, "//") then return "https:" .. href end
     return url_resolve(baseUrl, href)
+end
+
+-- Кэш HTML-страницы книги: getBookStatus/getBookLastUpdate читают мета-теги
+-- со страницы книги, fetchBookPage убирает дублирующиеся http_get.
+local _pageCache = {}
+
+local function fetchBookPage(url)
+    if _pageCache[url] then return _pageCache[url] end
+    local r = http_get(url)
+    if r.success then
+        _pageCache[url] = r.body
+        return r.body
+    end
+    return nil
 end
 
 -- Извлекает novel_id (slug) из URL книги:
@@ -212,6 +226,29 @@ function getBookRating(bookUrl)
     -- "0" = нет голосов: сайт число не показывает, и мы не возвращаем
     if v == "" or v == "0" then return nil end
     return v
+end
+
+-- ── Status / Last update ────────────────────────────────────────────────────
+
+-- Статус книги: <meta name="og:novel:status" content="Ongoing"/> — текст как
+-- на сайте. В JSON API статус закодирован числом (0/1), поэтому берём из HTML.
+function getBookStatus(bookUrl)
+    local html = fetchBookPage(bookUrl)
+    if not html then return nil end
+    local v = html_attr(html, "meta[name='og:novel:status']", "content")
+    return v ~= "" and string_clean(v) or nil
+end
+
+-- Дата обновления последней главы: <meta property="article:modified_time"
+-- content="2026-08-18T23:00:15.751Z"/> — сайт всегда отдаёт ISO-дату со
+-- временем (это же значение показывает на странице книги), оставляем
+-- только YYYY-MM-DD.
+function getBookLastUpdate(bookUrl)
+    local html = fetchBookPage(bookUrl)
+    if not html then return nil end
+    local v = html_attr(html, "meta[property='article:modified_time']", "content")
+    local y, m, d = string.match(v, "(%d%d%d%d)%-(%d%d)%-(%d%d)")
+    return y and (y .. "-" .. m .. "-" .. d) or nil
 end
 
 -- ── Список глав (parsePage) ───────────────────────────────────────────────────

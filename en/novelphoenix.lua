@@ -1,10 +1,10 @@
 -- Novel Phoenix plugin for NovaLa
 -- Source: https://novelphoenix.com/
--- Version: 1.0.7
+-- Version: 1.0.8
 
 id       = "novelphoenix"
 name     = "Novel Phoenix"
-version  = "1.0.7"
+version  = "1.0.8"
 baseUrl  = "https://novelphoenix.com"
 language = "en"
 icon     = "https://novelphoenix.com/logo.png"
@@ -27,6 +27,41 @@ local function applyStandardContentTransforms(text)
     text = regex_replace(text, "(?im)^\\s*(Translator|Editor|Proofreader|Read\\s+(at|on|latest))[:\\s][^\\n\\r]{0,70}(\\r?\\n|$)", "")
     text = string_trim(text)
     return text
+end
+
+-- Кэш страницы книги: движок вызывает функции деталей параллельно,
+-- кэш убирает дублирующиеся http_get на один и тот же bookUrl.
+local _pageCache = {}
+
+local function fetchBookPage(url)
+    if _pageCache[url] then return _pageCache[url] end
+    local r = http_get(url)
+    if r.success then
+        _pageCache[url] = r.body
+        return r.body
+    end
+    return nil
+end
+
+-- Приводит относительную дату сайта к YYYY-MM-DD. Сайт отдаёт только
+-- строки вида "Updated 8 hours ago", "Updated 3 days ago", "Updated 2 years ago"
+-- (проверено на живых страницах); месяцы и годы — приблизительно (30/365 дней).
+-- Не распозналось → nil.
+local function normalizeUpdateDate(raw)
+    if not raw or raw == "" then return nil end
+    local n, unit = string.match(raw, "Updated%s+(%d+)%s+(%w+)%s+ago")
+    if not n then return nil end
+    local mult = {
+        minute = 60, minutes = 60,
+        hour = 3600, hours = 3600,
+        day = 86400, days = 86400,
+        week = 7 * 86400, weeks = 7 * 86400,
+        month = 30 * 86400, months = 30 * 86400,
+        year = 365 * 86400, years = 365 * 86400,
+    }
+    local secs = mult[unit]
+    if not secs then return nil end
+    return os.date("%Y-%m-%d", os.time() - n * secs)
 end
 
 -- ── Catalog ─────────────────────────────────────────────────────────────
@@ -270,6 +305,31 @@ function getBookRating(bookUrl)
     if not r.success then return nil end
     local el = html_select_first(r.body, ".rating .nub")
     return el and string_clean(el.text) or nil
+end
+
+-- ── Status / Last update ────────────────────────────────────────────────────
+
+-- Статус книги: <strong class="ongoing">Ongoing</strong> /
+-- <strong class="completed">Completed</strong> — текст как на сайте.
+function getBookStatus(bookUrl)
+    local html = fetchBookPage(bookUrl)
+    if not html then return nil end
+    local el = html_select_first(html, "strong.ongoing, strong.completed")
+    return el and string_clean(el.text) or nil
+end
+
+-- Дата обновления последней главы: <p class="update">Updated 8 hours ago</p>.
+-- На странице есть второй <p class="update"> ("Average score is 4.6" в блоке
+-- отзывов) — перебираем все и берём первый, кто проходит формат сайта
+-- (тот самый "Updated N units ago"), остальные normalizeUpdateDate отбрасывает.
+function getBookLastUpdate(bookUrl)
+    local html = fetchBookPage(bookUrl)
+    if not html then return nil end
+    for _, el in ipairs(html_select(html, ".update")) do
+        local d = normalizeUpdateDate(string_clean(el.text))
+        if d then return d end
+    end
+    return nil
 end
 
 -- ── Filters ─────────────────────────────────────────────────────────────
