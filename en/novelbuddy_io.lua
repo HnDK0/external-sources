@@ -1,7 +1,7 @@
 -- Метаданные
 id       = "novelbuddy"
 name     = "NovelBuddy"
-version  = "3.0.2"
+version  = "3.0.3"
 baseUrl  = "https://novelbuddy.me"
 language = "en"
 icon     = "https://raw.githubusercontent.com/HnDK0/external-sources/main/icons/novelbuddy.png"
@@ -290,6 +290,27 @@ function getBookRating(bookUrl)
     local rating = manga.rating or 0
     if tonumber(rating) <= 0 then return nil end
     return tostring(rating)
+end
+
+-- ── Статус / Дата обновления ────────────────────────────────────────────────
+-- Читаем из __NEXT_DATA__ как остальные детали книги
+
+function getBookStatus(bookUrl)
+    local manga = fetchMangaNextData(bookUrl)
+    if not manga or not manga.status then return nil end
+    return string_clean(manga.status)
+end
+
+function getBookLastUpdate(bookUrl)
+    local manga = fetchMangaNextData(bookUrl)
+    if not manga then return nil end
+    -- updatedAt (CamelCase) из __NEXT_DATA__, fallback updated_at из API
+    local raw = manga.updatedAt or manga.updated_at
+    if not raw or raw == "" then return nil end
+    -- ISO 8601: "2026-08-21T13:12:56.000Z" → YYYY-MM-DD
+    local y, m, d = raw:match("(%d%d%d%d)%-(%d%d)%-(%d%d)")
+    if y then return y .. "-" .. m .. "-" .. d end
+    return nil
 end
 
 -- ── Список глав ───────────────────────────────────────────────────────────────

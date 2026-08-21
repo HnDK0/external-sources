@@ -1,11 +1,20 @@
 id       = "novelfire"
 name     = "NovelFire"
-version  = "1.0.7"
+version  = "1.0.8"
 baseUrl  = "https://novelfire.net"
 language = "en"
 icon     = "https://raw.githubusercontent.com/HnDK0/external-sources/main/icons/novelfire.png"
 
 -- ── Хелперы ───────────────────────────────────────────────────────────────────
+
+local _pageCache = {}
+
+local function fetchBookPage(url)
+    if _pageCache[url] then return _pageCache[url] end
+    local r = http_get(url)
+    if r.success then _pageCache[url] = r.body; return r.body end
+    return nil
+end
 
 local function absUrl(href)
     if not href or href == "" then return "" end
@@ -265,6 +274,40 @@ function getBookRating(bookUrl)
   if not r.success then return nil end
   local el = html_select_first(r.body, ".rating .nub")
   return el and string_clean(el.text) or nil
+end
+
+-- ── Статус / Дата обновления ─────────────────────────────────────────────────
+
+-- Статус книги: <strong class="completed">Completed</strong> в .header-stats
+-- Класс <strong> совпадает с текстом (ongoing / completed)
+function getBookStatus(bookUrl)
+  local html = fetchBookPage(bookUrl)
+  if not html then return nil end
+  local STATUS = { ongoing = true, completed = true, hiatus = true, dropped = true }
+  for _, el in ipairs(html_select(html, ".header-stats strong")) do
+    local v = string_clean(string_lower(el.text))
+    if STATUS[v] then return string_clean(el.text) end
+  end
+  return nil
+end
+
+-- Дата обновления: <p class="update">Updated N unit(s) ago</p> в .chapter-latest-container
+-- Парсим относительную дату → YYYY-MM-DD
+function getBookLastUpdate(bookUrl)
+  local html = fetchBookPage(bookUrl)
+  if not html then return nil end
+  local el = html_select_first(html, ".chapter-latest-container .update")
+  if not el then return nil end
+  local text = string_trim(el.text)
+  local n, unit = text:match("Updated%s+(%d+)%s+(%S+)")
+  if not n then return nil end
+  n = tonumber(n)
+  local secs = { minute = 60, minutes = 60, hour = 3600, hours = 3600,
+                 day = 86400, days = 86400, week = 604800, weeks = 604800,
+                 month = 2592000, months = 2592000, year = 31536000, years = 31536000 }
+  local s = secs[unit]
+  if not s then return nil end
+  return os.date("%Y-%m-%d", os.time() - n * s)
 end
 
 -- ── Список фильтров ───────────────────────────────────────────────────────────

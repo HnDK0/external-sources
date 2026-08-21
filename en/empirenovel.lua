@@ -1,7 +1,7 @@
 -- ── Метаданные ────────────────────────────────────────────────────────────────
 id       = "empirenovel"
 name     = "Empire Novel"
-version  = "2.4.0"
+version  = "2.4.1"
 baseUrl  = "https://www.empirenovel.com/"
 language = "en"
 icon     = "https://raw.githubusercontent.com/HnDK0/external-sources/main/icons/empirenovel.png"
@@ -243,6 +243,57 @@ function getBookGenres(bookUrl)
     end
   end
   return genres
+end
+
+-- ── Статус / Дата обновления ───────────────────────────────────────────────────
+--
+-- Статус лежит в блоке деталей книги:
+--   <div class="d-flex justify-content-between">Status<span>Ongoing</span></div>
+-- Дата обновления — это дата самой свежей главы (список идёт от новых к старым),
+-- она в <div class="small fst-italic">19 mars 2025</div> под названием главы.
+-- Формат даты — фр. «ДД месяц ГГГГ» (mars, avr., aout, sept. …).
+
+local FR_MONTHS = {
+  janvier=1, fevrier=2, mars=3, avril=4, mai=5, juin=6, juillet=7,
+  aout=8, septembre=9, octobre=10, novembre=11, decembre=12,
+  jan=1, fev=2, avr=4, juil=7, aou=8, sept=9, oct=10, nov=11, dec=12,
+}
+
+-- "19 mars 2025" / "21 avr. 2023" / "22 aout 2023" → "2025-03-19", иначе nil.
+local function parseFrDate(s)
+  if not s or s == "" then return nil end
+  local ds = regex_match(s, "(\\d{1,2}\\s+[^\\d\\s]+\\s+\\d{4})")
+  if not ds or ds == "" then return nil end
+  local d, mon, y = string.match(ds, "(%d+)%s+(%S+)%s+(%d+)")
+  if not d or not mon or not y then return nil end
+  mon = string.lower(mon)
+  mon = mon:gsub("%.", "")
+  mon = mon:gsub("[éèêë]", "e"):gsub("[àâä]", "a"):gsub("[ôö]", "o")
+         :gsub("[ûüù]", "u"):gsub("[îï]", "i"):gsub("ç", "c")
+  local mo = FR_MONTHS[mon]
+  if not mo then return nil end
+  return string.format("%04d-%02d-%02d", tonumber(y), mo, tonumber(d))
+end
+
+function getBookStatus(bookUrl)
+  local r = http_get(bookUrl)
+  if not r.success then return nil end
+  for _, row in ipairs(html_select(r.body, "div.show_details div.d-flex.justify-content-between")) do
+    local t = row.text
+    if t and string_starts_with(t, "Status") then
+      local s = string_trim(string.gsub(t, "^Status", ""))
+      return s ~= "" and s or nil
+    end
+  end
+  return nil
+end
+
+function getBookLastUpdate(bookUrl)
+  local r = http_get(bookUrl)
+  if not r.success then return nil end
+  local first = html_select_first(r.body, "div.small.fst-italic")
+  if not first then return nil end
+  return parseFrDate(first.text)
 end
 
 -- ── Список глав (PAGE_BASED, через parsePage) ─────────────────────────────────

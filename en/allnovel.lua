@@ -1,7 +1,7 @@
 -- ── Метаданные ────────────────────────────────────────────────────────────────
 id       = "allnovel"
 name     = "AllNovel"
-version  = "1.0.3"
+version  = "1.0.4"
 baseUrl  = "https://allnovel.org/"
 language = "en"
 icon     = "https://raw.githubusercontent.com/HnDK0/external-sources/main/icons/allnovel.png"
@@ -118,6 +118,24 @@ function getBookDescription(bookUrl)
   if el then return string_trim(el.text) end
   return nil
 end
+
+-- ── Статус / Дата обновления ─────────────────────────────────────────────────
+
+function getBookStatus(bookUrl)
+  local r = http_get(bookUrl)
+  if not r.success then return nil end
+  for _, div in ipairs(html_select(r.body, ".info div")) do
+    local h3 = html_select_first(div.html, "h3")
+    if h3 and string_trim(h3.text) == "Status:" then
+      local a = html_select_first(div.html, "a")
+      if a then return string_trim(a.text) end
+    end
+  end
+  return nil
+end
+
+-- Сайт не показывает дату обновления на странице книги (нет <time>, meta dates,
+-- JSON-LD dateModified и т.п.) — getBookLastUpdate не реализуется.
 
 -- ── Список глав (PAGE_BASED) ──────────────────────────────────────────────────
 

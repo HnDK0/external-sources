@@ -1,7 +1,8 @@
 -- ── Метаданные ────────────────────────────────────────────────────────────────
 id       = "wuxia_world_site"
 name     = "WuxiaWorld.site"
-version  = "1.1.0"
+-- Version: 1.1.1
+version  = "1.1.1"
 baseUrl  = "https://wuxiaworld.site/"
 language = "en"
 icon     = "https://raw.githubusercontent.com/HnDK0/external-sources/main/icons/wuxiaworld.site.png"
@@ -24,6 +25,19 @@ local function extractRating(html)
   if el then
     local r = string_clean(el.text)
     if r ~= "" then return r end
+  end
+  return nil
+end
+
+-- Общая загрузка страницы книги с кэшем в рамках одного вызова движка
+-- (детальные функции вызываются параллельно — кэш убирает лишние запросы).
+local _pageCache = {}
+local function fetchBookPage(url)
+  if _pageCache[url] then return _pageCache[url] end
+  local r = http_get(url)
+  if r.success then
+    _pageCache[url] = r.body
+    return r.body
   end
   return nil
 end
@@ -201,6 +215,31 @@ function getBookGenres(bookUrl)
     if g ~= "" then table.insert(genres, g) end
   end
   return genres
+end
+
+-- ── Status / Last update ───────────────────────────────────────────────────
+
+-- Статус книги: <div class="post-status"><div class="summary-content">OnGoing</div></div>
+-- Текст оставляем как на сайте (без маппинга), через string_clean.
+function getBookStatus(bookUrl)
+  local html = fetchBookPage(bookUrl)
+  if not html then return nil end
+  local el = html_select_first(html, ".post-status .summary-content")
+  if not el then return nil end
+  local v = string_clean(el.text)
+  return v ~= "" and v or nil
+end
+
+-- Дата обновления: <meta property="article:modified_time"
+-- content="2022-06-29T07:45:21+00:00"/> — сайт отдаёт ISO-дату со временем,
+-- оставляем только YYYY-MM-DD (тот же паттерн, что в en/novelarrow.lua).
+function getBookLastUpdate(bookUrl)
+  local html = fetchBookPage(bookUrl)
+  if not html then return nil end
+  local v = html_attr(html, "meta[property='article:modified_time']", "content")
+  if v == "" then return nil end
+  local y, m, d = string.match(v, "(%d%d%d%d)%-(%d%d)%-(%d%d)")
+  return y and (y .. "-" .. m .. "-" .. d) or nil
 end
 
 -- ── Список фильтров ───────────────────────────────────────────────────────────

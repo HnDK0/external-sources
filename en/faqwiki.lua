@@ -1,7 +1,7 @@
 -- ── Metadata ────────────────────────────────────────────────────────────────
 id       = "faqwiki"
 name     = "FAQ Wiki"
-version  = "1.6.4"
+version  = "1.6.6"
 baseUrl  = "https://faqwiki.us/novel"
 language = "en"
 icon     = "https://raw.githubusercontent.com/HnDK0/external-sources/main/icons/faqwiki.png"
@@ -219,6 +219,30 @@ function getBookGenres(bookUrl)
     end
   end
   return {}
+end
+
+-- ── Статус / Дата обновления ──
+
+function getBookLastUpdate(bookUrl)
+  local body = fetchPage(bookUrl)
+  if not body then return nil end
+  -- meta article:modified_time в ISO формате: 2026-06-02T18:41:37+00:00
+  local iso = html_attr(body, "meta[property='article:modified_time']", "content")
+  if iso and iso ~= "" then
+    local y, m, d = string.match(iso, "(%d%d%d%d)%-(%d%d)%-(%d%d)")
+    if y and m and d then
+      return y .. "-" .. m .. "-" .. d
+    end
+  end
+  -- фоллбэк: JSON-LD dateModified
+  local script = html_select_first(body, "script[type='application/ld+json']")
+  if script then
+    local dm = regex_match(script.text, '"dateModified"\\s*:\\s*"(\\d{4}-\\d{2}-\\d{2})')
+    if dm and #dm > 0 and dm[1] ~= "" then
+      return dm[1]
+    end
+  end
+  return nil
 end
 
 -- ── Chapter text ──────────────────────────────────────────────────────────────

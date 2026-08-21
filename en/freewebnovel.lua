@@ -1,6 +1,6 @@
 id       = "freewebnovel"
 name     = "FreeWebNovel"
-version  = "1.0.4"
+version  = "1.0.5"
 baseUrl  = "https://freewebnovel.com"
 language = "en"
 icon     = "https://raw.githubusercontent.com/HnDK0/external-sources/main/icons/freewebnovel.png"
@@ -122,6 +122,55 @@ function getBookGenres(bookUrl)
     end
   end
   return genres
+end
+
+-- ── Статус / Дата обновления ──────────────────────────────────────────────
+
+-- Статус книги из блока метаданных .m-imgtxt:
+-- <div class="item"><span ... title="Status"></span>
+--   <div class="right"><span class="s1 s2"><a ...>OnGoing</a></span></div></div>
+function getBookStatus(bookUrl)
+  local body = fetchPage(bookUrl)
+  if not body then return nil end
+  for _, item in ipairs(html_select(body, ".m-imgtxt .txt .item")) do
+    local span = html_select_first(item.html, "span[title='Status']")
+    if span then
+      local a = html_select_first(item.html, ".right a")
+      if a then return string_trim(a.text) end
+      local s = html_select_first(item.html, ".right span")
+      if s then return string_trim(s.text) end
+      return nil
+    end
+  end
+  return nil
+end
+
+-- Дата последнего обновления в блоке "6 Latest Chapters":
+-- <span class="lastupdate">[ Updated 3 days ago ]</span>
+-- Сайт отдаёт только относительную строку — приводим к YYYY-MM-DD.
+local function normalizeUpdateDate(raw)
+  if not raw or raw == "" then return nil end
+  local n, unit = string.match(raw, "Updated%s+(%d+)%s+(%w+)%s+ago")
+  if not n then return nil end
+  local mult = {
+    minute = 60, minutes = 60,
+    hour = 3600, hours = 3600,
+    day = 86400, days = 86400,
+    week = 7 * 86400, weeks = 7 * 86400,
+    month = 30 * 86400, months = 30 * 86400,
+    year = 365 * 86400, years = 365 * 86400,
+  }
+  local secs = mult[unit]
+  if not secs then return nil end
+  return os.date("%Y-%m-%d", os.time() - n * secs)
+end
+
+function getBookLastUpdate(bookUrl)
+  local body = fetchPage(bookUrl)
+  if not body then return nil end
+  local el = html_select_first(body, ".lastupdate")
+  if not el then return nil end
+  return normalizeUpdateDate(string_trim(el.text))
 end
 
 -- ── Rating ──────────────────────────────────────────────────────────────

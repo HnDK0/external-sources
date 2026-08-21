@@ -1,7 +1,7 @@
 -- ── Metadata ────────────────────────────────────────────────────────────────
 id       = "novelight"
 name     = "Novelight"
-version  = "1.0.7"
+version  = "1.0.9"
 baseUrl  = "https://novelight.net/"
 language = "en"
 icon     = "https://raw.githubusercontent.com/HnDK0/external-sources/main/icons/novelight.png"
@@ -257,6 +257,35 @@ function getBookRating(bookUrl)
   if not el then return nil end
   local text = string_clean(el.text)
   return text:match("^(%d+%.?%d*)") or nil
+end
+
+-- ── Статус ────────────────────────────────────────────────────────────────────
+-- Статус книги: блок .block.mini-info, элемент с sub-header "Status"
+-- (значение .info — Releasing / Completed / Cancelled / Not Yet Released).
+function getBookStatus(bookUrl)
+  local body = fetchPage(bookUrl)
+  if not body then return nil end
+  for _, item in ipairs(html_select(body, "div.block.mini-info a.item")) do
+    local sub = html_select_first(item.html, ".sub-header")
+    if sub and string_clean(sub.text) == "Status" then
+      local info = html_select_first(item.html, ".info")
+      return info and string_clean(info.text) or nil
+    end
+  end
+  return nil
+end
+
+-- ── Last update ──────────────────────────────────────────────────────────────
+-- Дата последней главы из блока "Last 10 chapters": <span class="date">21.08.2026</span>
+-- (список отсортирован от новых к старым, первый .date — самая свежая глава).
+function getBookLastUpdate(bookUrl)
+  local body = fetchPage(bookUrl)
+  if not body then return nil end
+  local el = html_select_first(body, ".chapters .chapter .date")
+  if not el then return nil end
+  local d, m, y = string.match(string_clean(el.text), "(%d%d)%.(%d%d)%.(%d%d%d%d)")
+  if not y then return nil end
+  return y .. "-" .. m .. "-" .. d
 end
 
 -- ── Chapter list (paginated, via parsePage) ─────────────────────────────────

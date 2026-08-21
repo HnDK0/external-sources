@@ -1,6 +1,6 @@
 id       = "mvlempyr.com"
 name     = "MVLEMPYR"
-version  = "1.0.4"
+version  = "1.0.6"
 baseUrl  = "https://www.mvlempyr.io"
 language = "en"
 icon     = "https://raw.githubusercontent.com/HnDK0/external-sources/main/icons/mvlempyr.webp"
@@ -584,6 +584,47 @@ function getBookGenres(bookUrl)
         if label ~= "" then table.insert(genres, label) end
     end
     return genres
+end
+
+-- ── Статус / Дата обновления ───────────────────────────────────────────────
+
+-- Статус книги со страницы книги: <div class="novelstatustextlarge">Ongoing</div>
+-- (дублируется мобильным блоком .novelstatustextmedium с тем же текстом).
+-- Даты обновления нет в статической вёрстке (там плейсхолдер "Last update
+-- calculating...", заполняемый JS), но она равна дате самой свежей главы,
+-- которую отдаёт WP REST API (posts[1].date, см. getBookLastUpdate).
+function getBookStatus(bookUrl)
+    local body = fetchPage(bookUrl)
+    if not body then return nil end
+    if checkCaptcha(body) then return nil end
+    local el = html_select_first(body, ".novelstatustextlarge")
+    if not el then
+        el = html_select_first(body, ".novelstatustextmedium")
+    end
+    return el and string_clean(el.text) or nil
+end
+
+-- ── Last update ──────────────────────────────────────────────────────────────
+-- Дата последней главы из WP REST API: posts отсортированы от новых к старым,
+-- posts[1].date — самая свежая глава = дата последнего обновления новеллы.
+function getBookLastUpdate(bookUrl)
+    local body = fetchPage(bookUrl)
+    if not body then return nil end
+    local el = html_select_first(body, "#novel-code")
+    if not el then return nil end
+    local num = tonumber(string_trim(el.text))
+    if not num then return nil end
+    local novelId = convertNovelId(num)
+    if not novelId then return nil end
+    local r = http_get(chapSite .. "wp-json/wp/v2/posts?tags=" .. novelId .. "&per_page=1&page=1")
+    if not r.success then return nil end
+    local posts = json_parse(r.body)
+    if not posts or type(posts) ~= "table" or #posts == 0 then return nil end
+    local d = posts[1].date
+    if not d then return nil end
+    local y, m, day = string.match(d, "(%d%d%d%d)%-(%d%d)%-(%d%d)")
+    if not y then return nil end
+    return y .. "-" .. m .. "-" .. day
 end
 
 -- ── Rating ─────────────────────────────────────────────────────────────────

@@ -1,6 +1,6 @@
 id       = "novelnice"
 name     = "NovelNice"
-version  = "1.3.0"
+version  = "1.4.0"
 baseUrl  = "https://novelnice.com/"
 language = "en"
 icon     = "https://raw.githubusercontent.com/HnDK0/external-sources/main/icons/novelnice.png"
@@ -163,6 +163,39 @@ function getBookRating(bookUrl)
     local body = fetchPage(bookUrl)
     if not body then return nil end
     return parseRating(body)
+end
+
+-- ── Статус / Дата обновления ─────────────────────────────────────────────────
+
+function getBookStatus(bookUrl)
+    local body = fetchPage(bookUrl)
+    if not body then return nil end
+
+    for _, item in ipairs(html_select(body, ".post-content_item")) do
+        local heading = html_select_first(item.html, ".summary-heading h5")
+        if heading and string_trim(heading.text) == "Status" then
+            local content = html_select_first(item.html, ".summary-content")
+            if content then
+                local v = string_trim(content.text)
+                if v ~= "" then return v end
+            end
+            break
+        end
+    end
+    return nil
+end
+
+function getBookLastUpdate(bookUrl)
+    local body = fetchPage(bookUrl)
+    if not body then return nil end
+
+    -- WordPress/Madara: <meta property="article:modified_time" content="2025-04-05T09:16:59+00:00">
+    local raw = string_match(body, 'article:modified_time"%s+content="%d%d%d%d%-%d%d%-%d%d')
+    if raw then
+        local y, m, d = string_match(raw, "(%d%d%d%d)%-(%d%d)%-(%d%d)")
+        if y then return y .. "-" .. m .. "-" .. d end
+    end
+    return nil
 end
 
 -- ── Количество AJAX-страниц глав ──────────────────────────────────────────────

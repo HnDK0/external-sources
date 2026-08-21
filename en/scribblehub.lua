@@ -1,7 +1,7 @@
 -- ── Метаданные ────────────────────────────────────────────────────────────────
 id       = "scribblehub"
 name     = "ScribbleHub"
-version  = "1.0.2"
+version  = "1.0.3"
 baseUrl  = "https://www.scribblehub.com/"
 language = "en"
 icon     = "https://raw.githubusercontent.com/HnDK0/external-sources/main/icons/scribblehub.png"
@@ -182,6 +182,45 @@ function getBookGenres(bookUrl)
     if label ~= "" then table.insert(genres, label) end
   end
   return genres
+end
+
+-- ── Статус и дата обновления ──────────────────────────────────────────────────
+
+-- Статус книги: в сайдбаре <li><span class="rnd_stats">…</span><span>Статус - Updated …</span></li>.
+-- Текст второго <span> — «Ongoing - Updated 23 hours ago»; отрезаем « - Updated …»,
+-- оставляя сам статус («Ongoing»/«Completed»/«Hiatus» и т.п.) как на сайте.
+function getBookStatus(bookUrl)
+  local r = http_get(bookUrl)
+  if not r.success then return nil end
+  local el = html_select_first(r.body, "span.rnd_stats + span")
+  if not el then return nil end
+  local txt = string_clean(el.text)
+  local status = string.match(txt, "^(.-)%s*%-%s*Updated")
+  return status and string_clean(status) or txt
+end
+
+-- Дата обновления: <span title="Last updated: 23 hours ago">23 hours ago</span>.
+-- Сайт отдаёт только относительную дату («N units ago») — приводим к YYYY-MM-DD
+-- относительно текущего времени. Не распозналось → nil.
+function getBookLastUpdate(bookUrl)
+  local r = http_get(bookUrl)
+  if not r.success then return nil end
+  local el = html_select_first(r.body, 'span[title^="Last updated:"]')
+  if not el then return nil end
+  local raw = string_clean(el.text)
+  local n, unit = string.match(raw, "(%d+)%s+(%w+)%s+ago")
+  if not n then return nil end
+  local mult = {
+    minute = 60, minutes = 60,
+    hour = 3600, hours = 3600,
+    day = 86400, days = 86400,
+    week = 604800, weeks = 604800,
+    month = 2592000, months = 2592000,
+    year = 31536000, years = 31536000,
+  }
+  local secs = mult[unit]
+  if not secs then return nil end
+  return os.date("%Y-%m-%d", os.time() - tonumber(n) * secs)
 end
 
 -- ── Список фильтров ───────────────────────────────────────────────────────────

@@ -1,7 +1,7 @@
 -- ── Metadata ────────────────────────────────────────────────────────────────
 id       = "novelhi"
 name     = "NovelHi"
-version  = "1.0.2"
+version  = "1.0.3"
 baseUrl  = "https://novelhi.com"
 language = "en"
 icon     = "https://t3.gstatic.com/faviconV2?client=SOCIAL&type=FAVICON&fallback_opts=TYPE,SIZE,URL&url=https://novelhi.com&size=256"
@@ -245,6 +245,40 @@ function getBookGenres(bookUrl)
         if name ~= "" then table.insert(genres, name) end
     end
     return genres
+end
+
+-- ── Status / Last update ──────────────────────────────────────────────────────
+
+-- Обе метрики лежат в <ul class="list"> как <span class="item">Label: <em>…</em></span>.
+-- Статус — текст как на сайте (без маппинга); дата обновления — формат
+-- YY/MM/DD HH:MM:SS (напр. 25/01/29 15:10:03 → 2025-01-29).
+function getBookStatus(bookUrl)
+    local body = fetchPage(bookUrl)
+    if not body then return nil end
+    for _, span in ipairs(html_select(body, "ul.list li span.item")) do
+        if string_starts_with(span.text, "Status:") then
+            local em = html_select_first(span.html, "em")
+            if em then return string_clean(em.text) end
+        end
+    end
+    return nil
+end
+
+function getBookLastUpdate(bookUrl)
+    local body = fetchPage(bookUrl)
+    if not body then return nil end
+    for _, span in ipairs(html_select(body, "ul.list li span.item")) do
+        if string_starts_with(span.text, "Update:") then
+            local em = html_select_first(span.html, "em")
+            if em then
+                local y, mo, d = string_match(em.text, "(%d%d)/(%d%d)/(%d%d)")
+                if y and mo and d then
+                    return "20" .. y .. "-" .. mo .. "-" .. d
+                end
+            end
+        end
+    end
+    return nil
 end
 
 -- ── Chapter list ──────────────────────────────────────────────────────────────

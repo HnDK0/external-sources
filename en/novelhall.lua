@@ -1,11 +1,22 @@
 id       = "novelhall"
 name     = "NovelHall"
-version  = "1.0.2"
+version  = "1.0.3"
 baseUrl  = "https://www.novelhall.com"
 language = "en"
 icon     = "https://raw.githubusercontent.com/HnDK0/external-sources/main/icons/novelhall.png"
 
 -- ── Хелперы ───────────────────────────────────────────────────────────────────
+
+-- ponytail: кэш страницы книги для переиспользования внутри одного вызова
+local _pageCache = {}
+
+local function fetchBookPage(bookUrl)
+    if _pageCache[bookUrl] then return _pageCache[bookUrl] end
+    local r = http_get(bookUrl)
+    if not r.success then return nil end
+    _pageCache[bookUrl] = r.body
+    return r.body
+end
 
 local function absUrl(href)
     if not href or href == "" then return "" end
@@ -95,6 +106,30 @@ function getBookDescription(bookUrl)
     if not r.success then return nil end
     local el = html_select_first(r.body, "span.js-close-wrap")
     return el and string_trim(el.text) or nil
+end
+
+-- ── Статус / Дата обновления ─────────────────────────────────────────────────
+
+function getBookStatus(bookUrl)
+    local body = fetchBookPage(bookUrl)
+    if not body then return nil end
+    for _, span in ipairs(html_select(body, ".booktag span")) do
+        local t = string_trim(span.text)
+        local status = t:match("^Status[：:](.+)$")
+        if status then return status end
+    end
+    return nil
+end
+
+function getBookLastUpdate(bookUrl)
+    local body = fetchBookPage(bookUrl)
+    if not body then return nil end
+    for _, span in ipairs(html_select(body, ".booktag span")) do
+        local t = string_trim(span.text)
+        local dateStr = t:match("^UpdateTime[：:](%d%d%d%d%-%d%d%-%d%d)")
+        if dateStr then return dateStr end
+    end
+    return nil
 end
 
 -- ── Список глав ───────────────────────────────────────────────────────────────

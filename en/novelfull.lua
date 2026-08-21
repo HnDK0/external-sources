@@ -1,6 +1,6 @@
 id       = "novelfull"
 name     = "NovelFull"
-version  = "1.0.3"
+version  = "1.0.4"
 baseUrl  = "https://novelfull.net/"
 language = "en"
 icon     = "https://raw.githubusercontent.com/HnDK0/external-sources/main/icons/novelfull.png"
@@ -12,6 +12,16 @@ local function absUrl(href)
     if string_starts_with(href, "http") then return href end
     if string_starts_with(href, "//") then return "https:" .. href end
     return url_resolve(baseUrl, href)
+end
+
+-- ponytail: кэш страницы книги — движок дёргает 4+ функции деталей параллельно
+local _pageCache = {}
+
+local function fetchBookPage(url)
+    if _pageCache[url] then return _pageCache[url] end
+    local r = http_get(url)
+    if r.success then _pageCache[url] = r.body; return r.body end
+    return nil
 end
 
 -- novelBinCoverUrl: используется только для каталога и поиска
@@ -88,23 +98,23 @@ end
 -- ── Детали книги ──────────────────────────────────────────────────────────────
 
 function getBookTitle(bookUrl)
-    local r = http_get(bookUrl)
-    if not r.success then return nil end
-    local el = html_select_first(r.body, "h3.title")
+    local html = fetchBookPage(bookUrl)
+    if not html then return nil end
+    local el = html_select_first(html, "h3.title")
     return el and string_clean(el.text) or nil
 end
 
 function getBookCoverImageUrl(bookUrl)
-    local r = http_get(bookUrl)
-    if not r.success then return nil end
-    local cover = html_attr(r.body, ".book img[src]", "src")
+    local html = fetchBookPage(bookUrl)
+    if not html then return nil end
+    local cover = html_attr(html, ".book img[src]", "src")
     return (cover ~= "" and absUrl(cover)) or nil
 end
 
 function getBookDescription(bookUrl)
-    local r = http_get(bookUrl)
-    if not r.success then return nil end
-    local el = html_select_first(r.body, ".desc-text")
+    local html = fetchBookPage(bookUrl)
+    if not html then return nil end
+    local el = html_select_first(html, ".desc-text")
     return el and string_trim(el.text) or nil
 end
 
@@ -169,10 +179,10 @@ end
 -- ── Жанры книги ───────────────────────────────────────────────────────────────
 
 function getBookGenres(bookUrl)
-  local r = http_get(bookUrl)
-  if not r.success then return {} end
+  local html = fetchBookPage(bookUrl)
+  if not html then return {} end
   local genres = {}
-  for _, div in ipairs(html_select(r.body, ".info div")) do
+  for _, div in ipairs(html_select(html, ".info div")) do
     local h3 = html_select_first(div.html, "h3")
     local h3text = h3 and string_trim(h3.text) or ""
     if h3text == "Genre:" or h3text == "Genres:" then
@@ -184,6 +194,38 @@ function getBookGenres(bookUrl)
     end
   end
   return genres
+end
+
+-- ── Статус / Дата обновления ───────────────────────────────────────────────────
+
+function getBookStatus(bookUrl)
+  local html = fetchBookPage(bookUrl)
+  if not html then return nil end
+  for _, div in ipairs(html_select(html, ".info div")) do
+    local h3 = html_select_first(div.html, "h3")
+    local h3text = h3 and string_trim(h3.text) or ""
+    if h3text == "Status:" then
+      local a = html_select_first(div.html, "a")
+      return a and string_clean(a.text) or nil
+    end
+  end
+  return nil
+end
+
+function getBookLastUpdate(bookUrl)
+  local html = fetchBookPage(bookUrl)
+  if not html then return nil end
+  -- мета article:modified_time (ISO 8601)
+  local meta = html_attr(html, "meta[property='article:modified_time']", "content")
+  if meta and meta ~= "" then
+    local y, m, d = meta:match("(%d%d%d%d)%-(%d%d)%-(%d%d)")
+    if y then return y .. "-" .. m .. "-" .. d end
+  end
+  -- JSON-LD dateModified
+  local dm = regex_match(html, '"dateModified"\\s*:\\s*"(\\d{4}-\\d{2}-\\d{2})"')
+  if dm and dm ~= "" then return dm end
+  -- сайт novelfull.net не показывает дату обновления на странице книги
+  return nil
 end
 
 -- ── Список фильтров ───────────────────────────────────────────────────────────

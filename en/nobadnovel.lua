@@ -1,7 +1,7 @@
 -- ── Метаданные ────────────────────────────────────────────────────────────────
 id       = "nobadnovel"
 name     = "NoBadNovel"
-version  = "1.0.0"
+version  = "1.0.1"
 baseUrl  = "https://www.nobadnovel.com/"
 language = "en"
 icon     = "https://raw.githubusercontent.com/HnDK0/external-sources/main/icons/nobadnovel.png"
@@ -109,6 +109,16 @@ function getBookDescription(bookUrl)
   if not r.success then return nil end
   local el = html_select_first(r.body, "#intro .content")
   if el then return string_trim(el.text) end
+  return nil
+end
+
+-- ── Статус ─────────────────────────────────────────────────────────────────────
+
+function getBookStatus(bookUrl)
+  local r = http_get(bookUrl)
+  if not r.success then return nil end
+  local el = html_select_first(r.body, "div.badge")
+  if el then return string_clean(el.text) end
   return nil
 end
 

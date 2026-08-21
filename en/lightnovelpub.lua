@@ -1,6 +1,6 @@
 id       = "lightnovelpub"
 name     = "LightNovelPub"
-version  = "1.0.1"
+version  = "1.0.2"
 baseUrl  = "https://lightnovelpub.org"
 language = "en"
 icon     = "https://raw.githubusercontent.com/HnDK0/external-sources/main/icons/lightnovelpub.png"
@@ -145,6 +145,45 @@ function getBookRating(bookUrl)
     if not r.success then return nil end
     local el = html_select_first(r.body, ".star-rating .rating-number")
     return el and string_clean(el.text) or nil
+end
+
+-- ── Статус / Дата обновления ──────────────────────────────────────────────────
+
+-- Относительная дата сайта вида "Updated 1 year ago" (проверено на живой
+-- странице книги через Wayback) → YYYY-MM-DD. Месяцы/годы — приблизительно
+-- (30/365 дней). Не распозналось → nil.
+local function normalizeUpdateDate(raw)
+    if not raw or raw == "" then return nil end
+    local n, unit = string.match(raw, "Updated%s+(%d+)%s+(%w+)%s+ago")
+    if not n then return nil end
+    local mult = {
+        minute = 60, minutes = 60,
+        hour = 3600, hours = 3600,
+        day = 86400, days = 86400,
+        week = 7 * 86400, weeks = 7 * 86400,
+        month = 30 * 86400, months = 30 * 86400,
+        year = 365 * 86400, years = 365 * 86400,
+    }
+    local secs = mult[unit]
+    if not secs then return nil end
+    return os.date("%Y-%m-%d", os.time() - n * secs)
+end
+
+function getBookStatus(bookUrl)
+    local body = fetchPage(bookUrl)
+    if not body then return nil end
+    local el = html_select_first(body, ".status-badge")
+    return el and string_clean(el.text) or nil
+end
+
+function getBookLastUpdate(bookUrl)
+    local body = fetchPage(bookUrl)
+    if not body then return nil end
+    local el = html_select_first(body, ".chapter-meta")
+    if not el then return nil end
+    -- string_normalize приводит неразрывный пробел (&nbsp;) к обычному,
+    -- чтобы шаблон "Updated N unit ago" отработал корректно.
+    return normalizeUpdateDate(string_normalize(el.text))
 end
 
 -- ── Chapter list (parsePage) ─────────────────────────────────────────────────
