@@ -8,8 +8,8 @@ sync_index.py — генерация index.yaml из .lua плагинов.
 Языковые папки определяются автоматически — любая папка в корне репо
 у которой есть .lua файлы. Никакого хардкода языков.
 
-refs/heads/main вместо main — обходит кэш raw.githubusercontent.com,
-файлы отдаются сразу без задержек.
+refs/heads/<branch> (текущая ветка) вместо main — обходит кэш raw.githubusercontent.com,
+файлы отдаются сразу без задержек. На main ссылки ведут на main.
 
 Плагины с полем status = "dead" в метаданных остаются в репозитории
 (как рабочий пример / история), но не попадают в index.yaml.
@@ -20,7 +20,7 @@ from pathlib import Path
 
 # ── Конфиг ────────────────────────────────────────────────────────────────────
 
-RAW_BASE  = "https://raw.githubusercontent.com/{repo}/refs/heads/main"
+RAW_BASE  = "https://raw.githubusercontent.com/{repo}/refs/heads/{branch}"
 SKIP_DIRS = {".git", ".github", "scripts", "icons"}
 
 # ── Автодетект языковых папок ─────────────────────────────────────────────────
@@ -69,6 +69,21 @@ def get_repo() -> str:
         pass
     print("[ERROR] Не удалось определить репозиторий. Задайте GITHUB_REPOSITORY=owner/repo")
     sys.exit(1)
+
+def get_branch() -> str:
+    """Текущая ветка: из CI (GITHUB_REF_NAME) или локального git, иначе main."""
+    ref = os.environ.get("GITHUB_REF_NAME", "").strip()
+    if ref:
+        return ref
+    try:
+        branch = subprocess.check_output(
+            ["git", "rev-parse", "--abbrev-ref", "HEAD"], stderr=subprocess.DEVNULL
+        ).decode().strip()
+        if branch and branch != "HEAD":
+            return branch
+    except Exception:
+        pass
+    return "main"
 
 # ── Парсинг .lua ──────────────────────────────────────────────────────────────
 
@@ -127,11 +142,27 @@ def build_root_index(langs: list[dict], raw_base: str) -> str:
         ]
     return "\n".join(lines) + "\n"
 
+def rewrite_readme(raw_base: str):
+    """Подставляет в README.md актуальный Plugin Index URL (repo + ветка)."""
+    readme = Path("README.md")
+    if not readme.exists():
+        return
+    text = readme.read_text(encoding="utf-8")
+    new_text = re.sub(
+        r"(Plugin Index URL:\s*`)[^`]+(`)",
+        lambda m: m.group(1) + raw_base + "/index.yaml" + m.group(2),
+        text,
+    )
+    if new_text != text:
+        readme.write_text(new_text, encoding="utf-8")
+        print("  → README.md Plugin Index URL обновлён")
+
 # ── Главная логика ────────────────────────────────────────────────────────────
 
 def sync(root: Path):
     repo     = get_repo()
-    raw_base = RAW_BASE.format(repo=repo)
+    branch   = get_branch()
+    raw_base = RAW_BASE.format(repo=repo, branch=branch)
     print(f"Репозиторий : {repo}")
     print(f"Raw base    : {raw_base}\n")
 
@@ -160,6 +191,11 @@ def sync(root: Path):
                 continue
 
             icon = meta["icon"] or f"{raw_base}/icons/{meta['id']}.png"
+            # переписываем захардкоженный owner/ветку в иконке на текущий repo/ветку,
+            # иначе в форке иконки ведут на чужой репозиторий
+            if icon.startswith("https://raw.githubusercontent.com/"):
+                icon = re.sub(r"https://raw\.githubusercontent\.com/[^/]+/[^/]+/(?:refs/heads/)?[^/]+",
+                              raw_base, icon)
             plugins.append({
                 "id":      meta["id"],
                 "name":    meta["name"],
@@ -193,6 +229,8 @@ def sync(root: Path):
         print("  → обновлён")
     else:
         print("  → без изменений")
+
+    rewrite_readme(raw_base)
 
 if __name__ == "__main__":
     root = Path(sys.argv[1]) if len(sys.argv) > 1 else Path(".")

@@ -1,10 +1,14 @@
 name: Sync index.yaml
 
+# Запускается на push в ЛЮБУЮ ветку (не только main), чтобы index.yaml
+# пересобирался и на тестовых ветках. Также подставляет в README.md имя
+# текущей ветки в Plugin Index URL (на main — no-op). Один коммит с [skip ci],
+# чтобы не было петли и чтобы не гоняться за push-ем с другими воркфлоу.
+
 on:
   push:
-    branches: [main]
-    paths:
-      - "**/*.lua"   # любая .lua в любой папке языка
+    branches:
+      - "**"
   workflow_dispatch: # ручной запуск из UI
 
 permissions:
@@ -29,12 +33,11 @@ jobs:
         run: |
           python scripts/sync_index.py .
 
-      - name: Commit & push updated index.yaml
+      - name: Commit & push
         run: |
           git diff --quiet && exit 0
           git config user.name  "${{ github.actor }}"
           git config user.email "${{ github.actor_id }}+${{ github.actor }}@users.noreply.github.com"
-          git add "index.yaml" "*/index.yaml"
-          git commit -m "chore: sync index.yaml [skip ci]"
+          git add "index.yaml" "*/index.yaml" "README.md"
+          git commit -m "chore: sync index.yaml & README [skip ci]"
           git push
-
