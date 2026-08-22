@@ -1,7 +1,7 @@
 -- ── Метаданные ────────────────────────────────────────────────────────────────
 id       = "quanben5"
 name     = "Quanben5"
-version  = "1.0.2"
+version  = "1.0.5"
 baseUrl  = "https://big5.quanben5.com/"
 language = "zh"
 icon     = "https://raw.githubusercontent.com/HnDK0/external-sources/main/icons/quanben5.png"
@@ -223,6 +223,63 @@ function getBookDescription(bookUrl)
   local cleaned = html_remove(r.body, ".box .description h2")
   local el = html_select_first(cleaned, ".box .description")
   if el then return string_clean(el.text) end
+  return nil
+end
+
+-- ── Статус ──────────────────────────────────────────────
+
+-- Статус книги — блок <p class="info">, содержащий «狀態：...» (напр. «完結»).
+-- Проверено на живом сайте: селектор отдаёт точный статус.
+function getBookStatus(bookUrl)
+  -- Страница книги требует trailing slash, иначе отдаёт 404.
+  local r = http_get(normalizeBookUrl(bookUrl))
+  if not r.success then return nil end
+  for _, p in ipairs(html_select(r.body, "p.info")) do
+    local t = string_clean(p.text)
+    if string.find(t, "狀態", 1, true) or string.find(t, "状态", 1, true) then
+      local s = string.match(t, "狀態[：:]%s*(%S+)") or string.match(t, "状态[：:]%s*(%S+)")
+      if s then return s end
+    end
+  end
+  return nil
+end
+
+function getBookLastUpdate(bookUrl)
+  local r = http_get(normalizeBookUrl(bookUrl))
+  if not r.success then return nil end
+  local html = r.body
+
+  -- meta-теги (article:modified_time / og:updated_time / publish)
+  for _, pat in ipairs({
+    'article:modified_time"%s*content="([^"]+)"',
+    'og:updated_time"%s*content="([^"]+)"',
+    'article:published_time"%s*content="([^"]+)"',
+  }) do
+    local meta = string.match(html, pat)
+    if meta then
+      local d = normalizeDate(meta)
+      if d then return d end
+    end
+  end
+
+  -- маркеры "最后更新" / "更新时间" и т.п. — дата сразу после них
+  local markers = { "最后更新", "最後更新", "更新时间", "更新時間",
+                    "更新于", "更新於", "最近更新", "更新日期" }
+  for _, mk in ipairs(markers) do
+    local idx = string.find(html, mk, 1, true)
+    if idx then
+      local tail = string.sub(html, idx, idx + 60)
+      local d = normalizeDate(tail)
+      if d then return d end
+    end
+  end
+
+  -- запасной вариант: любая дата внутри блока p.info
+  for _, p in ipairs(html_select(html, "p.info")) do
+    local d = normalizeDate(p.text)
+    if d then return d end
+  end
+
   return nil
 end
 

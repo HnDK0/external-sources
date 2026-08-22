@@ -1,7 +1,7 @@
 -- ── Метаданные ───────────────────────────────────────────────────────────────
 id       = "shuba69"
 name     = "69shuba"
-version  = "1.0.2"
+version  = "1.0.3"
 baseUrl  = "https://www.69shuba.com/"
 language = "zh"
 icon     = "https://raw.githubusercontent.com/HnDK0/external-sources/main/icons/69shuba.png"
@@ -102,6 +102,29 @@ function getBookDescription(bookUrl)
     if not r.success then return nil end
     local el = html_select_first(r.body, "div.navtxt")
     return el and string_trim(el.text) or nil
+end
+
+-- ── Статус и дата обновления ──────────────────────────────────────────────
+
+-- Статус книги — мета-тег og:novel:status (напр. «連載» / «完結»). Сайт в GBK.
+function getBookStatus(bookUrl)
+  local r = http_get(bookUrl, { charset = 'GBK' })
+  if not r.success then return nil end
+  local s = html_attr(r.body, "meta[property='og:novel:status']", "content")
+  if s and s ~= "" then return s end
+  return nil
+end
+
+-- Дата обновления — мета-тег og:novel:update_time (формат «YYYY-MM-DD»).
+function getBookLastUpdate(bookUrl)
+  local r = http_get(bookUrl, { charset = 'GBK' })
+  if not r.success then return nil end
+  local dt = html_attr(r.body, "meta[property='og:novel:update_time']", "content")
+  if dt and dt ~= "" then
+    local d = string.match(dt, "(%d%d%d%d%-%d%d%-%d%d)")
+    if d then return d end
+  end
+  return nil
 end
 
 -- ── Список глав ─────────────────────────────────────────────────────────────

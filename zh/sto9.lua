@@ -1,7 +1,7 @@
 -- ── Метаданные ────────────────────────────────────────────────────────────────
 id       = "sto9"
 name     = "Sto9"
-version  = "1.0.4"
+version  = "1.0.5"
 baseUrl  = "https://sto9.com/"
 language = "zh"
 icon     = "https://raw.githubusercontent.com/HnDK0/external-sources/main/icons/sto9.png"
@@ -174,6 +174,30 @@ function getBookDescription(bookUrl)
   if not body then return nil end
   local el = html_select_first(body, "#tab_info .navtxt p")
   if el then return string_trim(el.text) end
+  return nil
+end
+
+-- ── Статус и дата обновления ──────────────────────────────────────────────
+
+-- Статус книги — мета-тег og:novel:status (напр. «連載»).
+function getBookStatus(bookUrl)
+  local r = http_get(bookUrl)
+  if not r.success then return nil end
+  local s = html_attr(r.body, "meta[property='og:novel:status']", "content")
+  if s and s ~= "" then return s end
+  return nil
+end
+
+-- Дата обновления — мета-тег og:novel:update_time (формат «YYYY-MM-DD» или
+-- «YYYY-MM-DD HH:MM:SS»). Берём только часть YYYY-MM-DD.
+function getBookLastUpdate(bookUrl)
+  local r = http_get(bookUrl)
+  if not r.success then return nil end
+  local dt = html_attr(r.body, "meta[property='og:novel:update_time']", "content")
+  if dt and dt ~= "" then
+    local d = string.match(dt, "(%d%d%d%d%-%d%d%-%d%d)")
+    if d then return d end
+  end
   return nil
 end
 

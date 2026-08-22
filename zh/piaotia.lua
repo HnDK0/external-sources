@@ -1,7 +1,7 @@
 -- ── Метаданные ────────────────────────────────────────────────────────────────
 id       = "piaotia"
 name     = "PiaoTia"
-version  = "1.0.0"
+version  = "1.0.1"
 baseUrl  = "https://www.piaotia.com"
 language = "zh"
 charset  = "GBK"
@@ -147,6 +147,37 @@ function getBookDescription(bookUrl)
   if not r.success then return nil end
   local el = html_select_first(r.body, "div[style*='float:left']")
   if el then return string_trim(el.text) end
+  return nil
+end
+
+-- ── Статус и дата обновления ──────────────────────────────────────────────
+
+-- Статус книги — текст ячейки <td>, содержащей «文章状态：...» (напр. «已完成»).
+-- Сайт в кодировке GBK — http_get с charset='GBK'. Проверено на живом сайте.
+function getBookStatus(bookUrl)
+  local r = http_get(bookUrl, { charset = 'GBK' })
+  if not r.success then return nil end
+  for _, td in ipairs(html_select(r.body, "td")) do
+    local t = string_clean(td.text)
+    if string.find(t, "文章状态", 1, true) then
+      local s = string.match(t, "文章状态[：:]%s*(%S+)")
+      if s then return s end
+    end
+  end
+  return nil
+end
+
+-- Дата обновления — ячейка <td> «最后更新：YYYY-MM-DD». Берём часть YYYY-MM-DD.
+function getBookLastUpdate(bookUrl)
+  local r = http_get(bookUrl, { charset = 'GBK' })
+  if not r.success then return nil end
+  for _, td in ipairs(html_select(r.body, "td")) do
+    local t = string_clean(td.text)
+    if string.find(t, "最后更新", 1, true) then
+      local d = string.match(t, "(%d%d%d%d%-%d%d%-%d%d)")
+      if d then return d end
+    end
+  end
   return nil
 end
 
