@@ -1,25 +1,25 @@
 languages:
   ar:
     name: "Arabic"
-    url: "https://raw.githubusercontent.com/HnDK0/external-sources/refs/heads/test/en-date-functions/ar/index.yaml"
+    url: "https://raw.githubusercontent.com/HnDK0/external-sources/refs/heads/main/ar/index.yaml"
   en:
     name: "English"
-    url: "https://raw.githubusercontent.com/HnDK0/external-sources/refs/heads/test/en-date-functions/en/index.yaml"
+    url: "https://raw.githubusercontent.com/HnDK0/external-sources/refs/heads/main/en/index.yaml"
   fr:
     name: "Fr"
-    url: "https://raw.githubusercontent.com/HnDK0/external-sources/refs/heads/test/en-date-functions/fr/index.yaml"
+    url: "https://raw.githubusercontent.com/HnDK0/external-sources/refs/heads/main/fr/index.yaml"
   id:
     name: "Indonesian"
-    url: "https://raw.githubusercontent.com/HnDK0/external-sources/refs/heads/test/en-date-functions/id/index.yaml"
+    url: "https://raw.githubusercontent.com/HnDK0/external-sources/refs/heads/main/id/index.yaml"
   ja:
     name: "Japanese"
-    url: "https://raw.githubusercontent.com/HnDK0/external-sources/refs/heads/test/en-date-functions/ja/index.yaml"
+    url: "https://raw.githubusercontent.com/HnDK0/external-sources/refs/heads/main/ja/index.yaml"
   mtl:
     name: "Mtl"
-    url: "https://raw.githubusercontent.com/HnDK0/external-sources/refs/heads/test/en-date-functions/mtl/index.yaml"
+    url: "https://raw.githubusercontent.com/HnDK0/external-sources/refs/heads/main/mtl/index.yaml"
   ru:
     name: "Russian"
-    url: "https://raw.githubusercontent.com/HnDK0/external-sources/refs/heads/test/en-date-functions/ru/index.yaml"
+    url: "https://raw.githubusercontent.com/HnDK0/external-sources/refs/heads/main/ru/index.yaml"
   zh:
     name: "Chinese"
-    url: "https://raw.githubusercontent.com/HnDK0/external-sources/refs/heads/test/en-date-functions/zh/index.yaml"
+    url: "https://raw.githubusercontent.com/HnDK0/external-sources/refs/heads/main/zh/index.yaml"
