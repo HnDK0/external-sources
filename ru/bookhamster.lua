@@ -1,7 +1,7 @@
 -- ── Метаданные ────────────────────────────────────────────────────────────────
 id       = "bookhamster"
 name     = "Bookhamster"
-version  = "1.1.2"
+version  = "1.2.0"
 baseUrl  = "https://bookhamster.ru/"
 language = "ru"
 icon     = "https://raw.githubusercontent.com/HnDK0/external-sources/main/icons/bookhamster.png"
@@ -25,6 +25,56 @@ local function applyStandardContentTransforms(text)
   text = regex_replace(text, "(?im)^\\s*(Translator|Editor|Proofreader|Read\\s+(at|on|latest))[:\\s][^\\n\\r]{0,70}(\\r?\\n|$)", "")
   text = string_trim(text)
   return text
+end
+
+-- Кэш страницы книги: 4 функции деталей вызываются движком параллельно,
+-- общий fetchPage убирает дублирующие HTTP-запросы.
+local _pageCache = {}
+
+local function fetchPage(url)
+  if _pageCache[url] then return _pageCache[url] end
+  local r = http_get(url)
+  if r.success then
+    _pageCache[url] = r.body
+    return r.body
+  end
+  return nil
+end
+
+-- Месяцы на русском → номер для формата YYYY-MM-DD
+local MONTHS = {
+  ["января"] = "01", ["февраля"] = "02", ["марта"] = "03", ["апреля"] = "04",
+  ["мая"]    = "05", ["июня"]    = "06", ["июля"] = "07", ["августа"] = "08",
+  ["сентября"] = "09", ["октября"] = "10", ["ноября"] = "11", ["декабря"] = "12"
+}
+
+-- Даты глав на bookhamster бывают двух видов:
+--   "26.08.2025"        → DD.MM.YYYY (старые главы)
+--   "22 марта"          → D месяц без года (недавние главы текущего года)
+-- Возвращает YYYY-MM-DD или nil. Год для формата без года берётся текущий,
+-- кроме случая, когда полученная дата оказывается в будущем — тогда год -1.
+local function parseBookDate(s)
+  if not s or s == "" then return nil end
+  local d, m, y = string.match(s, "(%d+)%.(%d+)%.(%d+)")
+  if y then
+    return string.format("%04d-%02d-%02d", tonumber(y), tonumber(m), tonumber(d))
+  end
+  local day = regex_match(s, "\\d+")
+  local mon = regex_match(s, "[А-Яа-яёЁ]+")
+  if day and day[1] and mon and mon[1] then
+    local mn = MONTHS[mon[1]]
+    if mn then
+      local nday = tonumber(day[1])
+      local now = os.time()
+      local curY = tonumber(os.date("%Y", now))
+      local curM = string.format("%02d", tonumber(os.date("%m", now)))
+      local curD = tonumber(os.date("%d", now))
+      local yr = curY
+      if mn > curM or (mn == curM and nday > curD) then yr = curY - 1 end
+      return string.format("%04d-%s-%02d", yr, mn, nday)
+    end
+  end
+  return nil
 end
 
 
@@ -83,37 +133,37 @@ end
 -- ── Детали книги ──────────────────────────────────────────────────────────────
 
 function getBookTitle(bookUrl)
-  local r = http_get(bookUrl)
-  if not r.success then return nil end
-  local el = html_select_first(r.body, "h1.entry-title")
+  local html = fetchPage(bookUrl)
+  if not html then return nil end
+  local el = html_select_first(html, "h1.entry-title")
   if el then return string_clean(el.text) end
   return nil
 end
 
 function getBookCoverImageUrl(bookUrl)
-  local r = http_get(bookUrl)
-  if not r.success then return nil end
-  local el = html_select_first(r.body, "div.img-ranobe > img")
+  local html = fetchPage(bookUrl)
+  if not html then return nil end
+  local el = html_select_first(html, "div.img-ranobe > img")
   if el then return absUrl(el.src) end
   return nil
 end
 
 function getBookDescription(bookUrl)
-  local r = http_get(bookUrl)
-  if not r.success then return nil end
-  local desc = html_attr(r.body, "meta[name=description]", "content")
+  local html = fetchPage(bookUrl)
+  if not html then return nil end
+  local desc = html_attr(html, "meta[name=description]", "content")
   if desc ~= "" then return string_trim(desc) end
   return nil
 end
 
 function getBookGenres(bookUrl)
-  local r = http_get(bookUrl)
-  if not r.success then return {} end
+  local html = fetchPage(bookUrl)
+  if not html then return {} end
 
   local genres = {}
   -- bookhamster: div.data-ranobe содержит span.dashicons-book (без book-alt),
   -- значения жанров находятся в div.data-value внутри того же блока
-  for _, block in ipairs(html_select(r.body, "div.data-ranobe")) do
+  for _, block in ipairs(html_select(html, "div.data-ranobe")) do
     local icon = html_select_first(block.html, "span[class*=dashicons-book]:not([class*=book-alt])")
     if icon then
       local valueEl = html_select_first(block.html, "div.data-value")
@@ -134,13 +184,44 @@ function getBookGenres(bookUrl)
 
   -- bookhamster: альтернативный селектор через genreslist
   if #genres == 0 then
-    for _, a in ipairs(html_select(r.body, "div.genreslist a")) do
+    for _, a in ipairs(html_select(html, "div.genreslist a")) do
       local label = string_trim(a.text)
       if label ~= "" then table.insert(genres, label) end
     end
   end
 
   return genres
+end
+
+-- ── Статус и дата обновления ──────────────────────────────────────────────────
+
+function getBookStatus(bookUrl)
+  local html = fetchPage(bookUrl)
+  if not html then return nil end
+  -- статус книги — блок data-ranobe с иконкой dashicons-megaphone (<b>Статус книги</b>)
+  for _, block in ipairs(html_select(html, "div.data-ranobe")) do
+    if html_select_first(block.html, "span.dashicons-megaphone") then
+      local val = html_select_first(block.html, "div.data-value")
+      if val then
+        local s = string_clean(val.text)
+        if s ~= "" then return s end
+      end
+      break
+    end
+  end
+  return nil
+end
+
+function getBookLastUpdate(bookUrl)
+  local html = fetchPage(bookUrl)
+  if not html then return nil end
+  -- список глав отсортирован от новых к старым: дата последней главы —
+  -- это первый .li-ranobe, берём его .li-col2-ranobe
+  local first = html_select_first(html, ".li-ranobe")
+  if not first then return nil end
+  local dateEl = html_select_first(first.html, ".li-col2-ranobe")
+  if not dateEl then return nil end
+  return parseBookDate(string_trim(dateEl.text))
 end
 
 -- ── Список глав ───────────────────────────────────────────────────────────────

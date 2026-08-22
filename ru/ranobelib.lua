@@ -1,7 +1,7 @@
 -- ── Метаданные ────────────────────────────────────────────────────────────────
 id       = "ranobelib"
 name     = "RanobeLib"
-version  = "1.0.7"
+version  = "1.0.8"
 baseUrl  = "https://ranobelib.me/"
 language = "ru"
 icon     = "https://raw.githubusercontent.com/HnDK0/external-sources/main/icons/ranobelib.png"
@@ -248,6 +248,41 @@ function getBookRating(bookUrl)
   local parsed = json_parse(r.body)
   local avg = getPath(parsed, "data.rating.average")
   return formatRating(avg)
+end
+
+-- ── Статус и дата обновления (JSON API /api/manga/{slug}) ────────────────────
+-- Поле updated_at отдаётся только при явном запросе fields[]=updated_at;
+-- status (объект {id,label}) есть и в базовом ответе. Один запрос покрывает обе
+-- функции. Формат updated_at — ISO 8601: "2026-08-22T15:54:36.000000Z".
+
+local function fetchBookStatusJson(bookUrl)
+  local slug = extractSlug(bookUrl)
+  if not slug then return nil end
+  local r = http_get(apiBase .. slug .. "?fields[]=updated_at", { headers = apiHeaders })
+  if not r.success then return nil end
+  local parsed = json_parse(r.body)
+  return parsed and parsed.data or nil
+end
+
+function getBookStatus(bookUrl)
+  local data = fetchBookStatusJson(bookUrl)
+  if not data then return nil end
+  local st = data.status
+  if type(st) == "table" and st.label then
+    local label = string_trim(st.label)
+    return label ~= "" and string_clean(label) or nil
+  end
+  return nil
+end
+
+function getBookLastUpdate(bookUrl)
+  local data = fetchBookStatusJson(bookUrl)
+  if not data then return nil end
+  local ua = data.updated_at
+  if not ua or ua == "" then return nil end
+  -- Из ISO 8601 берём только часть YYYY-MM-DD (уже в нужном формате)
+  local date = string.match(ua, "^(%d%d%d%d%-%d%d%-%d%d)")
+  return date ~= "" and date or nil
 end
 
 -- ── Список глав (JSON API /api/manga/{slug}/chapters) ────────────────────────

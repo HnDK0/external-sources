@@ -1,7 +1,7 @@
 -- ── Метаданные ────────────────────────────────────────────────────────────────
 id       = "ifreedom"
 name     = "iFreedom"
-version  = "1.1.4"
+version  = "1.1.6"
 baseUrl  = "https://ifreedom.su/"
 language = "ru"
 icon     = "https://raw.githubusercontent.com/HnDK0/external-sources/main/icons/ifreedom.png"
@@ -22,6 +22,21 @@ local function normalizeNovelUrl(url)
     return url .. "/"
   end
   return url
+end
+
+local _pageCache = {}
+
+-- Кэш страницы книги: детальные функции (заголовок, обложка, описание, жанры,
+-- статус, дата) вызываются движком параллельно с одним URL — кэш убирает
+-- дублирующиеся HTTP-запросы.
+local function fetchPage(url)
+  if _pageCache[url] then return _pageCache[url] end
+  local r = http_get(url)
+  if r.success then
+    _pageCache[url] = r.body
+    return r.body
+  end
+  return nil
 end
 
 local function applyStandardContentTransforms(text)
@@ -92,9 +107,9 @@ end
 function getBookTitle(bookUrl)
   bookUrl = normalizeNovelUrl(bookUrl)
 
-  local r = http_get(bookUrl)
-  if not r.success then return nil end
-  local el = html_select_first(r.body, "h1")
+  local html = fetchPage(bookUrl)
+  if not html then return nil end
+  local el = html_select_first(html, "h1")
   if el then return string_clean(el.text) end
   return nil
 end
@@ -102,9 +117,9 @@ end
 function getBookCoverImageUrl(bookUrl)
   bookUrl = normalizeNovelUrl(bookUrl)
 
-  local r = http_get(bookUrl)
-  if not r.success then return nil end
-  local el = html_select_first(r.body, "div.book-img.block-book-slide-img > img")
+  local html = fetchPage(bookUrl)
+  if not html then return nil end
+  local el = html_select_first(html, "div.book-img.block-book-slide-img > img")
   if el then return absUrl(el.src) end
   return nil
 end
@@ -112,9 +127,9 @@ end
 function getBookDescription(bookUrl)
   bookUrl = normalizeNovelUrl(bookUrl)
 
-  local r = http_get(bookUrl)
-  if not r.success then return nil end
-  local el = html_select_first(r.body, "[data-name=\"Описание\"]")
+  local html = fetchPage(bookUrl)
+  if not html then return nil end
+  local el = html_select_first(html, "[data-name=\"Описание\"]")
   if el then return string_trim(el.text) end
   return nil
 end
@@ -122,11 +137,11 @@ end
 function getBookGenres(bookUrl)
   bookUrl = normalizeNovelUrl(bookUrl)
 
-  local r = http_get(bookUrl)
-  if not r.success then return {} end
+  local html = fetchPage(bookUrl)
+  if not html then return {} end
 
   local genres = {}
-  for _, block in ipairs(html_select(r.body, "div.book-info-list")) do
+  for _, block in ipairs(html_select(html, "div.book-info-list")) do
     local icon = html_select_first(block.html, "svg.icon-tabler-tag")
     if icon then
       for _, a in ipairs(html_select(block.html, "a")) do
@@ -137,13 +152,77 @@ function getBookGenres(bookUrl)
   end
 
   if #genres == 0 then
-    for _, a in ipairs(html_select(r.body, "div.genreslist a")) do
+    for _, a in ipairs(html_select(html, "div.genreslist a")) do
       local label = string_trim(a.text)
       if label ~= "" then table.insert(genres, label) end
     end
   end
 
   return genres
+end
+
+-- ── Статус и дата обновления ──────────────────────────────────────────────────
+
+-- Статус книги — текст внутри блока .book-info-list (напр. «Книга завершена»,
+-- «Перевод активен»). В блоке может быть несколько записей (автор, жанры),
+-- статус — та, что содержит ключевые слова статуса. Проверено на живом сайте.
+function getBookStatus(bookUrl)
+  bookUrl = normalizeNovelUrl(bookUrl)
+  local html = fetchPage(bookUrl)
+  if not html then return nil end
+  local blocks = html_select(html, ".book-info-list")
+  for _, b in ipairs(blocks) do
+    local t = string_clean(b.text)
+    if t ~= "" and (
+        string.find(t, "заверш", 1, true) or string.find(t, "перевод", 1, true)
+     or string.find(t, "статус", 1, true)  or string.find(t, "продолжа", 1, true)
+     or string.find(t, "издан", 1, true)   or string.find(t, "выпущен", 1, true)) then
+      return t
+    end
+  end
+  return nil
+end
+
+function getBookLastUpdate(bookUrl)
+  bookUrl = normalizeNovelUrl(bookUrl)
+
+  local html = fetchPage(bookUrl)
+  if not html then return nil end
+
+  -- Дата последнего обновления = дата самой свежей главы. Список глав на
+  -- странице отсортирован от новых к старым, поэтому первая .chapterinfo —
+  -- самая новая. Дата лежит в span.timechapter в формате ДД.ММ.ГГ (иногда ГГГГ).
+  local firstChapter = html_select_first(html, "div.chapterinfo")
+  if not firstChapter then return nil end
+  local timeEl = html_select_first(firstChapter.html, "span.timechapter")
+  if not timeEl then return nil end
+  local ds = string_trim(timeEl.text)
+  if ds == "" then return nil end
+
+  -- Абсолютная дата: ДД.ММ.ГГ или ДД.ММ.ГГГГ
+  local d, m, y = string.match(ds, "(%d+)%.(%d+)%.(%d+)")
+  if d and m and y then
+    if #y == 2 then y = "20" .. y end
+    return string.format("%04d-%02d-%02d", tonumber(y), tonumber(m), tonumber(d))
+  end
+
+  -- Запасной вариант: относительная дата «N часов/дней/... назад»
+  local num, unit = string.match(ds, "(%d+)%s*(%a+)%s+назад")
+  if num and unit then
+    local mult = {
+      ["час"]   = 3600,    ["день"]  = 86400,  ["недел"] = 604800,
+      ["месяц"] = 2592000, ["год"]   = 31536000
+    }
+    local secs = nil
+    for k, v in pairs(mult) do
+      if string_starts_with(unit, k) then secs = v; break end
+    end
+    if secs then
+      return os.date("%Y-%m-%d", os.time() - tonumber(num) * secs)
+    end
+  end
+
+  return nil
 end
 
 -- ── Список глав ───────────────────────────────────────────────────────────────

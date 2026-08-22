@@ -1,7 +1,7 @@
 -- ── Метаданные ────────────────────────────────────────────────────────────────
 id       = "jaomix"
 name     = "Jaomix"
-version  = "1.0.3"
+version  = "1.0.5"
 baseUrl  = "https://jaomix.ru/"
 language = "ru"
 icon     = "https://raw.githubusercontent.com/HnDK0/external-sources/main/icons/jaomix.png"
@@ -18,6 +18,54 @@ end
 local function transformCover(url)
   if not url or url == "" then return "" end
   return regex_replace(url, "-150x150", "")
+end
+
+-- Кэш страниц книги: 4 функции деталей вызываются движком параллельно,
+-- общий кэш убирает дублирующие HTTP-запросы к одному и тому же bookUrl.
+local _pageCache = {}
+
+local function fetchPage(url)
+  if _pageCache[url] then return _pageCache[url] end
+  local r = http_get(url)
+  if r.success then
+    _pageCache[url] = r.body
+    return r.body
+  end
+  return nil
+end
+
+-- Парсит дату обновления. На сайте два формата (проверено на живом сайте):
+--  * относительный: «обновлена 53 минуты назад», «2 часа назад» …
+--  * абсолютный:    «15.08.2026» (ДД.ММ.ГГГГ / ДД.ММ.ГГ)
+-- Возвращает YYYY-MM-DD либо nil.
+local function parseJaomixDate(s)
+  if not s or s == "" then return nil end
+  s = string_trim(s)
+
+  -- Относительная дата «N единица назад»
+  local num, unit = string.match(s, "(%d+)%s*([^%d%s]+)%s+назад")
+  if num and unit then
+    local n = tonumber(num)
+    local secs = 0
+    if string.find(unit, "минут", 1, true) then secs = 60
+    elseif string.find(unit, "час", 1, true) then secs = 3600
+    elseif string.find(unit, "день", 1, true) or string.find(unit, "дня", 1, true) or string.find(unit, "дней", 1, true) then secs = 86400
+    elseif string.find(unit, "недел", 1, true) then secs = 604800
+    elseif string.find(unit, "месяц", 1, true) then secs = 2592000
+    elseif string.find(unit, "год", 1, true) or string.find(unit, "лет", 1, true) then secs = 31536000
+    end
+    if secs > 0 then
+      return os.date("%Y-%m-%d", os.time() - n * secs)
+    end
+  end
+
+  -- Абсолютная дата ДД.ММ.ГГ / ДД.ММ.ГГГГ
+  local d, m, y = string.match(s, "(%d%d)%.(%d%d)%.(%d%d%d?%d?)")
+  if d and m and y then
+    if #y == 2 then y = "20" .. y end
+    return y .. "-" .. m .. "-" .. d
+  end
+  return nil
 end
 
 local function applyStandardContentTransforms(text)
@@ -108,35 +156,35 @@ end
 -- ── Детали книги ──────────────────────────────────────────────────────────────
 
 function getBookTitle(bookUrl)
-  local r = http_get(bookUrl)
-  if not r.success then return nil end
-  local el = html_select_first(r.body, "h1")
+  local html = fetchPage(bookUrl)
+  if not html then return nil end
+  local el = html_select_first(html, "h1")
   if el then return string_clean(el.text) end
   return nil
 end
 
 function getBookCoverImageUrl(bookUrl)
-  local r = http_get(bookUrl)
-  if not r.success then return nil end
-  local el = html_select_first(r.body, "div.img-book > img")
+  local html = fetchPage(bookUrl)
+  if not html then return nil end
+  local el = html_select_first(html, "div.img-book > img")
   if el then return transformCover(absUrl(el.src)) end
   return nil
 end
 
 function getBookDescription(bookUrl)
-  local r = http_get(bookUrl)
-  if not r.success then return nil end
-  local el = html_select_first(r.body, "#desc-tab")
+  local html = fetchPage(bookUrl)
+  if not html then return nil end
+  local el = html_select_first(html, "#desc-tab")
   if el then return string_trim(el.text) end
   return nil
 end
 
 function getBookGenres(bookUrl)
-  local r = http_get(bookUrl)
-  if not r.success then return {} end
+  local html = fetchPage(bookUrl)
+  if not html then return {} end
 
   local genres = {}
-  for _, p in ipairs(html_select(r.body, "#info-book > p")) do
+  for _, p in ipairs(html_select(html, "#info-book > p")) do
     local text = string_trim(p.text)
     if string_starts_with(text, "Жанры:") then
       local raw = text:gsub("^Жанры:%s*", "")
@@ -149,6 +197,52 @@ function getBookGenres(bookUrl)
   end
 
   return genres
+end
+
+-- ── Статус перевода ───────────────────────────────────────────────────────────
+--
+-- Статус живёт в блоке div.book-info → div.book-info-list, текст которого
+-- содержит слово «Перевод» (напр. «Перевод активен» / «Перевод завершён»).
+-- Возвращаем как есть (string_clean), без маппинга.
+
+function getBookStatus(bookUrl)
+  -- Статус — текст <p> внутри #info-book, начинающийся с «Статус:»
+  -- (напр. «Статус: Перевод продолжается»). Проверено на живом сайте.
+  local html = fetchPage(bookUrl)
+  if not html then return nil end
+  local ps = html_select(html, "#info-book p")
+  for _, p in ipairs(ps) do
+    local v = string.match(p.text, "Статус:%s*(.+)")
+    if v then
+      v = string_trim(v)
+      if v ~= "" then return v end
+    end
+  end
+  return nil
+end
+
+-- ── Дата последнего обновления ────────────────────────────────────────────────
+--
+-- Самая свежая глава — первая в списке (.timechapter, формат DD.MM.YY).
+-- Возвращаем YYYY-MM-DD либо nil.
+
+function getBookLastUpdate(bookUrl)
+  local html = fetchPage(bookUrl)
+  if not html then return nil end
+  -- Текущий формат: блок .date-home (относит./абсолютная дата обновления,
+  -- напр. «обновлена 53 минуты назад»). Проверено на живом сайте.
+  local dh = html_select_first(html, ".date-home div") or html_select_first(html, ".date-home")
+  if dh then
+    local res = parseJaomixDate(string_trim(dh.text))
+    if res then return res end
+  end
+  -- Запасной вариант: список глав, самая свежая — первая .timechapter
+  local spans = html_select(html, ".timechapter")
+  if #spans > 0 then
+    local res = parseJaomixDate(string_trim(spans[1].text))
+    if res then return res end
+  end
+  return nil
 end
 
 -- ── Количество AJAX-страниц ───────────────────────────────────────────────────

@@ -1,7 +1,7 @@
 -- ── Метаданные ────────────────────────────────────────────────────────────────
 id       = "ranobespace"
 name     = "Ranobe.space"
-version  = "1.1.2"
+version  = "1.1.3"
 baseUrl  = "https://ranobe.space/"
 language = "ru"
 icon     = "https://raw.githubusercontent.com/HnDK0/external-sources/main/icons/ranobespace.png"
@@ -140,6 +140,81 @@ function getBookRating(bookUrl)
   local score = string.match(string_clean(el.text), "%d+%.?%d*")
   if not score then return nil end
   return "Rating: " .. score .. "/10"
+end
+
+-- ── Статус и дата обновления книги ──────────────────────────────────────────────
+
+-- Месяцы (англ. аббревиатуры, как на сайте: "Aug 10, 2026")
+local MONTHS = {
+  Jan = 1, Feb = 2, Mar = 3, Apr = 4, May = 5, Jun = 6,
+  Jul = 7, Aug = 8, Sep = 9, Oct = 10, Nov = 11, Dec = 12
+}
+
+-- Абсолютная дата из текста: "Aug 10, 2026", "Aug 11" (год = текущий),
+-- "Apr 21, 2022· изменён" (лишний суффикс игнорируется). → YYYY-MM-DD
+local function parseAbsoluteDate(txt)
+  local mon, d, y = string.match(txt, "(%u%a%a)%s+(%d+)%D*(%d*)")
+  if not mon then return nil end
+  local m = MONTHS[mon]
+  if not m then return nil end
+  y = (y ~= "" and y) or os.date("%Y", os.time())
+  return y .. "-" .. string.format("%02d", m) .. "-" .. string.format("%02d", tonumber(d))
+end
+
+-- Относительная дата (рус.): "сегодня", "вчера", "N часов назад", "N дней назад" и т.п.
+-- → YYYY-MM-DD относительно текущего времени.
+local function parseRelativeDate(txt)
+  if string.find(txt, "сегодня", 1, true) then
+    return os.date("%Y-%m-%d", os.time())
+  end
+  if string.find(txt, "вчера", 1, true) then
+    return os.date("%Y-%m-%d", os.time() - 86400)
+  end
+  local n = tonumber(string.match(txt, "(%d+)"))
+  if not n then return nil end
+  local secs = 0
+  if string.find(txt, "минут", 1, true) then secs = 60
+  elseif string.find(txt, "час", 1, true) then secs = 3600
+  elseif string.find(txt, "день", 1, true) or string.find(txt, "дня", 1, true) or string.find(txt, "дней", 1, true) then secs = 86400
+  elseif string.find(txt, "недел", 1, true) then secs = 604800
+  elseif string.find(txt, "месяц", 1, true) then secs = 2592000
+  elseif string.find(txt, "год", 1, true) or string.find(txt, "лет", 1, true) then secs = 31536000
+  end
+  if secs == 0 then return nil end
+  return os.date("%Y-%m-%d", os.time() - n * secs)
+end
+
+-- Текстовая дата: сначала абсолютная, затем относительная.
+local function parseBookDateText(txt)
+  return parseAbsoluteDate(txt) or parseRelativeDate(txt)
+end
+
+function getBookStatus(bookUrl)
+  -- Статус — текст ссылки .book-kicker-status (напр. "В процессе", "Завершено").
+  -- Проверено на живом сайте: селектор даёт точный статус книги.
+  local r = http_get(bookUrl)
+  if not r.success then return nil end
+  local el = html_select_first(r.body, ".book-kicker-status")
+  if not el then return nil end
+  local s = string_clean(el.text)
+  if s == "" then return nil end
+  return s
+end
+
+function getBookLastUpdate(bookUrl)
+  -- Дата обновления — атрибут datetime тега <time> внутри .book-kicker-updated
+  -- (ISO 8601, напр. 2026-08-22T19:12:14.000Z). Текст тега рендерится через JS,
+  -- поэтому берём именно атрибут. Фолбэк — парсинг текста (абсолютный/относит.).
+  local r = http_get(bookUrl)
+  if not r.success then return nil end
+  local dt = html_attr(r.body, ".book-kicker-updated time", "datetime")
+  if dt ~= "" then
+    local y, m, d = string.match(dt, "(%d%d%d%d)%-(%d%d)%-(%d%d)")
+    if y and m and d then return y .. "-" .. m .. "-" .. d end
+  end
+  local timeEl = html_select_first(r.body, ".book-kicker-updated time")
+  if not timeEl then return nil end
+  return parseBookDateText(string_clean(timeEl.text))
 end
 
 -- ── Список глав (JSON API, постранично через parsePage) ───────────────────────

@@ -1,6 +1,6 @@
 id       = "desu"
 name     = "Desu"
-version  = "1.1.2"
+version  = "1.1.3"
 baseUrl  = "https://desu.uno/"
 language = "ru"
 icon     = "https://raw.githubusercontent.com/HnDK0/external-sources/main/icons/desu.png"
@@ -418,6 +418,23 @@ function getBookRating(bookUrl)
     end
     -- Шкала 10, как на сайте (score.value). Формат "7.62/10".
     return tostring(m.score.value) .. "/10"
+end
+
+-- ── Статус и дата обновления ──
+
+function getBookStatus(bookUrl)
+    local m = fetchApiManga(bookUrl)
+    if not m or not m.status or m.status == "" then return nil end
+    -- Статус из JSON API (ongoing/released/continued/completed) — как на сайте,
+    -- без маппинга в русский (контракт движка: строка как есть).
+    return string_clean(m.status)
+end
+
+function getBookLastUpdate(bookUrl)
+    local m = fetchApiManga(bookUrl)
+    -- updated_date — Unix-время (секунды) из JSON API; nil/0 = нет данных.
+    if not m or not m.updated_date or m.updated_date <= 0 then return nil end
+    return os.date("%Y-%m-%d", m.updated_date)
 end
 
 -- ── Список глав ──
