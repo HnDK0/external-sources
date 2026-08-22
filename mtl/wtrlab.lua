@@ -1,7 +1,7 @@
 -- ── Метаданные ───────────────────────────────────────────────────────────────
 id = "wtrlab"
 name = "WTR-LAB"
-version = "1.1.5"
+version = "1.1.6"
 baseUrl = "https://wtr-lab.com/"
 language = "MTL"
 icon = "https://raw.githubusercontent.com/HnDK0/external-sources/main/icons/wtr-lab.png"
@@ -588,6 +588,30 @@ function getBookRating(bookUrl)
         return nil
     end
     return extractRating(body)
+end
+
+-- ── Статус и дата обновления ─────────────────────────────────────────────────
+
+function getBookStatus(bookUrl)
+    local body = fetchPage(bookUrl)
+    if not body then return nil end
+    for _, block in ipairs(html_select(body, "div.items-center.text-center")) do
+        if block.text and block.text:find("Status") then
+            local st = string.match(block.text, "Status%s+(.+)")
+            if st then
+                st = string_clean(st)
+                return st ~= "" and st or nil
+            end
+        end
+    end
+    return nil
+end
+
+function getBookLastUpdate(bookUrl)
+    local body = fetchPage(bookUrl)
+    if not body then return nil end
+    -- Дата из __NEXT_DATA__ (серия), поле updated_at: "2026-08-22 17:14:08..."
+    return string.match(body, '"updated_at":"(%d%d%d%d%-%d%d%-%d%d)')
 end
 
 -- ── Список фильтров ───────────────────────────────────────────────────────────

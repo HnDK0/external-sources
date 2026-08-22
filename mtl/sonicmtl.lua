@@ -1,6 +1,6 @@
 id       = "sonicmtl"
 name     = "Sonic MTL"
-version  = "1.8.0"
+version  = "1.8.1"
 baseUrl  = "https://www.sonicmtl.com"
 language = "Mtl"
 icon     = "https://raw.githubusercontent.com/HnDK0/external-sources/main/icons/sonicmtl.png"
@@ -145,6 +145,71 @@ function getBookRating(bookUrl)
     if not score then return nil end
     local rating = string_clean(score.text)
     return rating ~= "" and rating or nil
+end
+
+-- ── Статус и дата обновления ─────────────────────────────────────────────────
+
+local MONTHS = {
+    January = 1, February = 2, March = 3, April = 4, May = 5, June = 6,
+    July = 7, August = 8, September = 9, October = 10, November = 11, December = 12
+}
+
+-- Приводит строку даты к YYYY-MM-DD. Поддерживает оба формата сайта:
+-- относительный "N minutes/hours/days ago" и абсолютный "August 19, 2026".
+local function normalizeUpdateDate(raw)
+    if not raw then return nil end
+    local n, unit = string.match(raw, "(%d+)%s+(%w+)%s+ago")
+    if n and unit then
+        n = tonumber(n)
+        local secs = 0
+        if unit == "second" or unit == "seconds" then secs = n
+        elseif unit == "minute" or unit == "minutes" then secs = n * 60
+        elseif unit == "hour" or unit == "hours" then secs = n * 3600
+        elseif unit == "day" or unit == "days" then secs = n * 86400
+        elseif unit == "week" or unit == "weeks" then secs = n * 604800
+        elseif unit == "month" or unit == "months" then secs = n * 2592000
+        elseif unit == "year" or unit == "years" then secs = n * 31536000
+        end
+        if secs > 0 then
+            return os.date("%Y-%m-%d", os.time() - secs)
+        end
+    end
+    local mon, d, y = string.match(raw, "(%a+)%s+(%d+),?%s+(%d%d%d%d)")
+    if mon and MONTHS[mon] and d and y then
+        return string.format("%04d-%02d-%02d", tonumber(y), MONTHS[mon], tonumber(d))
+    end
+    return nil
+end
+
+function getBookStatus(bookUrl)
+    local body = fetchPage(bookUrl)
+    if not body then return nil end
+    for _, item in ipairs(html_select(body, ".post-content_item")) do
+        local heading = html_select_first(item.html, ".summary-heading h5")
+        if heading and string_trim(heading.text) == "Status" then
+            local content = html_select_first(item.html, ".summary-content")
+            if content then
+                local s = string_clean(content.text)
+                return s ~= "" and s or nil
+            end
+        end
+    end
+    return nil
+end
+
+function getBookLastUpdate(bookUrl)
+    local ajaxUrl = bookUrl:gsub("/?$", "") .. "/ajax/chapters/?t=1"
+    local r = http_post(ajaxUrl, "", {
+        headers = {
+            ["X-Requested-With"] = "XMLHttpRequest",
+            ["Referer"]          = bookUrl
+        },
+        charset = "UTF-8"
+    })
+    if not r.success then return nil end
+    local el = html_select_first(r.body, ".chapter-release-date")
+    if not el then return nil end
+    return normalizeUpdateDate(el.text)
 end
 
 -- ── Хэш списка глав (прямой запрос, не кэш!) ────────────────────────────────
