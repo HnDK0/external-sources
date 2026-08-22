@@ -1,6 +1,6 @@
 id       = "novelnice"
 name     = "NovelNice"
-version  = "1.4.0"
+version  = "1.4.4"
 baseUrl  = "https://novelnice.com/"
 language = "en"
 icon     = "https://raw.githubusercontent.com/HnDK0/external-sources/main/icons/novelnice.png"
@@ -186,15 +186,63 @@ function getBookStatus(bookUrl)
 end
 
 function getBookLastUpdate(bookUrl)
-    local body = fetchPage(bookUrl)
-    if not body then return nil end
+    -- Дата последней главы инжектится только через AJAX-эндпоинт
+    -- (в no-JS HTML её нет). Берём первый .chapter-release-date — это
+    -- самая свежая глава. Формат: либо относительный "22 minutes ago",
+    -- либо абсолютный "August 17, 2026".
+    --
+    -- Прогреваем сессию http_get-ом страницы книги ДО ajax-post: сайт
+    -- за Cloudflare, и standalone-post к /ajax/ часто отдаёт challenge,
+    -- пока нет куки сессии (главы грузятся позже и проходят).
+    fetchPage(bookUrl)
 
-    -- WordPress/Madara: <meta property="article:modified_time" content="2025-04-05T09:16:59+00:00">
-    local raw = string_match(body, 'article:modified_time"%s+content="%d%d%d%d%-%d%d%-%d%d')
-    if raw then
-        local y, m, d = string_match(raw, "(%d%d%d%d)%-(%d%d)%-(%d%d)")
-        if y then return y .. "-" .. m .. "-" .. d end
+    local pr = http_post(
+        bookUrl:gsub("/?$", "") .. "/ajax/chapters/?t=1",
+        "",
+        {
+            headers = {
+                ["X-Requested-With"] = "XMLHttpRequest",
+                ["Referer"]          = bookUrl
+            },
+            charset = "UTF-8"
+        }
+    )
+    if not pr.success then return nil end
+
+    local el = html_select_first(pr.body, ".chapter-release-date")
+    if not el then return nil end
+
+    local v = string_trim(el.text)
+
+    -- Относительная дата: "22 minutes ago" / "3 hours ago" / "1 day ago"
+    local n, unit = string.match(v, "(%d+)%s+(%w+)%s+ago")
+    if n then
+        local secs = {
+            minute = 60, minutes = 60,
+            hour = 3600, hours = 3600,
+            day = 86400, days = 86400,
+            week = 604800, weeks = 604800,
+            month = 2592000, months = 2592000,
+            year = 31536000, years = 31536000
+        }
+        local mult = secs[unit]
+        if mult then
+            return os.date("%Y-%m-%d", os.time() - tonumber(n) * mult)
+        end
     end
+
+    -- Абсолютная дата: "August 17, 2026"
+    local months = {
+        January = "01", February = "02", March = "03", April = "04",
+        May = "05", June = "06", July = "07", August = "08",
+        September = "09", October = "10", November = "11", December = "12"
+    }
+    local mon, d, y = string.match(v, "(%a+)%s+(%d+),?%s+(%d%d%d%d)")
+    if mon then
+        local mm = months[mon]
+        if mm then return y .. "-" .. mm .. "-" .. string.format("%02d", tonumber(d)) end
+    end
+
     return nil
 end
 

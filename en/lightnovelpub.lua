@@ -4,6 +4,7 @@ version  = "1.0.2"
 baseUrl  = "https://lightnovelpub.org"
 language = "en"
 icon     = "https://raw.githubusercontent.com/HnDK0/external-sources/main/icons/lightnovelpub.png"
+status   = "dead"
 
 -- ── Helpers ──────────────────────────────────────────────────────────────────
 

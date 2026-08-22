@@ -1,6 +1,6 @@
 id       = "novelfull"
 name     = "NovelFull"
-version  = "1.0.4"
+version  = "1.0.7"
 baseUrl  = "https://novelfull.net/"
 language = "en"
 icon     = "https://raw.githubusercontent.com/HnDK0/external-sources/main/icons/novelfull.png"
@@ -24,14 +24,6 @@ local function fetchBookPage(url)
     return nil
 end
 
--- novelBinCoverUrl: используется только для каталога и поиска
-local function transformCatalogCover(bookUrl)
-  if not bookUrl or bookUrl == "" then return "" end
-  local slug = bookUrl:match("([^/?#]+)%.html$") or bookUrl:match("([^/?#]+)/?$")
-  if not slug then return "" end
-  return "https://images.novelbin.me/novel/" .. slug .. ".jpg"
-end
-
 local function applyStandardContentTransforms(text)
     if not text or text == "" then return "" end
     text = string_normalize(text)
@@ -45,28 +37,35 @@ end
 
 -- ── Каталог ───────────────────────────────────────────────────────────────────
 
+-- Реальная вёрстка (novelfull.net, проверено на живой странице):
+-- список в .col-truyen-main .ul-list1, карточка = .li-row,
+-- заголовок в .txt h3.tit a, обложка (relative) в .pic img.
+local function buildCatalogItems(body)
+    local items = {}
+    for _, card in ipairs(html_select(body, ".col-truyen-main .ul-list1 .li-row")) do
+        local a = html_select_first(card.html, ".txt h3.tit a")
+        if a and a.href and a.href ~= "" then
+            local cover = html_attr(card.html, ".pic img", "src")
+            table.insert(items, {
+                title = string_clean(a.text),
+                url   = absUrl(a.href),
+                cover = absUrl(cover),
+            })
+        end
+    end
+    return items
+end
+
 function getCatalogList(index)
     local page = index + 1
     local url = baseUrl .. "latest-release-novel"
-    if page > 1 then url = url .. "?page=" .. page end
+    if page > 1 then url = url .. "?page=" .. tostring(page) .. "&per-page=22" end
 
     local r = http_get(url)
     if not r.success then return { items = {}, hasNext = false } end
 
-    local items = {}
-    for _, card in ipairs(html_select(r.body, ".col-truyen-main .row")) do
-        local titleEl = html_select_first(card.html, "div.col-xs-7 > div > h3 > a")
-        
-        if titleEl then
-            local bookUrl = absUrl(titleEl.href)
-            table.insert(items, {
-                title = string_clean(titleEl.text),
-                url   = bookUrl,
-                cover = transformCatalogCover(bookUrl) 
-            })
-        end
-    end
-    return { items = items, hasNext = #items > 0 }
+    local items = buildCatalogItems(r.body)
+    return { items = items, hasNext = #items == 22 }
 end
 
 -- ── Поиск ─────────────────────────────────────────────────────────────────────
@@ -74,25 +73,13 @@ end
 function getCatalogSearch(index, query)
     local page = index + 1
     local url = baseUrl .. "search?keyword=" .. url_encode(query)
-    if page > 1 then url = url .. "&page=" .. page end
+    if page > 1 then url = url .. "&page=" .. tostring(page) end
 
     local r = http_get(url)
     if not r.success then return { items = {}, hasNext = false } end
 
-    local items = {}
-    for _, card in ipairs(html_select(r.body, ".col-truyen-main .row")) do
-        local titleEl = html_select_first(card.html, "div.col-xs-7 > div > h3 > a")
-        
-        if titleEl then
-            local bookUrl = absUrl(titleEl.href)
-            table.insert(items, {
-                title = string_clean(titleEl.text),
-                url   = bookUrl,
-                cover = transformCatalogCover(bookUrl)
-            })
-        end
-    end
-    return { items = items, hasNext = #items > 0 }
+    local items = buildCatalogItems(r.body)
+    return { items = items, hasNext = #items == 22 }
 end
 
 -- ── Детали книги ──────────────────────────────────────────────────────────────
@@ -100,21 +87,21 @@ end
 function getBookTitle(bookUrl)
     local html = fetchBookPage(bookUrl)
     if not html then return nil end
-    local el = html_select_first(html, "h3.title")
+    local el = html_select_first(html, "h1.tit")
     return el and string_clean(el.text) or nil
 end
 
 function getBookCoverImageUrl(bookUrl)
     local html = fetchBookPage(bookUrl)
     if not html then return nil end
-    local cover = html_attr(html, ".book img[src]", "src")
+    local cover = html_attr(html, ".m-book1 img", "src")
     return (cover ~= "" and absUrl(cover)) or nil
 end
 
 function getBookDescription(bookUrl)
     local html = fetchBookPage(bookUrl)
     if not html then return nil end
-    local el = html_select_first(html, ".desc-text")
+    local el = html_select_first(html, "#novel-summary-inner")
     return el and string_trim(el.text) or nil
 end
 
@@ -124,46 +111,56 @@ function getChapterList(bookUrl)
     local r = http_get(bookUrl)
     if not r.success then return {} end
 
-  local maxPage = 1
-  local lastPageEl = html_select_first(r.body, "#list-chapter > ul:nth-child(3) > li.last > a")
-  if lastPageEl then
-    local href = lastPageEl.href or ""
-    maxPage = tonumber(href:match("page=(%d+)")) or 1
-  end
-
-    local function parsePage(html)
-        local res = {}
-        for _, a in ipairs(html_select(html, "ul.list-chapter li a")) do
-            local title = html_attr(a.html, "a", "title")
-            if title == "" then title = a.text end
-            
-            table.insert(res, { 
-                title = string_clean(title), 
-                url = absUrl(a.href) 
-            })
-        end
-        return res
+    -- Число страниц списка глав: <option data-url="...?page=N"> в селекте навигации
+    local maxPage = 1
+    for page in r.body:gmatch('data%-url="[^"]*%?page=(%d+)"') do
+        local n = tonumber(page) or 1
+        if n > maxPage then maxPage = n end
     end
 
-    local allChapters = parsePage(r.body)
+    -- ul-list5 — реальный список глав. Кнопка "Read first" (ссылка на главу 1)
+    -- находится вне этого блока, поэтому не попадает сюда и не дублирует главу 1.
+    local seen = {}
+    local res, order = {}, {}
+    local function parsePage(html)
+        for _, a in ipairs(html_select(html, "ul.ul-list5 a[href*='/chapter-']")) do
+            local href = absUrl(a.href)
+            if not seen[href] then
+                seen[href] = true
+                local title = html_attr(a.html, "a", "title")
+                if title == "" then title = a.text end
+                local num = tonumber((href:match("/chapter%-(%d+)")) or "0") or 0
+                table.insert(res, { title = string_clean(title), url = href })
+                table.insert(order, num)
+            end
+        end
+    end
+
+    parsePage(r.body)
 
     if maxPage > 1 then
         local urls = {}
         for p = 2, maxPage do table.insert(urls, bookUrl .. "?page=" .. p) end
         local results = http_get_batch(urls)
-        for _, res in ipairs(results) do
-            if res.success then
-                for _, ch in ipairs(parsePage(res.body)) do table.insert(allChapters, ch) end
-            end
+        for _, res2 in ipairs(results) do
+            if res2.success then parsePage(res2.body) end
         end
     end
-    return allChapters
+
+    -- Сайт отдаёт главы от новых к старым — сортируем по возрастанию номера,
+    -- чтобы глава 1 оказалась первой в списке.
+    local idx = {}
+    for i = 1, #res do idx[i] = i end
+    table.sort(idx, function(a, b) return order[a] < order[b] end)
+    local out = {}
+    for _, i in ipairs(idx) do out[#out + 1] = res[i] end
+    return out
 end
 
 function getChapterListHash(bookUrl)
     local r = http_get(bookUrl)
     if not r.success then return nil end
-    local el = html_select_first(r.body, ".l-chapters li:first-child a")
+    local el = html_select_first(r.body, "ul.ul-list5 a[href*='/chapter-']")
     return el and el.href or nil
 end
 
@@ -182,16 +179,9 @@ function getBookGenres(bookUrl)
   local html = fetchBookPage(bookUrl)
   if not html then return {} end
   local genres = {}
-  for _, div in ipairs(html_select(html, ".info div")) do
-    local h3 = html_select_first(div.html, "h3")
-    local h3text = h3 and string_trim(h3.text) or ""
-    if h3text == "Genre:" or h3text == "Genres:" then
-      for _, a in ipairs(html_select(div.html, "a")) do
-        local g = string_trim(a.text)
-        if g ~= "" then table.insert(genres, g) end
-      end
-      break
-    end
+  for _, a in ipairs(html_select(html, ".m-info .item a.a1[href^='/genre/']")) do
+    local g = string_trim(a.text)
+    if g ~= "" then table.insert(genres, g) end
   end
   return genres
 end
@@ -201,12 +191,15 @@ end
 function getBookStatus(bookUrl)
   local html = fetchBookPage(bookUrl)
   if not html then return nil end
-  for _, div in ipairs(html_select(html, ".info div")) do
-    local h3 = html_select_first(div.html, "h3")
-    local h3text = h3 and string_trim(h3.text) or ""
-    if h3text == "Status:" then
-      local a = html_select_first(div.html, "a")
-      return a and string_clean(a.text) or nil
+  -- Блок статуса: <div class="item">...<span title="Status">...</span><a>OnGoing</a>
+  for _, item in ipairs(html_select(html, ".item")) do
+    if html_select_first(item.html, "span[title='Status']") then
+      local a = html_select_first(item.html, "a")
+      if a then
+        local t = string_clean(a.text)
+        if t == "OnGoing" then return "Ongoing" end
+        return t
+      end
     end
   end
   return nil
@@ -215,17 +208,16 @@ end
 function getBookLastUpdate(bookUrl)
   local html = fetchBookPage(bookUrl)
   if not html then return nil end
-  -- мета article:modified_time (ISO 8601)
-  local meta = html_attr(html, "meta[property='article:modified_time']", "content")
-  if meta and meta ~= "" then
-    local y, m, d = meta:match("(%d%d%d%d)%-(%d%d)%-(%d%d)")
-    if y then return y .. "-" .. m .. "-" .. d end
-  end
-  -- JSON-LD dateModified
-  local dm = regex_match(html, '"dateModified"\\s*:\\s*"(\\d{4}-\\d{2}-\\d{2})"')
-  if dm and dm ~= "" then return dm end
-  -- сайт novelfull.net не показывает дату обновления на странице книги
-  return nil
+  -- Блок ".lastupdate": "[ Updated 8 minutes ago ]" — относительная дата
+  -- (абсолютной даты на странице книги novelfull.net нет)
+  local el = html_select_first(html, ".lastupdate")
+  if not el then return nil end
+  local t = string_trim(el.text)
+  t = string.gsub(t, "^%s*%[?%s*", "")
+  t = string.gsub(t, "%s*%]?%s*$", "")
+  t = string.gsub(t, "^[Uu]pdated%s+", "")
+  t = string_trim(t)
+  return (t ~= "" and t) or nil
 end
 
 -- ── Список фильтров ───────────────────────────────────────────────────────────
@@ -302,17 +294,6 @@ function getCatalogFiltered(index, filters)
   local r = http_get(url)
   if not r.success then return { items = {}, hasNext = false } end
 
-  local items = {}
-  for _, card in ipairs(html_select(r.body, ".col-truyen-main .row")) do
-    local titleEl = html_select_first(card.html, "div.col-xs-7 > div > h3 > a")
-    if titleEl then
-      local bookUrl = absUrl(titleEl.href)
-      table.insert(items, {
-        title = string_clean(titleEl.text),
-        url   = bookUrl,
-        cover = transformCatalogCover(bookUrl)
-      })
-    end
-  end
-  return { items = items, hasNext = #items > 0 }
+  local items = buildCatalogItems(r.body)
+  return { items = items, hasNext = #items == 22 }
 end

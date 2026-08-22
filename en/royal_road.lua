@@ -1,7 +1,7 @@
 -- ── Метаданные ────────────────────────────────────────────────────────────────
 id       = "royal_road"
 name     = "Royal Road"
-version  = "1.1.1"
+version  = "1.1.6"
 baseUrl  = "https://www.royalroad.com"
 language = "en"
 icon     = "https://raw.githubusercontent.com/HnDK0/external-sources/main/icons/royalroad.png"
@@ -199,30 +199,41 @@ function getBookRating(bookUrl)
   return m[1] and string_trim(m[1]) or nil
 end
 
--- ── Статус и дата обновления ─────────────────────────────────────────────────
+-- ── Статус ─────────────────────────────────────────────────────────────────────
 
--- Статус книги: бейдж в .fiction-info (второй span.label-sm, после типа
--- "Original"/"Fanfiction"). Возвращаем текст как на сайте, без маппинга.
+-- Статус книги: <span class="label label-default label-sm bg-blue-hoki">ONGOING</span>.
+-- Такой же класс у типа ("Original"/"Fanfiction") и тегов жанров в том же
+-- контейнере, поэтому берём по точному набору значений статуса.
 function getBookStatus(bookUrl)
   local r = http_get(bookUrl)
   if not r.success then return nil end
-  for _, el in ipairs(html_select(r.body, ".fiction-info .label-sm")) do
-    local t = string_clean(el.text)
-    if t == "COMPLETED" or t == "ONGOING" or t == "HIATUS"
-       or t == "DROPPED" or t == "STUB" then
-      return t
+  for _, span in ipairs(html_select(r.body, "span.label-sm.bg-blue-hoki")) do
+    local v = string_clean(span.text)
+    if v == "ONGOING" or v == "COMPLETED" or v == "DROPPED" or v == "HIATUS" or v == "STUB" then
+      return v
     end
   end
   return nil
 end
 
+-- ── Дата обновления ───────────────────────────────────────────────────────────
+
 -- Дата последнего обновления: поле dateModified в JSON-LD (application/ld+json).
--- Формат ISO: "2023-07-06T17:47:41+00:00" -> берём только YYYY-MM-DD.
+-- Формат ISO: "2023-07-06T17:47:41+00:00". regex_match возвращает ЦЕЛОЕ
+-- совпадение (m.value, группы не экспонируются), поэтому берём фрагмент с
+-- ключом, а саму дату вырезаем через string.match (Lua-паттерн).
 function getBookLastUpdate(bookUrl)
   local r = http_get(bookUrl)
   if not r.success then return nil end
-  local m = regex_match(r.body, '"dateModified"\\s*:\\s*"(\\d\\d\\d\\d-\\d\\d-\\d\\d)')
-  return m[1] or nil
+  -- В JSON-LD: "dateModified":"2023-07-06T...". regex_match возвращает целое
+  -- совпадение, но группа нужна про запас (если движок отдаёт группы).
+  -- После даты в JSON идёт 'T', а не '"', поэтому кавычку не требуем.
+  local m = regex_match(r.body, '"dateModified":\\s*"(\\d\\d\\d\\d-\\d\\d-\\d\\d)')
+  if m and m[1] then
+    local d = string.match(m[1], '(%d%d%d%d%-%d%d%-%d%d)')
+    if d then return d end
+  end
+  return nil
 end
 
 -- ── Список фильтров ───────────────────────────────────────────────────────────

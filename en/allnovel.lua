@@ -1,7 +1,7 @@
 -- ── Метаданные ────────────────────────────────────────────────────────────────
 id       = "allnovel"
 name     = "AllNovel"
-version  = "1.0.4"
+version  = "1.0.6"
 baseUrl  = "https://allnovel.org/"
 language = "en"
 icon     = "https://raw.githubusercontent.com/HnDK0/external-sources/main/icons/allnovel.png"

@@ -1,7 +1,7 @@
 -- ── Metadata ────────────────────────────────────────────────────────────────
 id       = "novelhi"
 name     = "NovelHi"
-version  = "1.0.3"
+version  = "1.0.9"
 baseUrl  = "https://novelhi.com"
 language = "en"
 icon     = "https://t3.gstatic.com/faviconV2?client=SOCIAL&type=FAVICON&fallback_opts=TYPE,SIZE,URL&url=https://novelhi.com&size=256"
@@ -51,6 +51,13 @@ local function fetchPage(url)
         return r.body
     end
     return nil
+end
+
+-- novelhi отдаёт разный шаблон в зависимости от User-Agent: под мобильным/пустым
+-- UA нет ни ul.list (статус/дата), ни .book-rate (рейтинг) — функции возвращают nil.
+-- Принудительно запрашиваем десктопный Chrome, чтобы получать PC-шаблон.
+function getUserAgentPreset()
+    return "Chrome Desktop"
 end
 
 -- Genre id -> slug mapping (from the site's genreIdToSlugMapping).
@@ -249,16 +256,19 @@ end
 
 -- ── Status / Last update ──────────────────────────────────────────────────────
 
--- Обе метрики лежат в <ul class="list"> как <span class="item">Label: <em>…</em></span>.
--- Статус — текст как на сайте (без маппинга); дата обновления — формат
--- YY/MM/DD HH:MM:SS (напр. 25/01/29 15:10:03 → 2025-01-29).
+-- Статус и дата обновления — в <span class="item"> внутри <ul class="list">
+-- (сайт сменил вёрстку; старый шаблон div[style*='text-align: center'] неактуален):
+--   <span class="item">Status: <em>Ongoing</em></span>
+--   <span class="item">Update: <em>25/01/29 15:10:03</em></span>
 function getBookStatus(bookUrl)
     local body = fetchPage(bookUrl)
     if not body then return nil end
     for _, span in ipairs(html_select(body, "ul.list li span.item")) do
-        if string_starts_with(span.text, "Status:") then
+        local label = string_clean(span.text)
+        if string.match(label, "Status") then
             local em = html_select_first(span.html, "em")
-            if em then return string_clean(em.text) end
+            local v = (em and string_trim(em.text)) or string.match(label, "Status%W+(.+)")
+            return v and string_clean(v) or nil
         end
     end
     return nil
@@ -268,15 +278,32 @@ function getBookLastUpdate(bookUrl)
     local body = fetchPage(bookUrl)
     if not body then return nil end
     for _, span in ipairs(html_select(body, "ul.list li span.item")) do
-        if string_starts_with(span.text, "Update:") then
+        local label = string_clean(span.text)
+        if string.match(label, "Update") then
             local em = html_select_first(span.html, "em")
-            if em then
-                local y, mo, d = string_match(em.text, "(%d%d)/(%d%d)/(%d%d)")
-                if y and mo and d then
-                    return "20" .. y .. "-" .. mo .. "-" .. d
-                end
+            local v = (em and string_trim(em.text)) or string.match(label, "Update%W+(.+)")
+            if v and v ~= "" then
+                -- дата в формате YY/MM/DD [HH:MM:SS] -> YYYY-MM-DD
+                local y, mo, d = string.match(v, "(%d%d)/(%d%d)/(%d%d)")
+                if y and mo and d then return "20" .. y .. "-" .. mo .. "-" .. d end
+                return string_clean(v)
             end
         end
+    end
+    return nil
+end
+
+-- ── Rating ──────────────────────────────────────────────────────────────────────
+
+-- Рейтинг книги — число в <span class="rate-text"> внутри первого <div class="book-rate">
+-- (например "4.1"; второй book-rate содержит подпись "Your Rating:", её пропускаем).
+function getBookRating(bookUrl)
+    local body = fetchPage(bookUrl)
+    if not body then return nil end
+    local rt = html_select_first(body, ".book-rate .rate-text")
+    if rt and rt.text and rt.text ~= "" then
+        local v = string_trim(rt.text)
+        if string.match(v, "%d") then return v end
     end
     return nil
 end

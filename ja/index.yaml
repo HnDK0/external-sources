@@ -4,6 +4,6 @@ sources:
   - id: "syosetu"
     name: "Syosetu"
     version: "1.1.0"
-    url: "https://raw.githubusercontent.com/HnDK0/external-sources/refs/heads/main/ja/syosetu.lua"
-    icon: "https://raw.githubusercontent.com/HnDK0/external-sources/main/icons/narou.png"
+    url: "https://raw.githubusercontent.com/HnDK0/external-sources/refs/heads/test/en-date-functions/ja/syosetu.lua"
+    icon: "https://raw.githubusercontent.com/HnDK0/external-sources/refs/heads/test/en-date-functions/icons/narou.png"
     language: "ja"
