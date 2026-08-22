@@ -18,6 +18,13 @@ refs/heads/<branch> (текущая ветка) вместо main — обход
 import os, re, sys, subprocess
 from pathlib import Path
 
+# ── Совместимость вывода (Windows cp1251 и т.п. падает на ─ и кириллице) ──
+try:
+    sys.stdout.reconfigure(encoding="utf-8")
+    sys.stderr.reconfigure(encoding="utf-8")
+except Exception:
+    pass
+
 # ── Конфиг ────────────────────────────────────────────────────────────────────
 
 RAW_BASE  = "https://raw.githubusercontent.com/{repo}/refs/heads/{branch}"
@@ -149,7 +156,7 @@ def rewrite_readme(raw_base: str):
         return
     text = readme.read_text(encoding="utf-8")
     new_text = re.sub(
-        r"(Plugin Index URL:\s*`)[^`]+(`)",
+        r"(Plugin Index URL:[^\n]*?`)[^`]+(`)",
         lambda m: m.group(1) + raw_base + "/index.yaml" + m.group(2),
         text,
     )
