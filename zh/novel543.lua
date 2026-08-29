@@ -184,10 +184,9 @@
 -- "Novel543" — it must stay visually distinct from the old repository
 -- extension of the same name, whose v1.0.3 has no filters/settings and
 -- collides with this one because sources resolve by baseUrl.
-local VERSION = "1.0.4" -- upstream line: 1.0.3 → 1.0.4 (dev builds 1.1.0–1.2.2 superseded)
 id       = "novel543"
-name     = "Novel543 Full"
-version  = VERSION
+name     = "Novel543"
+version  = "1.0.4"
 baseUrl  = "https://www.novel543.com/"
 language = "zh"
 icon     = "https://raw.githubusercontent.com/HnDK0/external-sources/main/icons/novel543.png"
