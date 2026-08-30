@@ -1,6 +1,12 @@
 language: "ar"
 name: "Arabic"
 sources:
+  - id: "galaxynovels"
+    name: "Galaxy Novels"
+    version: "1.0.0"
+    url: "https://raw.githubusercontent.com/HnDK0/external-sources/refs/heads/main/ar/galaxynovels.lua"
+    icon: "https://raw.githubusercontent.com/HnDK0/external-sources/refs/heads/main/icons/galaxynovels.png"
+    language: "ar"
   - id: "truthnovel"
     name: "Truth Novel"
     version: "1.1.1"
