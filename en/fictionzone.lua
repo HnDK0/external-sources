@@ -1,7 +1,7 @@
 -- ── Метаданные ──
 id       = "fictionzone"
 name     = "Fiction Zone"
-version  = "1.0.0"
+version  = "1.1.0"
 baseUrl  = "https://fictionzone.net/"
 language = "en"
 icon     = "https://raw.githubusercontent.com/HnDK0/external-sources/main/icons/fictionzone.png"
@@ -26,14 +26,25 @@ local function absUrl(href)
 end
 
 -- Универсальный GET к API через прокси. Возвращает payload (.data) или nil.
+-- Полный текст главы сайт отдаёт только авторизованному пользователю: анонимный
+-- запрос возвращает урезанное превью (~половину). Прокси прокидывает заголовок
+-- authorization из тела на upstream, поэтому подставляем Bearer-токен из кук
+-- пользователя (fz_access_token), когда он залогинен в NoveLA. Без токена
+-- работаем анонимно (превью) — обратно-совместимо.
 local function apiGet(path)
   local ts = os.date("!%Y-%m-%dT%H:%M:%SZ")
+  local headers = {
+    { "content-type", "application/json" },
+    { "x-request-time", ts },
+  }
+  local cookies = get_cookies(baseUrl)
+  local token = cookies and cookies["fz_access_token"] or ""
+  if token ~= "" then
+    headers[#headers + 1] = { "authorization", "Bearer " .. token }
+  end
   local body = json_stringify({
     path = path,
-    headers = {
-      { "content-type", "application/json" },
-      { "x-request-time", ts },
-    },
+    headers = headers,
     method = "GET",
   })
   local r = http_post(PROXY, body, {
@@ -339,6 +350,16 @@ function getChapterText(html, url)
   local content = data.content
   content = content:gsub("\r\n", "\n"):gsub("\r", "\n")
   content = string_normalize(content)
+
+  -- В конец залогиненного контента сайт подклеивает рекламную вставку с
+  -- акцией ("...Recharge 100 and get 500 VIP coupons!...Immediate recharge..."),
+  -- название праздника меняется (Dragon Boat Festival / Ching Ming и т.п.), но
+  -- якорные строки "Recharge N and get N VIP coupons" и "Immediate recharge"
+  -- стабильны. (?m) — ^/$ на каждой строке, поэтому вычищаем всю строку с
+  -- якорем где бы тот ни стоял; вставка всегда в конце. Авторский текст с
+  -- однокоренным "recharge" (без "VIP coupons") не затрагивается.
+  content = regex_replace(content, "(?m)^.*Recharge \\d+ and get \\d+ VIP coupons.*\\n?", "")
+  content = regex_replace(content, "(?m)^.*Immediate recharge.*\\n?", "")
 
   local paras = {}
   for line in content:gmatch("[^\n]+") do
