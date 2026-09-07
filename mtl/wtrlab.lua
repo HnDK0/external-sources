@@ -1,10 +1,12 @@
 -- ═══════════════════════════════════════════════════════════════════════════
 -- WTR-LAB source plugin for NoveLA
--- Version 1.1.7 (2026-08-26)
+-- Version 1.1.8 (2026-09-07)
 --
 -- 1.1.7 (2026-08-26) — comprehensive upgrade on top of upstream 1.1.6.
 --   Fixes two long-standing root causes of bad reader UX and adds full
 --   novel-finder filter parity:
+--
+-- 1.1.8 (2026-09-07) — add Web+ translation mode (closes #10).
 --
 --   Gibberish-chapters fix (root cause):
 --   • Chapter bodies returned as `arr:`/`str:` AES-256-GCM payloads by
@@ -94,14 +96,14 @@
 -- ── Metadata ───────────────────────────────────────────────────────────────
 id = "wtrlab"
 name = "WTR-LAB"
-version = "1.1.7"
+version = "1.1.8"
 baseUrl = "https://wtr-lab.com/"
 language = "MTL"
 icon = "https://raw.githubusercontent.com/HnDK0/external-sources/main/icons/wtr-lab.png"
-description = "Machine-translated novels (wtr-lab.com). AI and raw (web) translation modes, full novel-finder filters. If a 'Security Check' error appears, open any chapter of the book in the integrated browser, complete the verification, then retry."
+description = "Machine-translated novels (wtr-lab.com). AI, raw (web), and Web+ translation modes, full novel-finder filters. If a 'Security Check' error appears, open any chapter of the book in the integrated browser, complete the verification, then retry."
 
 -- ── Settings keys ──────────────────────────────────────────────────────────
-local PREF_MODE = "wtrlab_mode"           -- "ai" | "raw"  (key kept from 1.x so existing settings survive)
+local PREF_MODE = "wtrlab_mode"           -- "ai" | "raw" | "webplus"  (key kept from 1.x so existing settings survive)
 local PREF_DELAY = "wtrlab_chapter_delay" -- ms pause before each chapter fetch
 
 -- ── Caches (live until app restart) ────────────────────────────────────────
@@ -1838,7 +1840,7 @@ function getChapterText(html, chapterUrl)
 
     local chapterNo = tonumber(string.match(chapterUrl, "/chapter%-(%d+)")) or 1
     local mode = getMode()
-    local translateParam = (mode == "raw") and "web" or "ai"
+    local translateParam = (mode == "raw") and "web" or (mode == "webplus") and "webplus" or "ai"
 
     log_info("wtrlab: novelId=" .. novelId .. " chapterNo=" .. tostring(chapterNo) .. " translate=" .. translateParam)
 
@@ -1925,6 +1927,16 @@ function getChapterText(html, chapterUrl)
         end
     end
 
+    -- ── Web+ mode: apply book-level glossary directly to decrypted body ──────
+    -- Web+ returns encrypted Chinese content (like Web) but expects the client
+    -- to replace Chinese terms with English translations from the book glossary.
+    -- The frontend also calls Google Translate for remaining Chinese text.
+    if mode == "webplus" and next(termByOriginal) then
+        for original, translation in pairs(termByOriginal) do
+            resolvedBody = resolvedBody:gsub(original, translation)
+        end
+    end
+
     -- ── Chapter-level glossary (※idx⛬ / ※idx〓 markers) ─────────────────────
     local glossary = {}
     if mode ~= "raw" and data.glossary_data and data.glossary_data.terms then
@@ -1983,6 +1995,9 @@ function getSettingsSchema()
         }, {
             value = "raw",
             label = "Raw (Web)"
+        }, {
+            value = "webplus",
+            label = "Web+ (Beta)"
         }}
     }, {
         key = PREF_DELAY,
