@@ -404,13 +404,26 @@ local r = http_get(url, {
     charset = "UTF-8"  -- response encoding (default UTF-8)
 })
 
+-- Binary mode — for images, fonts, and other binary data
+local r = http_get("https://example.com/image.png", { binary = true })
+if r.success then
+    -- r.body = {137, 80, 78, 71, ...} — byte table (1-based Lua table)
+    local bytes = r.body
+    print("Size: " .. #bytes .. " bytes")
+    -- Check PNG header (first 8 bytes: 0x89 0x50 0x4E 0x47)
+    if bytes[1] == 0x89 and bytes[2] == 0x50 then
+        print("Valid PNG")
+    end
+end
+
 -- Checking the result
 if not r.success then
     log_error("Request failed: code=" .. tostring(r.code))
     return { items = {}, hasNext = false }
 end
--- r.body  — response body string
+-- r.body  — response body string (or byte table when binary = true)
 -- r.code  — HTTP status code (200, 404, ...)
+-- r.headers — response headers table (works the same for both text and binary mode)
 ```
 
 ### http_post(url, body [, config])
@@ -440,11 +453,12 @@ local r = http_post(
 )
 ```
 
-### http_get_batch(urls_table)
+### http_get_batch(urls_table [, config])
 
 Parallel loading of multiple URLs. The response order matches the request order.
 
 ```
+-- Text mode (default)
 local urls = {}
 for p = 2, maxPage do
     table.insert(urls, baseUrl .. "/chapters?page=" .. p)
@@ -453,10 +467,31 @@ end
 local results = http_get_batch(urls)
 for i, res in ipairs(results) do
     if res.success then
-        -- process res.body
+        -- res.body — string
+    end
+end
+
+-- Binary mode — for batch loading images and other binary data
+local cover_urls = {
+    "https://example.com/cover1.jpg",
+    "https://example.com/cover2.jpg",
+    "https://example.com/cover3.jpg"
+}
+
+local results = http_get_batch(cover_urls, { binary = true })
+for i, res in ipairs(results) do
+    if res.success then
+        -- res.body — byte table (1-based)
+        print("Cover " .. i .. ": " .. #res.body .. " bytes")
     end
 end
 ```
+
+> **Note on `binary = true`:**
+> - `resp.body` is returned as a Lua table `{0x89, 0x50, 0x4E, ...}` (1-based) instead of a string
+> - Binary responses are **not cached** (TTL cache works only for text)
+> - `resp.code`, `resp.headers`, `resp.success` work the same for both modes
+> - Use `#resp.body` to get the size in bytes
 
 ### Working with cookies
 
@@ -1342,6 +1377,20 @@ function getFilterList()
                 { value = "updated", label = "Last Updated" },
             }
         },
+
+        -- Tag input with autocomplete (text field + chips)
+        {
+            type        = "tag_input",
+            key         = "tags",
+            label       = "Tags",
+            allowCustom = true,
+            options = {
+                { value = "harem",    label = "Harem"    },
+                { value = "op_mc",    label = "OP MC"    },
+                { value = "strong_mc", label = "Strong MC" },
+                { value = "isekai",   label = "Isekai"   },
+            }
+        },
     }
 end
 ```
@@ -1360,6 +1409,7 @@ How Kotlin passes filters into `filters` (a LuaTable):
 | `text`      | `filters["key"]`            | string                        |
 | `sort`      | `filters["key"]`            | string (the selected value)   |
 | `sort`      | `filters["key_ascending"]`  | `"true"` or `"false"`         |
+| `tag_input` | `filters["key_included"]`   | array table of strings        |
 
 ```
 function getCatalogFiltered(index, filters)
@@ -1388,6 +1438,10 @@ function getCatalogFiltered(index, filters)
     for _, v in ipairs(genres_inc) do url = url .. "&genre[]=" .. v end
     for _, v in ipairs(genres_exc) do url = url .. "&genre_ex[]=" .. v end
     for _, v in ipairs(lang_inc)   do url = url .. "&lang[]=" .. v    end
+
+    -- Tags from tag_input
+    local tags_inc = filters["tags_included"] or {}
+    for _, v in ipairs(tags_inc) do url = url .. "&tag[]=" .. v end
 
     url = url .. "&orderBy=" .. order_val
              .. "&asc=" .. (order_asc == "true" and "1" or "0")
@@ -1529,9 +1583,9 @@ end
 
 | Function                           | Description                                          |
 | ------------------------------------ | ------------------------------------------------------ |
-| `http_get(url [, config])`         | GET request → `{success, body, code}`                |
+| `http_get(url [, config])`         | GET request → `{success, body, code}` (body is string or byte table with `binary = true`) |
 | `http_post(url, body [, config])`  | POST request → `{success, body, code}`               |
-| `http_get_batch(urls)`             | Parallel GET → array of `{success, body, code}`      |
+| `http_get_batch(urls [, config])`  | Parallel GET → array of `{success, body, code}` (supports `binary = true`) |
 | `get_cookies(url)`                 | Get cookies for a domain → table                     |
 | `set_cookies(url, table)`          | Set cookies                                           |
 

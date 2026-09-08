@@ -1374,6 +1374,20 @@ function getFilterList()
                 { value = "updated", label = "Last Updated" },
             }
         },
+
+        -- Теги с автодополнением (текстовое поле + чипы)
+        {
+            type        = "tag_input",
+            key         = "tags",
+            label       = "Tags",
+            allowCustom = true,
+            options = {
+                { value = "harem",    label = "Harem"    },
+                { value = "op_mc",    label = "OP MC"    },
+                { value = "strong_mc", label = "Strong MC" },
+                { value = "isekai",   label = "Isekai"   },
+            }
+        },
     }
 end
 ```
@@ -1392,6 +1406,7 @@ end
 | `text` | `filters["key"]` | строка |
 | `sort` | `filters["key"]` | строка (выбранное значение) |
 | `sort` | `filters["key_ascending"]` | `"true"` или `"false"` |
+| `tag_input` | `filters["key_included"]` | таблица-массив строк |
 
 ```lua
 function getCatalogFiltered(index, filters)
@@ -1420,6 +1435,10 @@ function getCatalogFiltered(index, filters)
     for _, v in ipairs(genres_inc) do url = url .. "&genre[]=" .. v end
     for _, v in ipairs(genres_exc) do url = url .. "&genre_ex[]=" .. v end
     for _, v in ipairs(lang_inc)   do url = url .. "&lang[]=" .. v    end
+
+    -- Теги из tag_input
+    local tags_inc = filters["tags_included"] or {}
+    for _, v in ipairs(tags_inc) do url = url .. "&tag[]=" .. v end
 
     url = url .. "&orderBy=" .. order_val
              .. "&asc=" .. (order_asc == "true" and "1" or "0")
