@@ -404,13 +404,26 @@ local r = http_get(url, {
     charset = "UTF-8"  -- кодировка ответа (default UTF-8)
 })
 
+-- Бинарный режим — для изображений, шрифтов и прочих бинарных данных
+local r = http_get("https://example.com/image.png", { binary = true })
+if r.success then
+    -- r.body = {137, 80, 78, 71, ...} — таблица байтов (1-based Lua-таблица)
+    local bytes = r.body
+    print("Size: " .. #bytes .. " bytes")
+    -- Проверяем PNG-заголовок (первые 8 байт: 0x89 0x50 0x4E 0x47)
+    if bytes[1] == 0x89 and bytes[2] == 0x50 then
+        print("Valid PNG")
+    end
+end
+
 -- Проверка результата
 if not r.success then
     log_error("Request failed: code=" .. tostring(r.code))
     return { items = {}, hasNext = false }
 end
--- r.body  — строка с телом ответа
+-- r.body  — строка с телом ответа (или таблица байтов при binary = true)
 -- r.code  — HTTP код (200, 404, ...)
+-- r.headers — таблица заголовков ответа (работает одинаково для текста и бинарного режима)
 ```
 
 ### http_post(url, body [, config])
@@ -440,11 +453,12 @@ local r = http_post(
 )
 ```
 
-### http_get_batch(urls_table)
+### http_get_batch(urls_table [, config])
 
 Параллельная загрузка нескольких URL. Порядок ответов соответствует порядку запросов.
 
 ```lua
+-- Текстовый режим (по умолчанию)
 local urls = {}
 for p = 2, maxPage do
     table.insert(urls, baseUrl .. "/chapters?page=" .. p)
@@ -453,10 +467,31 @@ end
 local results = http_get_batch(urls)
 for i, res in ipairs(results) do
     if res.success then
-        -- обрабатываем res.body
+        -- res.body — строка
+    end
+end
+
+-- Бинарный режим — для пакетной загрузки изображений и прочих бинарных данных
+local cover_urls = {
+    "https://example.com/cover1.jpg",
+    "https://example.com/cover2.jpg",
+    "https://example.com/cover3.jpg"
+}
+
+local results = http_get_batch(cover_urls, { binary = true })
+for i, res in ipairs(results) do
+    if res.success then
+        -- res.body — таблица байтов (1-based)
+        print("Cover " .. i .. ": " .. #res.body .. " bytes")
     end
 end
 ```
+
+> **Примечание о `binary = true`:**
+> - `resp.body` возвращается как Lua-таблица `{0x89, 0x50, 0x4E, ...}` (1-based) вместо строки
+> - Бинарные ответы **не кэшируются** (TTL-кэш работает только для текста)
+> - `resp.code`, `resp.headers`, `resp.success` работают одинаково для обоих режимов
+> - Используй `#resp.body` для определения размера в байтах
 
 ### Работа с cookies
 
@@ -1526,9 +1561,9 @@ end
 
 | Функция | Описание |
 |---|---|
-| `http_get(url [, config])` | GET запрос → `{success, body, code}` |
+| `http_get(url [, config])` | GET запрос → `{success, body, code}` (body — строка или таблица байтов при `binary = true`) |
 | `http_post(url, body [, config])` | POST запрос → `{success, body, code}` |
-| `http_get_batch(urls)` | Параллельный GET → массив `{success, body, code}` |
+| `http_get_batch(urls [, config])` | Параллельный GET → массив `{success, body, code}` (поддерживает `binary = true`) |
 | `get_cookies(url)` | Получить cookies для домена → таблица |
 | `set_cookies(url, table)` | Установить cookies |
 
