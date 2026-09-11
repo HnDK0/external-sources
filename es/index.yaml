@@ -1,0 +1,9 @@
+language: "es"
+name: "Es"
+sources:
+  - id: "doujinhentai"
+    name: "DoujinHentai"
+    version: "2.8.0"
+    url: "https://raw.githubusercontent.com/HnDK0/external-sources/refs/heads/main/es/doujinhentai.lua"
+    icon: "icons/doujinhentai.png"
+    language: "es"
