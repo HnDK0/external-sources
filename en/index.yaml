@@ -39,7 +39,7 @@ sources:
     language: "en"
   - id: "hitomi"
     name: "Hitomi"
-    version: "1.13.3"
+    version: "1.14.2"
     url: "https://raw.githubusercontent.com/HnDK0/external-sources/refs/heads/main/en/hitomi.lua"
     icon: "https://raw.githubusercontent.com/HnDK0/external-sources/refs/heads/main/icons/hitomi.png"
     language: "en"
