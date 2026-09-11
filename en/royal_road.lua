@@ -1,7 +1,7 @@
 -- ── Метаданные ────────────────────────────────────────────────────────────────
 id       = "royal_road"
 name     = "Royal Road"
-version  = "1.1.6"
+version  = "1.1.7"
 baseUrl  = "https://www.royalroad.com"
 language = "en"
 icon     = "https://raw.githubusercontent.com/HnDK0/external-sources/main/icons/royalroad.png"
@@ -22,6 +22,12 @@ local function applyStandardContentTransforms(text)
   text = regex_replace(text, "(?i)" .. domain .. ".*?\\n", "")
   text = regex_replace(text, "(?i)\\A[\\s\\p{Z}\\uFEFF]*((Chapter\\s+\\d+)[^\\n\\r]*[\\n\\r\\s]*)+", "")
   text = regex_replace(text, "(?im)^\\s*(Translator|Editor|Proofreader|Read\\s+(at|on|latest))[:\\s][^\\n\\r]{0,70}(\\r?\\n|$)", "")
+  -- Anti-piracy: "If you come across this story on Amazon..." / "This tale has been pilfered..."
+  text = regex_replace(text, "(?i)If you come across this story.*?Please report it\\.?", "")
+  text = regex_replace(text, "(?i)This story has been stolen.*?Please report it\\.?", "")
+  text = regex_replace(text, "(?i)This tale has been pilfered.*?kindly file a report\\.?", "")
+  -- Убираем множественные пустые строки (3+ → 2)
+  text = regex_replace(text, "\\n{3,}", "\\n\\n")
   text = string_trim(text)
   return text
 end
@@ -166,7 +172,10 @@ end
 -- ── Текст главы ───────────────────────────────────────────────────────────────
 
 function getChapterText(html, url)
-  local cleaned = html_remove(html, "script", "style", "a", ".ads-title")
+  -- Удаляем рекламу, навигацию и авторские заметки
+  local cleaned = html_remove(html, "script", "style", "a", "noscript",
+    ".ads-title", ".author-note-portlet", ".nav-buttons", "hr",
+    ".dKKumhSnWiFq75vPUVtmTanQ")
   local el = html_select_first(cleaned, ".chapter-content")
   if not el then return "" end
   return applyStandardContentTransforms(html_text(el.html))

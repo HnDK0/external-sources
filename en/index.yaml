@@ -123,7 +123,7 @@ sources:
     language: "en"
   - id: "royal_road"
     name: "Royal Road"
-    version: "1.1.6"
+    version: "1.1.7"
     url: "https://raw.githubusercontent.com/HnDK0/external-sources/refs/heads/main/en/royal_road.lua"
     icon: "https://raw.githubusercontent.com/HnDK0/external-sources/refs/heads/main/icons/royalroad.png"
     language: "en"
