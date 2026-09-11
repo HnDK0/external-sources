@@ -1,7 +1,7 @@
 -- ── Метаданные ────────────────────────────────────────────────────────────────
 id       = "NovelArrow"
 name     = "Novel Arrow"
-version  = "1.0.4"
+version  = "1.0.5"
 baseUrl  = "https://novelarrow.com/"
 language = "en"
 icon     = "https://raw.githubusercontent.com/HnDK0/external-sources/main/icons/novelarrow.png"
@@ -396,6 +396,7 @@ function getFilterList()
                 { value = "COMEDY",        label = "Comedy"        },
                 { value = "DRAMA",         label = "Drama"         },
                 { value = "EASTERN",       label = "Eastern"       },
+                { value = "ECCHI",         label = "Ecchi"         },
                 { value = "FAN-FICTION",   label = "Fan-fiction"   },
                 { value = "FANTASY",       label = "Fantasy"       },
                 { value = "GAME",          label = "Game"          },
