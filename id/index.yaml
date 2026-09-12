@@ -15,7 +15,7 @@ sources:
     language: "id"
   - id: "komiku"
     name: "Komiku"
-    version: "1.1.0"
+    version: "1.0.0"
     url: "https://raw.githubusercontent.com/HnDK0/external-sources/refs/heads/main/id/komiku.lua"
     icon: "https://raw.githubusercontent.com/HnDK0/external-sources/refs/heads/main/icons/komiku.png"
     language: "id"
