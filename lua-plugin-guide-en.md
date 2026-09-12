@@ -91,9 +91,26 @@ language = "en"               -- ISO 639-1: "en", "ru", "ja", "zh", "id"
 icon     = "https://..."      -- icon URL (optional)
 charset  = "UTF-8"            -- response encoding (optional, default UTF-8)
 content_type = "manga"        -- ONLY for manga; omit for novels (default: novel)
+cf_options  = {               -- Cloudflare/WAF bypass settings (optional)
+    whitelist = false,         -- true = engine does NOT bypass CF for this host
+    ignore_markers = {        -- domains with these markers are skipped
+        "cf-wrapper", "cf-error-details"
+    },
+    trigger_markers = {       -- domains with these markers are sent to bypass
+        "/WAF/VERIFY/CAPTCHA", "but-captcha"
+    },
+}
 ```
 
 **Important about `id`:** it must match the `.lua` file name without the extension. If `id = "royal_road"`, the file must be named `royal_road.lua`.
+
+**`cf_options`** controls the behavior of the engine's built-in Cloudflare bypass. When a site returns a CF challenge (HTTP 200/403/503/429 with `cf-challenge`, `__cf_chl_`, `cf-browser-verification` in headers or `Server: cloudflare`), the engine automatically solves Turnstile in a hidden WebView and bakes `cf_clearance`. `cf_options` affects this process:
+
+- `whitelist = true` — engine **skips** bypass and returns the response as-is. Use when the site works correctly without bypass (CF is on CDN but content is accessible directly) or when bypass breaks authentication.
+- `ignore_markers` — domains whose URL contains one of these markers are **skipped** by bypass (same behavior as `whitelist`).
+- `trigger_markers` — domains whose URL contains one of these markers are **always** sent to bypass, even if bypass would not normally trigger.
+
+If `cf_options` is not specified, the engine bypasses CF automatically based on response headers.
 
 ---
 
