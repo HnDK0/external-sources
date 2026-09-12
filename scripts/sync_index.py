@@ -112,11 +112,12 @@ def parse_lua(filepath: Path) -> dict | None:
         return None
 
     return {
-        "id":      plugin_id,
-        "name":    field("name") or plugin_id,
-        "version": version,
-        "icon":    field("icon") or "",
-        "status":  field("status"),  # None, если поля нет; "dead" если плагин мёртв
+        "id":           plugin_id,
+        "name":         field("name") or plugin_id,
+        "version":      version,
+        "icon":         field("icon") or "",
+        "status":       field("status"),  # None, если поля нет; "dead" если плагин мёртв
+        "content_type": field("content_type"),
     }
 
 # ── Генерация index.yaml ──────────────────────────────────────────────────────
@@ -136,6 +137,8 @@ def build_lang_index(plugins: list[dict], lang_code: str, lang_name: str) -> str
             f'    icon: "{p["icon"]}"',
             f'    language: "{lang_code}"',
         ]
+        if p.get("content_type"):
+            lines.append(f'    content_type: "{p["content_type"]}"')
     return "\n".join(lines) + "\n"
 
 def build_root_index(langs: list[dict], raw_base: str) -> str:
@@ -204,11 +207,12 @@ def sync(root: Path):
                 icon = re.sub(r"https://raw\.githubusercontent\.com/[^/]+/[^/]+/(?:refs/heads/)?[^/]+",
                               raw_base, icon)
             plugins.append({
-                "id":      meta["id"],
-                "name":    meta["name"],
-                "version": meta["version"],
-                "url":     f"{raw_base}/{lang_dir}/{lua_file.name}",
-                "icon":    icon,
+                "id":           meta["id"],
+                "name":         meta["name"],
+                "version":      meta["version"],
+                "url":          f"{raw_base}/{lang_dir}/{lua_file.name}",
+                "icon":         icon,
+                "content_type": meta["content_type"],
             })
             print(f"  {meta['id']} v{meta['version']}")
 

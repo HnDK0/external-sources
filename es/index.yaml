@@ -7,3 +7,4 @@ sources:
     url: "https://raw.githubusercontent.com/HnDK0/external-sources/refs/heads/main/es/doujinhentai.lua"
     icon: "https://raw.githubusercontent.com/HnDK0/external-sources/refs/heads/main/icons/doujinhentai.png"
     language: "es"
+    content_type: "manga"

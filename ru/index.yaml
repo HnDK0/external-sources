@@ -13,6 +13,7 @@ sources:
     url: "https://raw.githubusercontent.com/HnDK0/external-sources/refs/heads/main/ru/desu.lua"
     icon: "https://raw.githubusercontent.com/HnDK0/external-sources/refs/heads/main/icons/desu.png"
     language: "ru"
+    content_type: "manga"
   - id: "ifreedom"
     name: "iFreedom"
     version: "1.1.6"
