@@ -26,6 +26,7 @@ local function applyStandardContentTransforms(text)
   text = regex_replace(text, "(?i)If you come across this story.*?Please report it\\.?", "")
   text = regex_replace(text, "(?i)This story has been stolen.*?Please report it\\.?", "")
   text = regex_replace(text, "(?i)This tale has been pilfered.*?kindly file a report\\.?", "")
+  text = regex_replace(text, "(?i)The tale has been illicitly lifted.*?report the violation\\.?", "")
   -- Убираем множественные пустые строки (3+ → 2)
   text = regex_replace(text, "\\n{3,}", "\\n\\n")
   text = string_trim(text)
@@ -175,7 +176,7 @@ function getChapterText(html, url)
   -- Удаляем рекламу, навигацию и авторские заметки
   local cleaned = html_remove(html, "script", "style", "a", "noscript",
     ".ads-title", ".author-note-portlet", ".nav-buttons", "hr",
-    ".dKKumhSnWiFq75vPUVtmTanQ")
+    ".dKKumhSnWiFq75vPUVtmTanQ", "[class^='cm']")
   local el = html_select_first(cleaned, ".chapter-content")
   if not el then return "" end
   return applyStandardContentTransforms(html_text(el.html))
