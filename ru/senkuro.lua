@@ -1,6 +1,6 @@
 id       = "senkuro"
 name     = "Senkuro"
-version  = "1.0.0"
+version  = "1.0.2"
 baseUrl  = "https://senkuro.org/"
 language = "ru"
 icon     = "https://raw.githubusercontent.com/HnDK0/external-sources/main/icons/senkuro.png"
@@ -67,7 +67,7 @@ function getCatalogList(index)
             cover = cover,
         }
         if node.score and node.score > 0 then
-            item.rating = string.format("%.1f/10", node.score)
+            item.rating = tostring(node.score) .. "/10"
         end
         table.insert(items, item)
     end
@@ -108,7 +108,7 @@ function getCatalogSearch(index, query)
                 cover = cover,
             }
             if node.score and node.score > 0 then
-                item.rating = string.format("%.1f/10", node.score)
+                item.rating = tostring(node.score) .. "/10"
             end
             table.insert(items, item)
         end
@@ -398,7 +398,7 @@ function getCatalogFiltered(index, filters)
             cover = cover,
         }
         if node.score and node.score > 0 then
-            item.rating = string.format("%.1f/10", node.score)
+            item.rating = tostring(node.score) .. "/10"
         end
         table.insert(items, item)
     end
@@ -418,7 +418,7 @@ local function fetchMangaDetail(slug)
     if _mangaDetailCache[slug] then return _mangaDetailCache[slug] end
 
     local q = string.format(
-        '{ manga(slug: "%s") { id slug titles { lang content } cover { original { url } } labels { titles { lang content } } status type rating score views chapters branches { id lang } } }',
+        '{ manga(slug: "%s") { id slug titles { lang content } cover { original { url } } labels { titles { lang content } } status type rating score views chapters branches { id lang } localizations { lang description { __typename ... on TiptapNodeNestedBlock { type content { __typename ... on TiptapNodeText { type text } } } } } updatedAt } }',
         slug)
     local d = gql(q)
     if not d or not d.data or not d.data.manga then return nil end
@@ -453,7 +453,35 @@ function getBookCoverImageUrl(bookUrl)
 end
 
 function getBookDescription(bookUrl)
-    return ""
+    local slug = bookSlug(bookUrl)
+    if not slug then return "" end
+    local detail = fetchMangaDetail(slug)
+    if not detail or not detail.localizations then return "" end
+
+    local loc
+    for _, l in ipairs(detail.localizations) do
+        if l.lang == "RU" and l.description then loc = l break end
+    end
+    if not loc then
+        for _, l in ipairs(detail.localizations) do
+            if l.description then loc = l break end
+        end
+    end
+    if not loc then return "" end
+
+    local parts = {}
+    for _, block in ipairs(loc.description) do
+        if block.type == "paragraph" and block.content then
+            local line = {}
+            for _, node in ipairs(block.content) do
+                if node.type == "text" and node.text then
+                    table.insert(line, node.text)
+                end
+            end
+            if #line > 0 then table.insert(parts, table.concat(line)) end
+        end
+    end
+    return table.concat(parts, "\n")
 end
 
 function getBookGenres(bookUrl)
@@ -482,7 +510,7 @@ function getBookRating(bookUrl)
         if detail and detail.rating then return detail.rating end
         return ""
     end
-    return string.format("%.1f/10", detail.score)
+    return tostring(detail.score) .. "/10"
 end
 
 function getBookStatus(bookUrl)
@@ -504,25 +532,9 @@ function getBookLastUpdate(bookUrl)
     local slug = bookSlug(bookUrl)
     if not slug then return "" end
     local detail = fetchMangaDetail(slug)
-    if not detail then return "" end
-    local branchId = findRUBranch(detail.branches)
-    if not branchId then return "" end
-
-    local q = string.format(
-        '{ mangaChapters(branchId: "%s", orderBy: { field: NUMBER, direction: DESC }, first: 1) { edges { node { createdAt } } } }',
-        branchId)
-    local d = gql(q)
-    if not d or not d.data or not d.data.mangaChapters or not d.data.mangaChapters.edges then return "" end
-
-    local edges = d.data.mangaChapters.edges
-    if #edges == 0 then return "" end
-
-    local created = edges[1].node.createdAt
-    if created then
-        local datePart = string.match(created, "^(%d%d%d%d-%d%d-%d%d)")
-        return datePart or created
-    end
-    return ""
+    if not detail or not detail.updatedAt then return "" end
+    local datePart = string.match(detail.updatedAt, "^(%d%d%d%d%-%d%d%-%d%d)")
+    return datePart or detail.updatedAt
 end
 
 local _chaptersCache = {}

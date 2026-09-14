@@ -3,7 +3,7 @@
 
 id = "doujinhentai"
 name = "DoujinHentai"
-version = "1.0.0"
+version = "1.0.1"
 baseUrl = "https://doujinhentai.net/"
 icon = "https://raw.githubusercontent.com/HnDK0/external-sources/main/icons/doujinhentai.png"
 language = "es"
@@ -114,56 +114,56 @@ function getFilterList()
     return {
         {
             key = "genre",
-            name = "Género",
+            label = "Género",
             type = "select",
             options = {
-                { name = "Todos", value = "" },
-                { name = "Ecchi", value = "ecchi" },
-                { name = "Yaoi", value = "yaoi" },
-                { name = "Yuri", value = "yuri" },
-                { name = "Anal", value = "anal" },
-                { name = "Tetonas", value = "tetonas" },
-                { name = "Escolares", value = "escolares" },
-                { name = "Incesto", value = "incesto" },
-                { name = "Virgenes", value = "virgenes" },
-                { name = "Masturbacion", value = "masturbacion" },
-                { name = "Maduras", value = "maduras" },
-                { name = "Lolicon", value = "lolicon" },
-                { name = "Bikini", value = "bikini" },
-                { name = "Sirvientas", value = "sirvientas" },
-                { name = "Enfermera", value = "enfermera" },
-                { name = "Embarazada", value = "embarazada" },
-                { name = "Ahegao", value = "ahegao" },
-                { name = "Casadas", value = "casadas" },
-                { name = "Chica con Pene", value = "chica-con-pene" },
-                { name = "Juguetes Sexuales", value = "juguetes-sexuales" },
-                { name = "Orgias", value = "orgias" },
-                { name = "Harem", value = "harem" },
-                { name = "Romance", value = "romance" },
-                { name = "Profesores", value = "profesores" },
-                { name = "Tentaculos", value = "tentaculos" },
-                { name = "Mamadas", value = "mamadas" },
-                { name = "Shota", value = "shota" },
-                { name = "Interracial", value = "interracial" },
-                { name = "Full Color", value = "full-color" },
-                { name = "Sin Censura", value = "sin-censura" },
-                { name = "Futanari", value = "futanari" },
-                { name = "Doble Penetracion", value = "doble-penetracion" },
-                { name = "Cosplay", value = "cosplay" },
-                { name = "Manga", value = "manga" },
-                { name = "Doujinshi", value = "doujinshi" },
-                { name = "Grandes Pechos", value = "grandes-pechos" },
-                { name = "MILF", value = "milf" }
+                { label = "Todos", value = "" },
+                { label = "Ecchi", value = "ecchi" },
+                { label = "Yaoi", value = "yaoi" },
+                { label = "Yuri", value = "yuri" },
+                { label = "Anal", value = "anal" },
+                { label = "Tetonas", value = "tetonas" },
+                { label = "Escolares", value = "escolares" },
+                { label = "Incesto", value = "incesto" },
+                { label = "Virgenes", value = "virgenes" },
+                { label = "Masturbacion", value = "masturbacion" },
+                { label = "Maduras", value = "maduras" },
+                { label = "Lolicon", value = "lolicon" },
+                { label = "Bikini", value = "bikini" },
+                { label = "Sirvientas", value = "sirvientas" },
+                { label = "Enfermera", value = "enfermera" },
+                { label = "Embarazada", value = "embarazada" },
+                { label = "Ahegao", value = "ahegao" },
+                { label = "Casadas", value = "casadas" },
+                { label = "Chica con Pene", value = "chica-con-pene" },
+                { label = "Juguetes Sexuales", value = "juguetes-sexuales" },
+                { label = "Orgias", value = "orgias" },
+                { label = "Harem", value = "harem" },
+                { label = "Romance", value = "romance" },
+                { label = "Profesores", value = "profesores" },
+                { label = "Tentaculos", value = "tentaculos" },
+                { label = "Mamadas", value = "mamadas" },
+                { label = "Shota", value = "shota" },
+                { label = "Interracial", value = "interracial" },
+                { label = "Full Color", value = "full-color" },
+                { label = "Sin Censura", value = "sin-censura" },
+                { label = "Futanari", value = "futanari" },
+                { label = "Doble Penetracion", value = "doble-penetracion" },
+                { label = "Cosplay", value = "cosplay" },
+                { label = "Manga", value = "manga" },
+                { label = "Doujinshi", value = "doujinshi" },
+                { label = "Grandes Pechos", value = "grandes-pechos" },
+                { label = "MILF", value = "milf" }
             }
         },
         {
             key = "sort",
-            name = "Ordenar",
+            label = "Ordenar",
             type = "select",
             options = {
-                { name = "Últimos Agregados", value = "last" },
-                { name = "Más Vistos", value = "views" },
-                { name = "A-Z", value = "" }
+                { label = "Últimos Agregados", value = "last" },
+                { label = "Más Vistos", value = "views" },
+                { label = "A-Z", value = "" }
             }
         }
     }

@@ -1,7 +1,7 @@
 -- ── Метаданные ────────────────────────────────────────────────────────────────
 id       = "sto9"
 name     = "Sto9"
-version  = "1.0.5"
+version = "1.0.6"
 baseUrl  = "https://sto9.com/"
 language = "zh"
 icon     = "https://raw.githubusercontent.com/HnDK0/external-sources/main/icons/sto9.png"
@@ -72,7 +72,8 @@ end
 
 function getCatalogSearch(index, query)
   local page = index + 1
-  local encoded = url_encode(query)
+  local sanitized = query:gsub("[:%?%%#&]+", " ")
+  local encoded = url_encode(sanitized)
   local url = "https://sto9.com/search/" .. encoded .. "/" .. tostring(page) .. ".html"
   local r = http_get(url)
   if not r.success then

@@ -1,7 +1,7 @@
 -- ── Метаданные ────────────────────────────────────────────────────────────────
 id       = "piaotia"
 name     = "PiaoTia"
-version  = "1.0.1"
+version = "1.0.2"
 baseUrl  = "https://www.piaotia.com"
 language = "zh"
 charset  = "GBK"
@@ -76,7 +76,7 @@ function getCatalogList(index)
     end
   end
 
-  return { items = items, hasNext = #items > 0 }
+  return { items = items, hasNext = html_select_first(r.body, "a.next") ~= nil }
 end
 
 -- ── Поиск (GET, GBK, редирект на книгу при единственном результате) ───────────
@@ -88,26 +88,42 @@ function getCatalogSearch(index, query)
   local url = baseUrl .. "/modules/article/search.php?searchtype=articlename&searchkey=" .. encoded .. "&Submit=%CB%D1+%CB%F7&page=" .. tostring(page)
 
   local r = http_get(url, { charset = "GBK" })
-  if not r.success then return { items = {}, hasNext = false } end
 
-  -- Определяем — попали ли мы на страницу книги (редирект при 1 результате)
-  -- Jsoup не даёт финальный URL, зато можно проверить наличие canonical или og:url
-  local ogUrl = html_attr(r.body, "meta[property='og:url']", "content")
-  if ogUrl == "" then
-    ogUrl = html_attr(r.body, "link[rel='canonical']", "href")
+  -- Единственный результат: сайт отвечает 302 → /bookinfo/{folder}/{id}.html.
+  -- http_get в приложении не следует редиректам, поэтому берём Location сами.
+  if not r.success and r.code >= 300 and r.code < 400 then
+    local loc = r.headers["location"]
+    local bookUrl = loc and loc[1] or ""
+    if bookUrl ~= "" then
+      bookUrl = absUrl(bookUrl):gsub("^http://", "https://")
+      local title = ""
+      local br = http_get(bookUrl, { charset = "GBK" })
+      if br.success then
+        local titleEl = html_select_first(br.body, "div#content h1")
+        title = titleEl and string_clean(titleEl.text) or ""
+      end
+      return {
+        items = { { title = title, url = bookUrl, cover = buildCoverUrl(bookUrl) } },
+        hasNext = false
+      }
+    end
+    return { items = {}, hasNext = false }
   end
 
-  local isBookPage = string.find(r.body, "id=\"content\"") ~= nil
-                  and string.find(r.body, "bookinfo") ~= nil
+  if not r.success then return { items = {}, hasNext = false } end
 
-  if isBookPage and ogUrl ~= "" and string.find(ogUrl, "/bookinfo/") then
-    local titleEl = html_select_first(r.body, "div#content h1")
-    local title = titleEl and string_clean(titleEl.text) or ""
-    local bookUrl = absUrl(ogUrl)
-    return {
-      items = { { title = title, url = bookUrl, cover = buildCoverUrl(bookUrl) } },
-      hasNext = false
-    }
+  -- Если движок сам прошёл редирект и вернул страницу книги — это тоже 1 результат.
+  local titleEl = html_select_first(r.body, "div#content h1")
+  if titleEl then
+    local chLink = html_attr(r.body, "a[href*='/html/']", "href")
+    local folderId, bookId = string.match(chLink, "/(%d+)/(%d+)/")
+    if folderId then
+      local bookUrl = baseUrl .. "/bookinfo/" .. folderId .. "/" .. bookId .. ".html"
+      return {
+        items = { { title = string_clean(titleEl.text), url = bookUrl, cover = buildCoverUrl(bookUrl) } },
+        hasNext = false
+      }
+    end
   end
 
   local items = {}
@@ -119,7 +135,7 @@ function getCatalogSearch(index, query)
     end
   end
 
-  return { items = items, hasNext = #items > 0 }
+  return { items = items, hasNext = html_select_first(r.body, "a.next") ~= nil }
 end
 
 -- ── Детали книги ──────────────────────────────────────────────────────────────
