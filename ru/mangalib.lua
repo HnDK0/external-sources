@@ -1,7 +1,7 @@
 -- ── Метаданные ────────────────────────────────────────────────────────────────
 id       = "mangalib"
 name     = "MangaLib"
-version  = "1.6.0"
+version  = "1.7.0"
 baseUrl  = "https://mangalib.me/"
 language = "ru"
 icon     = "https://raw.githubusercontent.com/HnDK0/external-sources/main/icons/mangalib.png"
@@ -323,7 +323,7 @@ function getChapterList(bookUrl)
 
   if isErrorResponse(r.body) then
     show_error("Ошибка загрузки", "Не удалось загрузить список глав.\nВозможно, требуется авторизация.")
-    return {}
+    return nil
   end
 
   local parsed = json_parse(r.body)
@@ -460,7 +460,7 @@ local function fetchChapterPages(chapterUrl)
 
   if isErrorResponse(r.body) then
     show_error("Ошибка загрузки", "Не удалось загрузить страницы главы.\nТребуется авторизация.")
-    return {}
+    return nil
   end
 
   local parsed = json_parse(r.body)
@@ -475,7 +475,7 @@ local function fetchChapterPages(chapterUrl)
     if price > 0 then msg = msg .. "\nЦена: " .. tostring(price) .. " ₽" end
     msg = msg .. "\nКупить можно на mangalib.me"
     show_error("Платная глава", msg)
-    return {}
+    return nil
   end
 
   if data.bundle and data.bundle.is_open == false then
@@ -486,7 +486,7 @@ local function fetchChapterPages(chapterUrl)
     if price > 0 then msg = msg .. "\nЦена: " .. tostring(price) .. " ₽" end
     msg = msg .. "\nКупить можно на mangalib.me"
     show_error("Платный том", msg)
-    return {}
+    return nil
   end
 
   if data.pages and type(data.pages) == "table" then
