@@ -1,28 +1,28 @@
 languages:
   ar:
     name: "Arabic"
-    url: "https://raw.githubusercontent.com/HnDK0/external-sources/refs/heads/mangatest/ar/index.yaml"
+    url: "https://raw.githubusercontent.com/HnDK0/external-sources/refs/heads/mangatest2/ar/index.yaml"
   en:
     name: "English"
-    url: "https://raw.githubusercontent.com/HnDK0/external-sources/refs/heads/mangatest/en/index.yaml"
+    url: "https://raw.githubusercontent.com/HnDK0/external-sources/refs/heads/mangatest2/en/index.yaml"
   es:
     name: "Es"
-    url: "https://raw.githubusercontent.com/HnDK0/external-sources/refs/heads/mangatest/es/index.yaml"
+    url: "https://raw.githubusercontent.com/HnDK0/external-sources/refs/heads/mangatest2/es/index.yaml"
   fr:
     name: "Fr"
-    url: "https://raw.githubusercontent.com/HnDK0/external-sources/refs/heads/mangatest/fr/index.yaml"
+    url: "https://raw.githubusercontent.com/HnDK0/external-sources/refs/heads/mangatest2/fr/index.yaml"
   id:
     name: "Indonesian"
-    url: "https://raw.githubusercontent.com/HnDK0/external-sources/refs/heads/mangatest/id/index.yaml"
+    url: "https://raw.githubusercontent.com/HnDK0/external-sources/refs/heads/mangatest2/id/index.yaml"
   ja:
     name: "Japanese"
-    url: "https://raw.githubusercontent.com/HnDK0/external-sources/refs/heads/mangatest/ja/index.yaml"
+    url: "https://raw.githubusercontent.com/HnDK0/external-sources/refs/heads/mangatest2/ja/index.yaml"
   mtl:
     name: "Mtl"
-    url: "https://raw.githubusercontent.com/HnDK0/external-sources/refs/heads/mangatest/mtl/index.yaml"
+    url: "https://raw.githubusercontent.com/HnDK0/external-sources/refs/heads/mangatest2/mtl/index.yaml"
   ru:
     name: "Russian"
-    url: "https://raw.githubusercontent.com/HnDK0/external-sources/refs/heads/mangatest/ru/index.yaml"
+    url: "https://raw.githubusercontent.com/HnDK0/external-sources/refs/heads/mangatest2/ru/index.yaml"
   zh:
     name: "Chinese"
-    url: "https://raw.githubusercontent.com/HnDK0/external-sources/refs/heads/mangatest/zh/index.yaml"
+    url: "https://raw.githubusercontent.com/HnDK0/external-sources/refs/heads/mangatest2/zh/index.yaml"
