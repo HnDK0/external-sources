@@ -1,7 +1,7 @@
 -- ── Метаданные ────────────────────────────────────────────────────────────────
 id       = "hentailib"
 name     = "HentaiLib"
-version  = "1.2.0"
+version  = "1.3.0"
 baseUrl  = "https://hentailib.me/"
 language = "ru"
 icon     = "https://raw.githubusercontent.com/HnDK0/external-sources/main/icons/hentailib.png"
@@ -440,7 +440,7 @@ local function fetchChapterPages(chapterUrl)
     for _, page in ipairs(data.pages) do
       local url = page.url
       if url and url ~= "" then
-        if not url:find("://") then url = "https:" .. url end
+        if not url:find("://") then url = "https://img2h.hentaicdn.org" .. url end
         table.insert(pages, url)
       end
     end

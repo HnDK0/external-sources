@@ -1,7 +1,7 @@
 -- ── Метаданные ────────────────────────────────────────────────────────────────
 id       = "mangalib"
 name     = "MangaLib"
-version  = "1.2.0"
+version  = "1.3.0"
 baseUrl  = "https://mangalib.me/"
 language = "ru"
 icon     = "https://raw.githubusercontent.com/HnDK0/external-sources/main/icons/mangalib.png"
@@ -443,7 +443,7 @@ local function fetchChapterPages(chapterUrl)
     for _, page in ipairs(data.pages) do
       local url = page.url
       if url and url ~= "" then
-        if not url:find("://") then url = "https:" .. url end
+        if not url:find("://") then url = "https://img2.imglib.info" .. url end
         table.insert(pages, url)
       end
     end
