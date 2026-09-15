@@ -1,7 +1,7 @@
 -- ── Метаданные ────────────────────────────────────────────────────────────────
 id       = "ranobelib"
 name     = "RanobeLib"
-version  = "1.1.0"
+version  = "1.1.1"
 baseUrl  = "https://ranobelib.me/"
 language = "ru"
 icon     = "https://raw.githubusercontent.com/HnDK0/external-sources/main/icons/ranobelib.png"
@@ -10,6 +10,27 @@ icon     = "https://raw.githubusercontent.com/HnDK0/external-sources/main/icons/
 
 local apiBase  = "https://api.cdnlibs.org/api/manga/"
 local siteId   = "3"
+
+local userId = nil
+
+local function parseAuth()
+  if not get_localStorage then return nil, nil end
+  for _, domain in ipairs({"ranobelib.me", "mangalib.me", "hentailib.me"}) do
+    local raw = get_localStorage(domain, "auth")
+    if raw and raw ~= "" then
+      local ok, data = pcall(json_parse, raw)
+      if ok and data then
+        local at = data.token and data.token.access_token
+        local uid = data.auth and data.auth.id
+        if at and uid then
+          userId = tostring(uid)
+          return "Bearer " .. at, userId
+        end
+      end
+    end
+  end
+  return nil, nil
+end
 
 local function buildHeaders()
   local h = {
@@ -23,19 +44,10 @@ local function buildHeaders()
     ["Sec-Fetch-Mode"]   = "cors",
     ["Sec-Fetch-Site"]   = "cross-site",
   }
-  if get_localStorage then
-    for _, domain in ipairs({"ranobelib.me", "mangalib.me", "hentailib.me"}) do
-      local token = get_localStorage(domain, "auth")
-      if token and token ~= "" then
-        h["Authorization"] = token
-        break
-      end
-    end
-  end
+  local token = parseAuth()
+  if token then h["Authorization"] = token end
   return h
 end
-
-local apiHeaders = buildHeaders()
 
 -- ── Хелперы ───────────────────────────────────────────────────────────────────
 
@@ -122,7 +134,7 @@ function getCatalogList(index)
               "&page=" .. tostring(page) ..
               "&sort_by=rating_score&sort_type=desc&chapters[min]=1"
 
-  local r = http_get(url, { headers = apiHeaders })
+  local r = http_get(url, { headers = buildHeaders() })
   if not r.success then return { items = {}, hasNext = false } end
 
   local parsed = json_parse(r.body)
@@ -157,7 +169,7 @@ function getCatalogSearch(index, query)
               "&page=" .. tostring(page) ..
               "&q=" .. url_encode(query)
 
-  local r = http_get(url, { headers = apiHeaders })
+  local r = http_get(url, { headers = buildHeaders() })
   if not r.success then return { items = {}, hasNext = false } end
 
   local parsed = json_parse(r.body)
@@ -189,7 +201,7 @@ end
 local function fetchBookJson(bookUrl)
   local slug = extractSlug(bookUrl)
   if not slug then return nil end
-  local r = http_get(apiBase .. slug, { headers = apiHeaders })
+  local r = http_get(apiBase .. slug, { headers = buildHeaders() })
   if not r.success then return nil end
   local parsed = json_parse(r.body)
   return parsed and parsed.data or nil
@@ -220,7 +232,7 @@ function getBookDescription(bookUrl)
   local slug = extractSlug(bookUrl)
   if not slug then return nil end
 
-  local r = http_get(apiBase .. slug .. "?fields[]=summary", { headers = apiHeaders })
+  local r = http_get(apiBase .. slug .. "?fields[]=summary", { headers = buildHeaders() })
   if not r.success then return nil end
 
   local parsed = json_parse(r.body)
@@ -260,7 +272,7 @@ function getBookGenres(bookUrl)
 
   local r = http_get(
     apiBase .. slug .. "?fields[]=genres&fields[]=tags",
-    { headers = apiHeaders }
+    { headers = buildHeaders() }
   )
   if not r.success then return {} end
 
@@ -295,7 +307,7 @@ function getBookRating(bookUrl)
 
   local r = http_get(
     apiBase .. slug .. "?fields[]=rate_avg&fields[]=rate",
-    { headers = apiHeaders }
+    { headers = buildHeaders() }
   )
   if not r.success then return nil end
 
@@ -312,7 +324,7 @@ end
 local function fetchBookStatusJson(bookUrl)
   local slug = extractSlug(bookUrl)
   if not slug then return nil end
-  local r = http_get(apiBase .. slug .. "?fields[]=updated_at", { headers = apiHeaders })
+  local r = http_get(apiBase .. slug .. "?fields[]=updated_at", { headers = buildHeaders() })
   if not r.success then return nil end
   local parsed = json_parse(r.body)
   return parsed and parsed.data or nil
@@ -348,7 +360,7 @@ function getChapterList(bookUrl)
     return {}
   end
 
-  local r = http_get(apiBase .. slug .. "/chapters", { headers = apiHeaders })
+  local r = http_get(apiBase .. slug .. "/chapters", { headers = buildHeaders() })
   if not r.success then
     log_error("ranobelib: chapters failed code=" .. tostring(r.code))
     return {}
@@ -387,7 +399,9 @@ function getChapterList(bookUrl)
     if isPaid then title = title .. " 🔒" end
 
     local chUrl = baseUrl .. "ru/" .. slug .. "/read/v" .. volume .. "/c" .. number
-    if bid ~= "0" then chUrl = chUrl .. "?bid=" .. bid end
+    local sep = "?"
+    if bid ~= "0" then chUrl = chUrl .. sep .. "bid=" .. bid; sep = "&" end
+    if userId then chUrl = chUrl .. sep .. "ui=" .. userId end
 
     table.insert(raw, {
       result = {
@@ -413,7 +427,7 @@ end
 function getChapterListHash(bookUrl)
   local slug = extractSlug(bookUrl)
   if not slug then return nil end
-  local r = http_get(apiBase .. slug .. "/chapters", { headers = apiHeaders })
+  local r = http_get(apiBase .. slug .. "/chapters", { headers = buildHeaders() })
   if not r.success then return nil end
   if isErrorResponse(r.body) then return nil end
   local parsed = json_parse(r.body)
@@ -499,7 +513,7 @@ function getChapterText(html, chapterUrl)
   local apiUrl = apiBase .. slug .. "/chapter?volume=" .. volume .. "&number=" .. number
   if bid then apiUrl = apiUrl .. "&branch_id=" .. bid end
 
-  local r = http_get(apiUrl, { headers = apiHeaders })
+  local r = http_get(apiUrl, { headers = buildHeaders() })
   if not r.success then
     show_error("Ошибка загрузки", "Не удалось загрузить страницы главы (HTTP " .. tostring(r.code) .. ").\nВозможно, глава не существует или требуется авторизация.")
     return ""
@@ -819,7 +833,7 @@ function getCatalogFiltered(index, filters)
   for _, v in ipairs(tags_inc)         do url = url .. "&tags[]="           .. v end
   for _, v in ipairs(tags_exc)         do url = url .. "&tags_exclude[]="   .. v end
 
-  local r = http_get(url, { headers = apiHeaders })
+  local r = http_get(url, { headers = buildHeaders() })
   if not r.success then return { items = {}, hasNext = false } end
 
   local parsed = json_parse(r.body)

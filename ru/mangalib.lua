@@ -1,7 +1,7 @@
 -- ── Метаданные ────────────────────────────────────────────────────────────────
 id       = "mangalib"
 name     = "MangaLib"
-version  = "1.0.1"
+version  = "1.0.2"
 baseUrl  = "https://mangalib.me/"
 language = "ru"
 icon     = "https://raw.githubusercontent.com/HnDK0/external-sources/main/icons/mangalib.png"
@@ -13,6 +13,27 @@ content_type = "manga"
 
 local apiBase  = "https://api.cdnlibs.org/api/manga/"
 local siteId   = "1"
+
+local userId = nil
+
+local function parseAuth()
+  if not get_localStorage then return nil, nil end
+  for _, domain in ipairs({"mangalib.me", "hentailib.me", "ranobelib.me"}) do
+    local raw = get_localStorage(domain, "auth")
+    if raw and raw ~= "" then
+      local ok, data = pcall(json_parse, raw)
+      if ok and data then
+        local at = data.token and data.token.access_token
+        local uid = data.auth and data.auth.id
+        if at and uid then
+          userId = tostring(uid)
+          return "Bearer " .. at, userId
+        end
+      end
+    end
+  end
+  return nil, nil
+end
 
 local function buildHeaders()
   local h = {
@@ -26,19 +47,10 @@ local function buildHeaders()
     ["Sec-Fetch-Mode"]   = "cors",
     ["Sec-Fetch-Site"]   = "cross-site",
   }
-  if get_localStorage then
-    for _, domain in ipairs({"mangalib.me", "hentailib.me", "ranobelib.me"}) do
-      local token = get_localStorage(domain, "auth")
-      if token and token ~= "" then
-        h["Authorization"] = token
-        break
-      end
-    end
-  end
+  local token = parseAuth()
+  if token then h["Authorization"] = token end
   return h
 end
-
-local apiHeaders = buildHeaders()
 
 -- ── Хелперы ───────────────────────────────────────────────────────────────────
 
@@ -80,8 +92,7 @@ local function extractSlug(bookUrl)
   local clean = bookUrl:gsub("/?$", "")
   local last = clean:match("([^/]+)$")
   if not last then return nil end
-  -- Handle "123--slug" and "manga--slug" format → strip prefix
-  return last:match("%-%-(.+)$") or last
+  return last
 end
 
 local function getPath(tbl, path)
@@ -115,7 +126,7 @@ function getCatalogList(index)
               "&page=" .. tostring(page) ..
               "&sort_by=rating_score&sort_type=desc&chapters[min]=1"
 
-  local r = http_get(url, { headers = apiHeaders })
+  local r = http_get(url, { headers = buildHeaders() })
   if not r.success then return { items = {}, hasNext = false } end
 
   local parsed = json_parse(r.body)
@@ -150,7 +161,7 @@ function getCatalogSearch(index, query)
               "&page=" .. tostring(page) ..
               "&q=" .. url_encode(query)
 
-  local r = http_get(url, { headers = apiHeaders })
+  local r = http_get(url, { headers = buildHeaders() })
   if not r.success then return { items = {}, hasNext = false } end
 
   local parsed = json_parse(r.body)
@@ -182,7 +193,7 @@ end
 local function fetchBookJson(bookUrl)
   local slug = extractSlug(bookUrl)
   if not slug then return nil end
-  local r = http_get(apiBase .. slug, { headers = apiHeaders })
+  local r = http_get(apiBase .. slug, { headers = buildHeaders() })
   if not r.success then return nil end
   if isErrorResponse(r.body) then return nil end
   local parsed = json_parse(r.body)
@@ -230,7 +241,7 @@ local mangaDetailFields = "fields[]=eng_name&fields[]=otherNames&fields[]=summar
 function getBookDescription(bookUrl)
   local slug = extractSlug(bookUrl)
   if not slug then return nil end
-  local r = http_get(apiBase .. slug .. "?" .. mangaDetailFields, { headers = apiHeaders })
+  local r = http_get(apiBase .. slug .. "?" .. mangaDetailFields, { headers = buildHeaders() })
   if not r.success then return nil end
   if isErrorResponse(r.body) then return nil end
   local parsed = json_parse(r.body)
@@ -252,7 +263,7 @@ function getBookGenres(bookUrl)
 
   local r = http_get(
     apiBase .. slug .. "?fields[]=genres&fields[]=tags",
-    { headers = apiHeaders }
+    { headers = buildHeaders() }
   )
   if not r.success then return {} end
 
@@ -282,7 +293,7 @@ function getBookRating(bookUrl)
 
   local r = http_get(
     apiBase .. slug .. "?fields[]=rate_avg&fields[]=rate",
-    { headers = apiHeaders }
+    { headers = buildHeaders() }
   )
   if not r.success then return nil end
 
@@ -294,7 +305,7 @@ end
 local function fetchBookStatusJson(bookUrl)
   local slug = extractSlug(bookUrl)
   if not slug then return nil end
-  local r = http_get(apiBase .. slug .. "?fields[]=updated_at", { headers = apiHeaders })
+  local r = http_get(apiBase .. slug .. "?fields[]=updated_at", { headers = buildHeaders() })
   if not r.success then return nil end
   if isErrorResponse(r.body) then return nil end
   local parsed = json_parse(r.body)
@@ -330,7 +341,7 @@ function getChapterList(bookUrl)
     return {}
   end
 
-  local r = http_get(apiBase .. slug .. "/chapters", { headers = apiHeaders })
+  local r = http_get(apiBase .. slug .. "/chapters", { headers = buildHeaders() })
   if not r.success then
     log_error("mangalib: chapters failed code=" .. tostring(r.code))
     return {}
@@ -369,7 +380,9 @@ function getChapterList(bookUrl)
     if isPaid then title = title .. " 🔒" end
 
     local chUrl = baseUrl .. "ru/" .. slug .. "/read/v" .. volume .. "/c" .. number
-    if bid ~= "0" then chUrl = chUrl .. "?bid=" .. bid end
+    local sep = "?"
+    if bid ~= "0" then chUrl = chUrl .. sep .. "bid=" .. bid; sep = "&" end
+    if userId then chUrl = chUrl .. sep .. "ui=" .. userId end
 
     table.insert(raw, {
       result = {
@@ -393,7 +406,7 @@ end
 function getChapterListHash(bookUrl)
   local slug = extractSlug(bookUrl)
   if not slug then return nil end
-  local r = http_get(apiBase .. slug .. "/chapters", { headers = apiHeaders })
+  local r = http_get(apiBase .. slug .. "/chapters", { headers = buildHeaders() })
   if not r.success then return nil end
   if isErrorResponse(r.body) then return nil end
   local parsed = json_parse(r.body)
@@ -471,7 +484,7 @@ local function fetchChapterPages(chapterUrl)
   if bid then apiUrl = apiUrl .. "&branch_id=" .. bid end
 
   log_error("mangalib DEBUG: apiUrl=" .. apiUrl)
-  local r = http_get(apiUrl, { headers = apiHeaders })
+  local r = http_get(apiUrl, { headers = buildHeaders() })
   log_error("mangalib DEBUG: success=" .. tostring(r.success) .. " code=" .. tostring(r.code) .. " bodyLen=" .. tostring(#(r.body or "")))
   if r.body then
     log_error("mangalib DEBUG: body(first500)=" .. tostring(r.body:sub(1, 500)))
@@ -745,7 +758,7 @@ function getCatalogFiltered(index, filters)
   for _, v in ipairs(genres_inc)       do url = url .. "&genres[]="         .. v end
   for _, v in ipairs(genres_exc)       do url = url .. "&genres_exclude[]=" .. v end
 
-  local r = http_get(url, { headers = apiHeaders })
+  local r = http_get(url, { headers = buildHeaders() })
   if not r.success then return { items = {}, hasNext = false } end
 
   local parsed = json_parse(r.body)
