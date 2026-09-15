@@ -1,7 +1,7 @@
 -- ── Метаданные ────────────────────────────────────────────────────────────────
 id       = "mangalib"
 name     = "MangaLib"
-version  = "1.7.0"
+version  = "1.7.1"
 baseUrl  = "https://mangalib.me/"
 language = "ru"
 icon     = "https://raw.githubusercontent.com/HnDK0/external-sources/main/icons/mangalib.png"
@@ -455,20 +455,33 @@ local function fetchChapterPages(chapterUrl)
   local apiUrl = apiBase .. slug .. "/chapter?volume=" .. volume .. "&number=" .. number
   if bid then apiUrl = apiUrl .. "&branch_id=" .. bid end
 
+  log_error("mangalib DEBUG: apiUrl=" .. apiUrl)
   local r = http_get(apiUrl, { headers = apiHeaders })
+  log_error("mangalib DEBUG: success=" .. tostring(r.success) .. " code=" .. tostring(r.code) .. " bodyLen=" .. tostring(#(r.body or "")))
+  if r.body then
+    log_error("mangalib DEBUG: body(first500)=" .. tostring(r.body:sub(1, 500)))
+  end
   if not r.success then return {} end
 
   if isErrorResponse(r.body) then
+    log_error("mangalib DEBUG: isErrorResponse=true")
     show_error("Ошибка загрузки", "Не удалось загрузить страницы главы.\nТребуется авторизация.")
     return nil
   end
 
   local parsed = json_parse(r.body)
-  if not parsed or not parsed.data then return {} end
+  if not parsed or not parsed.data then
+    log_error("mangalib DEBUG: parse failed or no data")
+    return {}
+  end
 
   local data = parsed.data
+  log_error("mangalib DEBUG: data keys=" .. tostring(data.pages and "has_pages" or "no_pages") .. " restricted_view=" .. tostring(data.restricted_view and "present" or "nil") .. " bundle=" .. tostring(data.bundle and "present" or "nil") .. " content=" .. tostring(data.content and "present" or "nil"))
 
   local rv = data.restricted_view
+  if rv then
+    log_error("mangalib DEBUG: restricted_view.is_open=" .. tostring(rv.is_open) .. " price=" .. tostring(rv.price))
+  end
   if rv and rv.is_open == false then
     local price = rv.price or 0
     local msg = "Эта глава является платной."
@@ -490,6 +503,7 @@ local function fetchChapterPages(chapterUrl)
   end
 
   if data.pages and type(data.pages) == "table" then
+    log_error("mangalib DEBUG: data.pages count=" .. tostring(#data.pages))
     local pages = {}
     for _, page in ipairs(data.pages) do
       local url = page.url
@@ -498,11 +512,13 @@ local function fetchChapterPages(chapterUrl)
         table.insert(pages, url)
       end
     end
+    log_error("mangalib DEBUG: returning pages count=" .. tostring(#pages))
     return pages
   end
 
   local contentNode = data.content
   local attachments = data.attachments
+  log_error("mangalib DEBUG: contentNode=" .. tostring(contentNode and "present" or "nil") .. " attachments=" .. tostring(attachments and "present" or "nil"))
 
   local attachMap = {}
   if attachments then
@@ -542,6 +558,7 @@ local function fetchChapterPages(chapterUrl)
     extractImages(contentNode)
   end
 
+  log_error("mangalib DEBUG: final pages count=" .. tostring(#pages))
   return pages
 end
 
