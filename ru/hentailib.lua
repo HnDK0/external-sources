@@ -1,7 +1,7 @@
 -- ── Метаданные ────────────────────────────────────────────────────────────────
 id       = "hentailib"
 name     = "HentaiLib"
-version  = "1.0.0"
+version  = "1.0.1"
 baseUrl  = "https://hentailib.me/"
 language = "ru"
 icon     = "https://raw.githubusercontent.com/HnDK0/external-sources/main/icons/hentailib.png"
@@ -65,6 +65,7 @@ local function extractSlug(bookUrl)
   local clean = bookUrl:gsub("/?$", "")
   local last = clean:match("([^/]+)$")
   if not last then return nil end
+  -- Handle "123--slug" and "manga--slug" format → strip prefix
   return last:match("%-%-(.+)$") or last
 end
 
@@ -83,8 +84,6 @@ local function formatRating(avg)
   return avg .. "/10"
 end
 
--- Проверяет, является ли ответ HTML-страницей ошибки (вместо JSON).
--- API шлёт HTML 404-page для любых ошибок: авторизация, несуществующая глава и т.д.
 local function isErrorResponse(body)
   if not body or body == "" then return true end
   if body:sub(1, 15):find("<!DOCTYPE") or body:sub(1, 6):lower():find("<html") then
@@ -195,6 +194,22 @@ function getBookCoverImageUrl(bookUrl)
   return cover ~= "" and proxyCover(cover) or nil
 end
 
+local function extractTextFromTipTap(node)
+  if not node then return "" end
+  if type(node) == "string" then return node end
+  if type(node) ~= "table" then return "" end
+  local parts = {}
+  if node.type == "text" then
+    table.insert(parts, node.text or "")
+  end
+  if node.content and type(node.content) == "table" then
+    for _, child in ipairs(node.content) do
+      table.insert(parts, extractTextFromTipTap(child))
+    end
+  end
+  return table.concat(parts, "")
+end
+
 local mangaDetailFields = "fields[]=eng_name&fields[]=otherNames&fields[]=summary&fields[]=rate&fields[]=genres&fields[]=tags&fields[]=teams&fields[]=authors&fields[]=publisher&fields[]=userRating&fields[]=manga_status_id&fields[]=status_id&fields[]=artists"
 
 function getBookDescription(bookUrl)
@@ -206,28 +221,14 @@ function getBookDescription(bookUrl)
   local parsed = json_parse(r.body)
   local data = parsed and parsed.data
   if not data then return nil end
-  local desc = data.summary or data.description or ""
-  if type(desc) == "table" then
-    local parts = {}
-    local function extract(n)
-      if not n then return end
-      if type(n) == "string" then table.insert(parts, n); return end
-      if type(n) ~= "table" then return end
-      if n.type == "text" then table.insert(parts, n.text or "") end
-      if n.type == "hardBreak" then table.insert(parts, "\n") end
-      if n.type == "paragraph" then
-        if n.content and type(n.content) == "table" then
-          for _, c in ipairs(n.content) do extract(c) end
-        end
-        table.insert(parts, "\n")
-      elseif n.content and type(n.content) == "table" then
-        for _, c in ipairs(n.content) do extract(c) end
-      end
-    end
-    extract(desc)
-    desc = table.concat(parts, "")
+  local summary = data.summary
+  if summary and type(summary) == "table" then
+    local desc = extractTextFromTipTap(summary)
+    if string_trim(desc) ~= "" then return string_trim(desc) end
+  elseif summary and type(summary) == "string" then
+    if string_trim(summary) ~= "" then return string_trim(summary) end
   end
-  return string_trim(desc) ~= "" and string_trim(desc) or nil
+  return nil
 end
 
 function getBookGenres(bookUrl)
@@ -310,18 +311,18 @@ end
 function getChapterList(bookUrl)
   local slug = extractSlug(bookUrl)
   if not slug then
-    log_error("hentailib: cannot extract slug from " .. bookUrl)
+    log_error("mangalib: cannot extract slug from " .. bookUrl)
     return {}
   end
 
   local r = http_get(apiBase .. slug .. "/chapters", { headers = apiHeaders })
   if not r.success then
-    log_error("hentailib: chapters failed code=" .. tostring(r.code))
+    log_error("mangalib: chapters failed code=" .. tostring(r.code))
     return {}
   end
 
   if isErrorResponse(r.body) then
-    show_error("Ошибка загрузки", "Не удалось загрузить список глав.\nВозможно, требуется авторизация.")
+    if show_error then show_error("Ошибка загрузки", "Не удалось загрузить список глав.\nВозможно, требуется авторизация.") end
     return nil
   end
 
@@ -454,29 +455,42 @@ local function fetchChapterPages(chapterUrl)
   local apiUrl = apiBase .. slug .. "/chapter?volume=" .. volume .. "&number=" .. number
   if bid then apiUrl = apiUrl .. "&branch_id=" .. bid end
 
+  log_error("mangalib DEBUG: apiUrl=" .. apiUrl)
   local r = http_get(apiUrl, { headers = apiHeaders })
+  log_error("mangalib DEBUG: success=" .. tostring(r.success) .. " code=" .. tostring(r.code) .. " bodyLen=" .. tostring(#(r.body or "")))
+  if r.body then
+    log_error("mangalib DEBUG: body(first500)=" .. tostring(r.body:sub(1, 500)))
+  end
   if not r.success then
-    show_error("Ошибка загрузки", "Не удалось загрузить страницы главы (HTTP " .. tostring(r.code) .. ").\nВозможно, глава не существует или требуется авторизация.")
+    if show_error then show_error("Ошибка загрузки", "Не удалось загрузить страницы главы (HTTP " .. tostring(r.code) .. ").\nВозможно, глава не существует или требуется авторизация.") end
     return nil
   end
 
   if isErrorResponse(r.body) then
-    show_error("Ошибка загрузки", "Не удалось загрузить страницы главы.\nТребуется авторизация.")
+    log_error("mangalib DEBUG: isErrorResponse=true")
+    if show_error then show_error("Ошибка загрузки", "Не удалось загрузить страницы главы.\nТребуется авторизация.") end
     return nil
   end
 
   local parsed = json_parse(r.body)
-  if not parsed or not parsed.data then return {} end
+  if not parsed or not parsed.data then
+    log_error("mangalib DEBUG: parse failed or no data")
+    return {}
+  end
 
   local data = parsed.data
+  log_error("mangalib DEBUG: data keys=" .. tostring(data.pages and "has_pages" or "no_pages") .. " restricted_view=" .. tostring(data.restricted_view and "present" or "nil") .. " bundle=" .. tostring(data.bundle and "present" or "nil") .. " content=" .. tostring(data.content and "present" or "nil"))
 
   local rv = data.restricted_view
+  if rv then
+    log_error("mangalib DEBUG: restricted_view.is_open=" .. tostring(rv.is_open) .. " price=" .. tostring(rv.price))
+  end
   if rv and rv.is_open == false then
     local price = rv.price or 0
     local msg = "Эта глава является платной."
     if price > 0 then msg = msg .. "\nЦена: " .. tostring(price) .. " ₽" end
     msg = msg .. "\nКупить можно на hentailib.me"
-    show_error("Платная глава", msg)
+    if show_error then show_error("Платная глава", msg) end
     return nil
   end
 
@@ -487,11 +501,12 @@ local function fetchChapterPages(chapterUrl)
     if name ~= "" then msg = msg .. "\nБандл: " .. name end
     if price > 0 then msg = msg .. "\nЦена: " .. tostring(price) .. " ₽" end
     msg = msg .. "\nКупить можно на hentailib.me"
-    show_error("Платный том", msg)
+    if show_error then show_error("Платный том", msg) end
     return nil
   end
 
   if data.pages and type(data.pages) == "table" then
+    log_error("mangalib DEBUG: data.pages count=" .. tostring(#data.pages))
     local pages = {}
     for _, page in ipairs(data.pages) do
       local url = page.url
@@ -500,11 +515,13 @@ local function fetchChapterPages(chapterUrl)
         table.insert(pages, url)
       end
     end
+    log_error("mangalib DEBUG: returning pages count=" .. tostring(#pages))
     return pages
   end
 
   local contentNode = data.content
   local attachments = data.attachments
+  log_error("mangalib DEBUG: contentNode=" .. tostring(contentNode and "present" or "nil") .. " attachments=" .. tostring(attachments and "present" or "nil"))
 
   local attachMap = {}
   if attachments then
@@ -544,6 +561,7 @@ local function fetchChapterPages(chapterUrl)
     extractImages(contentNode)
   end
 
+  log_error("mangalib DEBUG: final pages count=" .. tostring(#pages))
   return pages
 end
 
