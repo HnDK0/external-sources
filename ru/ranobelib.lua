@@ -1,7 +1,7 @@
 -- ── Метаданные ────────────────────────────────────────────────────────────────
 id       = "ranobelib"
 name     = "RanobeLib"
-version  = "1.0.9"
+version  = "1.1.0"
 baseUrl  = "https://ranobelib.me/"
 language = "ru"
 icon     = "https://raw.githubusercontent.com/HnDK0/external-sources/main/icons/ranobelib.png"
@@ -10,17 +10,32 @@ icon     = "https://raw.githubusercontent.com/HnDK0/external-sources/main/icons/
 
 local apiBase  = "https://api.cdnlibs.org/api/manga/"
 local siteId   = "3"
-local apiHeaders = {
-  ["Site-Id"]          = siteId,
-  ["User-Agent"]       = "Mozilla/5.0 (Linux; Android 14; Pixel 8 Pro Build/UQ1A.240205.004) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/132.0.6834.83 Mobile Safari/537.36",
-  ["Accept"]           = "application/json, text/plain, */*",
-  ["Accept-Language"]  = "ru-RU,ru;q=0.9,en-US;q=0.8,en;q=0.7",
-  ["Referer"]          = "https://ranobelib.me/",
-  ["Origin"]           = "https://ranobelib.me",
-  ["Sec-Fetch-Dest"]   = "empty",
-  ["Sec-Fetch-Mode"]   = "cors",
-  ["Sec-Fetch-Site"]   = "cross-site",
-}
+
+local function buildHeaders()
+  local h = {
+    ["Site-Id"]          = siteId,
+    ["User-Agent"]       = "Mozilla/5.0 (Linux; Android 14; Pixel 8 Pro Build/UQ1A.240205.004) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/132.0.6834.83 Mobile Safari/537.36",
+    ["Accept"]           = "application/json, text/plain, */*",
+    ["Accept-Language"]  = "ru-RU,ru;q=0.9,en-US;q=0.8,en;q=0.7",
+    ["Referer"]          = "https://ranobelib.me/",
+    ["Origin"]           = "https://ranobelib.me",
+    ["Sec-Fetch-Dest"]   = "empty",
+    ["Sec-Fetch-Mode"]   = "cors",
+    ["Sec-Fetch-Site"]   = "cross-site",
+  }
+  if get_localStorage then
+    for _, domain in ipairs({"ranobelib.me", "mangalib.me", "hentailib.me"}) do
+      local token = get_localStorage(domain, "auth")
+      if token and token ~= "" then
+        h["Authorization"] = token
+        break
+      end
+    end
+  end
+  return h
+end
+
+local apiHeaders = buildHeaders()
 
 -- ── Хелперы ───────────────────────────────────────────────────────────────────
 
