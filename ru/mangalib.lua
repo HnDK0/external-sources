@@ -1,7 +1,7 @@
 -- ── Метаданные ────────────────────────────────────────────────────────────────
 id       = "mangalib"
 name     = "MangaLib"
-version  = "1.3.0"
+version  = "1.6.0"
 baseUrl  = "https://mangalib.me/"
 language = "ru"
 icon     = "https://raw.githubusercontent.com/HnDK0/external-sources/main/icons/mangalib.png"
@@ -84,6 +84,14 @@ local function formatRating(avg)
   return avg .. "/10"
 end
 
+local function isErrorResponse(body)
+  if not body or body == "" then return true end
+  if body:sub(1, 15):find("<!DOCTYPE") or body:sub(1, 6):lower():find("<html") then
+    return true
+  end
+  return false
+end
+
 -- ── Каталог (JSON API) ────────────────────────────────────────────────────────
 
 function getCatalogList(index)
@@ -161,6 +169,7 @@ local function fetchBookJson(bookUrl)
   if not slug then return nil end
   local r = http_get(apiBase .. slug, { headers = apiHeaders })
   if not r.success then return nil end
+  if isErrorResponse(r.body) then return nil end
   local parsed = json_parse(r.body)
   return parsed and parsed.data or nil
 end
@@ -208,6 +217,7 @@ function getBookDescription(bookUrl)
   if not slug then return nil end
   local r = http_get(apiBase .. slug .. "?" .. mangaDetailFields, { headers = apiHeaders })
   if not r.success then return nil end
+  if isErrorResponse(r.body) then return nil end
   local parsed = json_parse(r.body)
   local data = parsed and parsed.data
   if not data then return nil end
@@ -271,6 +281,7 @@ local function fetchBookStatusJson(bookUrl)
   if not slug then return nil end
   local r = http_get(apiBase .. slug .. "?fields[]=updated_at", { headers = apiHeaders })
   if not r.success then return nil end
+  if isErrorResponse(r.body) then return nil end
   local parsed = json_parse(r.body)
   return parsed and parsed.data or nil
 end
@@ -310,6 +321,11 @@ function getChapterList(bookUrl)
     return {}
   end
 
+  if isErrorResponse(r.body) then
+    show_error("Ошибка загрузки", "Не удалось загрузить список глав.\nВозможно, требуется авторизация.")
+    return {}
+  end
+
   local parsed = json_parse(r.body)
   if not parsed or not parsed.data then return {} end
 
@@ -319,15 +335,23 @@ function getChapterList(bookUrl)
     local number = tostring(chapter.number or "")
     local name   = chapter.name and chapter.name ~= "" and chapter.name or nil
     local bid    = "0"
+    local isPaid = false
     if chapter.branches and chapter.branches[1] then
-      local branchId = chapter.branches[1].branch_id
+      local br = chapter.branches[1]
+      local branchId = br.branch_id
       if branchId ~= nil and branchId ~= "" then
         bid = tostring(branchId)
       end
+      local rv = br.restricted_view
+      if rv and rv.is_open == false then
+        isPaid = true
+      end
     end
+    if chapter.bundle_id then isPaid = true end
 
     local title = "Том " .. volume .. " Глава " .. number
     if name then title = title .. " " .. name end
+    if isPaid then title = title .. " 🔒" end
 
     local chUrl = baseUrl .. "ru/" .. slug .. "/read/v" .. volume .. "/c" .. number
     if bid ~= "0" then chUrl = chUrl .. "?bid=" .. bid end
@@ -356,6 +380,7 @@ function getChapterListHash(bookUrl)
   if not slug then return nil end
   local r = http_get(apiBase .. slug .. "/chapters", { headers = apiHeaders })
   if not r.success then return nil end
+  if isErrorResponse(r.body) then return nil end
   local parsed = json_parse(r.body)
   if not parsed or not parsed.data then return nil end
   local chapters = parsed.data
@@ -420,7 +445,7 @@ end
 local function fetchChapterPages(chapterUrl)
   if not chapterUrl or chapterUrl == "" then return {} end
 
-  local slug   = chapterUrl:match("/ru/([^/]+)/read/")
+  local slug   = chapterUrl:match("/ru/manga/([^/]+)/read/")
   local volume = chapterUrl:match("/v([^/]+)/c")
   local number = chapterUrl:match("/c([^?]+)")
   local bid    = chapterUrl:match("[?&]bid=([^&]+)")
@@ -433,17 +458,43 @@ local function fetchChapterPages(chapterUrl)
   local r = http_get(apiUrl, { headers = apiHeaders })
   if not r.success then return {} end
 
+  if isErrorResponse(r.body) then
+    show_error("Ошибка загрузки", "Не удалось загрузить страницы главы.\nТребуется авторизация.")
+    return {}
+  end
+
   local parsed = json_parse(r.body)
   if not parsed or not parsed.data then return {} end
 
   local data = parsed.data
+
+  local rv = data.restricted_view
+  if rv and rv.is_open == false then
+    local price = rv.price or 0
+    local msg = "Эта глава является платной."
+    if price > 0 then msg = msg .. "\nЦена: " .. tostring(price) .. " ₽" end
+    msg = msg .. "\nКупить можно на mangalib.me"
+    show_error("Платная глава", msg)
+    return {}
+  end
+
+  if data.bundle and data.bundle.is_open == false then
+    local price = data.bundle.price or 0
+    local name = data.bundle.name or ""
+    local msg = "Эта глава является платной."
+    if name ~= "" then msg = msg .. "\nБандл: " .. name end
+    if price > 0 then msg = msg .. "\nЦена: " .. tostring(price) .. " ₽" end
+    msg = msg .. "\nКупить можно на mangalib.me"
+    show_error("Платный том", msg)
+    return {}
+  end
 
   if data.pages and type(data.pages) == "table" then
     local pages = {}
     for _, page in ipairs(data.pages) do
       local url = page.url
       if url and url ~= "" then
-        if not url:find("://") then url = "https://img2.imglib.info" .. url end
+        if not url:find("://") then url = "https://img3.cdnlibs.org" .. url end
         table.insert(pages, url)
       end
     end
