@@ -525,6 +525,25 @@ set_cookies("https://example.com", {
 })
 ```
 
+### Работа с localStorage
+
+Движок автоматически сохраняет localStorage из WebView при загрузке страниц (в `onPageFinished` и каждые 3 секунды). Плагины могут читать эти данные через `get_localStorage` — например, чтобы получить Bearer-токен или другой ключ авторизации.
+
+```lua
+-- Получить значение по URL и ключу
+local token = get_localStorage("https://example.com", "auth_token")
+if token and token ~= "" then
+    -- Используем токен в заголовках
+    local r = http_get(apiUrl, {
+        headers = {
+            ["Authorization"] = "Bearer " .. token,
+        }
+    })
+end
+```
+
+Данные кэшируются по хосту. Если пользователь уже залогинен на сайте — токен будет доступен сразу. Если ключ отсутствует — возвращается `nil`.
+
 ### Задержки (rate limiting)
 
 ```lua
@@ -1738,6 +1757,7 @@ end
 |---|---|
 | `get_preference(key)` | Чтение из SharedPreferences "lua_preferences" |
 | `set_preference(key, value)` | Запись в SharedPreferences "lua_preferences" |
+| `get_localStorage(url, key)` | Чтение значения из localStorage WebView по URL и ключу (returns `nil` если ключ не найден) |
 
 ### Утилиты
 

@@ -525,6 +525,25 @@ set_cookies("https://example.com", {
 })
 ```
 
+### Working with localStorage
+
+The engine automatically saves localStorage from the WebView when pages load (in `onPageFinished` and every 3 seconds). Plugins can read this data via `get_localStorage` — for example, to get a Bearer token or other auth key.
+
+```lua
+-- Get a value by URL and key
+local token = get_localStorage("https://example.com", "auth_token")
+if token and token ~= "" then
+    -- Use the token in headers
+    local r = http_get(apiUrl, {
+        headers = {
+            ["Authorization"] = "Bearer " .. token,
+        }
+    })
+end
+```
+
+Data is cached by host. If the user is already logged in on the site — the token is available immediately. If the key is absent — `nil` is returned.
+
 ### Delays (rate limiting)
 
 ```
@@ -1741,6 +1760,7 @@ end
 | ---------------------------------- | ----------------------------------------------------- |
 | `get_preference(key)`            | Read from SharedPreferences "lua_preferences"    |
 | `set_preference(key, value)`     | Write to SharedPreferences "lua_preferences"     |
+| `get_localStorage(url, key)`     | Read a value from WebView localStorage by URL and key (returns `nil` if key not found) |
 
 ### Utilities
 
