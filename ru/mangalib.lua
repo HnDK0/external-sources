@@ -445,7 +445,7 @@ end
 local function fetchChapterPages(chapterUrl)
   if not chapterUrl or chapterUrl == "" then return {} end
 
-  local slug   = chapterUrl:match("/ru/manga/([^/]+)/read/")
+  local slug   = chapterUrl:match("/ru/([^/]+)/read/")
   local volume = chapterUrl:match("/v([^/]+)/c")
   local number = chapterUrl:match("/c([^?]+)")
   local bid    = chapterUrl:match("[?&]bid=([^&]+)")
