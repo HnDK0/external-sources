@@ -91,6 +91,14 @@ local function formatRating(avg)
   return avg .. "/10"
 end
 
+local function isErrorResponse(body)
+  if not body or body == "" then return true end
+  if body:sub(1, 15):find("<!DOCTYPE") or body:sub(1, 6):lower():find("<html") then
+    return true
+  end
+  return false
+end
+
 -- ── Каталог (JSON API) ────────────────────────────────────────────────────────
 
 function getCatalogList(index)
@@ -194,9 +202,40 @@ function getBookCoverImageUrl(bookUrl)
 end
 
 function getBookDescription(bookUrl)
-  local data = fetchBookJson(bookUrl)
+  local slug = extractSlug(bookUrl)
+  if not slug then return nil end
+
+  local r = http_get(apiBase .. slug .. "?fields[]=summary", { headers = apiHeaders })
+  if not r.success then return nil end
+
+  local parsed = json_parse(r.body)
+  local data = parsed and parsed.data
   if not data then return nil end
+
   local desc = data.summary or data.description or ""
+
+  if type(desc) == "table" then
+    -- ProseMirror JSON — извлекаем текст
+    local parts = {}
+    local function extract(n)
+      if not n then return end
+      if type(n) == "string" then table.insert(parts, n); return end
+      if type(n) ~= "table" then return end
+      if n.type == "text" then table.insert(parts, n.text or "") end
+      if n.type == "hardBreak" then table.insert(parts, "\n") end
+      if n.type == "paragraph" then
+        if n.content and type(n.content) == "table" then
+          for _, c in ipairs(n.content) do extract(c) end
+        end
+        table.insert(parts, "\n")
+      elseif n.content and type(n.content) == "table" then
+        for _, c in ipairs(n.content) do extract(c) end
+      end
+    end
+    extract(desc)
+    desc = table.concat(parts, "")
+  end
+
   return string_trim(desc) ~= "" and string_trim(desc) or nil
 end
 
@@ -300,23 +339,37 @@ function getChapterList(bookUrl)
     return {}
   end
 
+  if isErrorResponse(r.body) then
+    show_error("Ошибка загрузки", "Не удалось загрузить список глав.\nВозможно, требуется авторизация.")
+    return nil
+  end
+
   local parsed = json_parse(r.body)
   if not parsed or not parsed.data then return {} end
 
-  -- Собираем главы с индексом для сортировки
   local raw = {}
   for _, chapter in ipairs(parsed.data) do
     local volume = tostring(chapter.volume or "")
     local number = tostring(chapter.number or "")
     local name   = chapter.name and chapter.name ~= "" and chapter.name or nil
     local bid    = "0"
-    -- branch_id берём из первой ветки
+    local isPaid = false
     if chapter.branches and chapter.branches[1] then
-      bid = tostring(chapter.branches[1].branch_id or "0")
+      local br = chapter.branches[1]
+      local branchId = br.branch_id
+      if branchId ~= nil and branchId ~= "" then
+        bid = tostring(branchId)
+      end
+      local rv = br.restricted_view
+      if rv and rv.is_open == false then
+        isPaid = true
+      end
     end
+    if chapter.bundle_id then isPaid = true end
 
     local title = "Том " .. volume .. " Глава " .. number
     if name then title = title .. " " .. name end
+    if isPaid then title = title .. " 🔒" end
 
     local chUrl = baseUrl .. "ru/" .. slug .. "/read/v" .. volume .. "/c" .. number
     if bid ~= "0" then chUrl = chUrl .. "?bid=" .. bid end
@@ -331,7 +384,6 @@ function getChapterList(bookUrl)
     })
   end
 
-  -- Сортировка по index (API может отдавать не по порядку)
   table.sort(raw, function(a, b) return a.index < b.index end)
 
   local chapters = {}
@@ -348,6 +400,7 @@ function getChapterListHash(bookUrl)
   if not slug then return nil end
   local r = http_get(apiBase .. slug .. "/chapters", { headers = apiHeaders })
   if not r.success then return nil end
+  if isErrorResponse(r.body) then return nil end
   local parsed = json_parse(r.body)
   if not parsed or not parsed.data then return nil end
   local chapters = parsed.data
@@ -418,10 +471,9 @@ end
 function getChapterText(html, chapterUrl)
   if not chapterUrl or chapterUrl == "" then return "" end
 
-  -- URL вида: https://ranobelib.me/ru/SLUG/read/vVOL/cNUM[?bid=BID]
   local slug   = chapterUrl:match("/ru/([^/]+)/read/")
   local volume = chapterUrl:match("/v([^/]+)/c")
-  local number = chapterUrl:match("/c([^?]+)")
+  local number = chapterUrl:match("/v[^/]+/c([^?]+)")
   local bid    = chapterUrl:match("[?&]bid=([^&]+)")
 
   if not slug or not volume or not number then
@@ -438,14 +490,40 @@ function getChapterText(html, chapterUrl)
     return ""
   end
 
+  if isErrorResponse(r.body) then
+    show_error("Ошибка загрузки", "Не удалось загрузить страницы главы.\nТребуется авторизация.")
+    return ""
+  end
+
   local parsed = json_parse(r.body)
   if not parsed or not parsed.data then return "" end
 
-  local data        = parsed.data
+  local data = parsed.data
+
+  local rv = data.restricted_view
+  if rv and rv.is_open == false then
+    local price = rv.price or 0
+    local msg = "Эта глава является платной."
+    if price > 0 then msg = msg .. "\nЦена: " .. tostring(price) .. " ₽" end
+    msg = msg .. "\nКупить можно на ranobelib.me"
+    show_error("Платная глава", msg)
+    return ""
+  end
+
+  if data.bundle and data.bundle.is_open == false then
+    local price = data.bundle.price or 0
+    local name = data.bundle.name or ""
+    local msg = "Эта глава является платной."
+    if name ~= "" then msg = msg .. "\nБандл: " .. name end
+    if price > 0 then msg = msg .. "\nЦена: " .. tostring(price) .. " ₽" end
+    msg = msg .. "\nКупить можно на ranobelib.me"
+    show_error("Платный том", msg)
+    return ""
+  end
+
   local contentNode = data.content
   local attachments = data.attachments
 
-  -- Строим карту id → url для вложений (изображений)
   local attachMap = {}
   if attachments then
     for _, att in ipairs(attachments) do
@@ -460,11 +538,9 @@ function getChapterText(html, chapterUrl)
   local resultHtml = ""
 
   if type(contentNode) == "table" and contentNode.type == "doc" then
-    -- ProseMirror JSON-дерево
     resultHtml = jsonToHtml(contentNode.content, attachMap)
 
   elseif type(contentNode) == "string" and contentNode ~= "" then
-    -- Уже HTML-строка — проксируем src изображений
     resultHtml = regex_replace(
       contentNode,
       'src="([^"]+)"',
@@ -478,7 +554,6 @@ function getChapterText(html, chapterUrl)
 
   if resultHtml == "" then return "" end
 
-  -- Парсим получившийся HTML и извлекаем текст с абзацами
   return applyStandardContentTransforms(html_text(resultHtml))
 end
 -- ── Список фильтров ───────────────────────────────────────────────────────────

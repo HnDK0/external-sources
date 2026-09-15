@@ -379,6 +379,7 @@ function getChapterListHash(bookUrl)
   if not slug then return nil end
   local r = http_get(apiBase .. slug .. "/chapters", { headers = apiHeaders })
   if not r.success then return nil end
+  if isErrorResponse(r.body) then return nil end
   local parsed = json_parse(r.body)
   if not parsed or not parsed.data then return nil end
   local chapters = parsed.data
@@ -443,9 +444,9 @@ end
 local function fetchChapterPages(chapterUrl)
   if not chapterUrl or chapterUrl == "" then return {} end
 
-  local slug   = chapterUrl:match("/ru/manga/([^/]+)/read/")
+  local slug   = chapterUrl:match("/ru/([^/]+)/read/")
   local volume = chapterUrl:match("/v([^/]+)/c")
-  local number = chapterUrl:match("/c([^?]+)")
+  local number = chapterUrl:match("/v[^/]+/c([^?]+)")
   local bid    = chapterUrl:match("[?&]bid=([^&]+)")
 
   if not slug or not volume or not number then return {} end
