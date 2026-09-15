@@ -35,7 +35,7 @@ sources:
     language: "ru"
   - id: "mangalib"
     name: "MangaLib"
-    version: "1.7.1"
+    version: "1.7.2"
     url: "https://raw.githubusercontent.com/HnDK0/external-sources/refs/heads/mangatest/ru/mangalib.lua"
     icon: "https://raw.githubusercontent.com/HnDK0/external-sources/refs/heads/mangatest/icons/mangalib.png"
     language: "ru"
