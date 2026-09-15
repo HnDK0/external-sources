@@ -4,6 +4,6 @@ sources:
   - id: "syosetu"
     name: "Syosetu"
     version: "1.1.0"
-    url: "https://raw.githubusercontent.com/HnDK0/external-sources/refs/heads/mangatest/ja/syosetu.lua"
-    icon: "https://raw.githubusercontent.com/HnDK0/external-sources/refs/heads/mangatest/icons/narou.png"
+    url: "https://raw.githubusercontent.com/HnDK0/external-sources/refs/heads/mangatest2/ja/syosetu.lua"
+    icon: "https://raw.githubusercontent.com/HnDK0/external-sources/refs/heads/mangatest2/icons/narou.png"
     language: "ja"
