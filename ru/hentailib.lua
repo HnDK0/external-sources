@@ -1,7 +1,7 @@
 -- ── Метаданные ────────────────────────────────────────────────────────────────
 id       = "hentailib"
 name     = "HentaiLib"
-version  = "1.0.1"
+version  = "1.0.2"
 baseUrl  = "https://hentailib.me/"
 language = "ru"
 icon     = "https://raw.githubusercontent.com/HnDK0/external-sources/main/icons/hentailib.png"
@@ -451,6 +451,14 @@ local function fetchChapterPages(chapterUrl)
   local bid    = chapterUrl:match("[?&]bid=([^&]+)")
 
   if not slug or not volume or not number then return {} end
+
+  local infoR = http_get(apiBase .. slug, { headers = apiHeaders })
+  if infoR.success then
+    local infoP = json_parse(infoR.body)
+    if infoP and infoP.data and infoP.data.id then
+      slug = tostring(infoP.data.id) .. "--" .. slug
+    end
+  end
 
   local apiUrl = apiBase .. slug .. "/chapter?volume=" .. volume .. "&number=" .. number
   if bid then apiUrl = apiUrl .. "&branch_id=" .. bid end
