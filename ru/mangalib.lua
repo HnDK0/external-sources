@@ -1,7 +1,7 @@
 -- ── Метаданные ────────────────────────────────────────────────────────────────
 id       = "mangalib"
 name     = "MangaLib"
-version  = "1.7.2"
+version  = "1.7.3"
 baseUrl  = "https://mangalib.me/"
 language = "ru"
 icon     = "https://raw.githubusercontent.com/HnDK0/external-sources/main/icons/mangalib.png"
@@ -447,7 +447,7 @@ local function fetchChapterPages(chapterUrl)
 
   local slug   = chapterUrl:match("/ru/([^/]+)/read/")
   local volume = chapterUrl:match("/v([^/]+)/c")
-  local number = chapterUrl:match("/c([^?]+)")
+  local number = chapterUrl:match("/v[^/]+/c([^?]+)")
   local bid    = chapterUrl:match("[?&]bid=([^&]+)")
 
   if not slug or not volume or not number then return {} end
