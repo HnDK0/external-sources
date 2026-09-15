@@ -16,7 +16,7 @@ sources:
     content_type: "manga"
   - id: "hentailib"
     name: "HentaiLib"
-    version: "1.0.0"
+    version: "1.0.1"
     url: "https://raw.githubusercontent.com/HnDK0/external-sources/refs/heads/mangatest2/ru/hentailib.lua"
     icon: "https://raw.githubusercontent.com/HnDK0/external-sources/refs/heads/mangatest2/icons/hentailib.png"
     language: "ru"
