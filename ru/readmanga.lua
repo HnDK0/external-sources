@@ -1,6 +1,6 @@
 id       = "readmanga"
 name     = "ReadManga"
-version  = "1.0.0"
+version  = "1.1.0"
 baseUrl  = "https://readmanga.me"
 language = "ru"
 icon     = "https://raw.githubusercontent.com/HnDK0/external-sources/main/icons/readmanga.png"
@@ -31,7 +31,15 @@ end
 
 -- slug манги из URL вида /slug__12345 или /32529
 local function mangaSlug(bookUrl)
-    return string.match(bookUrl, "/([^/?]+)__%d+") or string.match(bookUrl, "/(%d+)$")
+    local slug = string.match(bookUrl, "/([^/?]+)__%d+") or string.match(bookUrl, "/(%d+)$")
+    if slug then return slug end
+    -- Fallback: last path segment (for long transliterated names)
+    local segment = string.match(bookUrl, "/([^/]+)$")
+    if segment then
+        segment = segment:gsub("/+$", "")
+        if segment ~= "" then return segment end
+    end
+    return nil
 end
 
 -- ── Каталог (JSON API) ──
@@ -110,6 +118,117 @@ function getFilterList()
             options = {
                 { value = "RATING", label = "По рейтингу" },
                 { value = "DATE_UPDATE", label = "По обновлению" },
+                { value = "NAME", label = "По алфавиту" },
+                { value = "YEAR", label = "По году" },
+                { value = "POPULARITY", label = "По популярности" },
+                { value = "USER_RATING", label = "По оценке" },
+                { value = "DATE_CREATE", label = "Новинки" },
+            },
+        },
+        {
+            type = "select",
+            key = "genre",
+            label = "Жанр",
+            defaultValue = "",
+            options = {
+                { value = "", label = "Все" },
+                { value = "2131", label = "Фэнтези" },
+                { value = "2155", label = "Боевик" },
+                { value = "2136", label = "Комедия" },
+                { value = "2121", label = "Романтика" },
+                { value = "2118", label = "Драма" },
+                { value = "2119", label = "История" },
+                { value = "2152", label = "Детектив" },
+                { value = "2130", label = "Приключения" },
+                { value = "2134", label = "Сёнэн" },
+                { value = "2138", label = "Сэйнэн" },
+                { value = "2142", label = "Гарем" },
+                { value = "2158", label = "Дзёсэй" },
+                { value = "2122", label = "Сёдзё" },
+                { value = "2133", label = "Научная фантастика" },
+                { value = "2144", label = "Психология" },
+                { value = "2150", label = "Триллер" },
+                { value = "2125", label = "Ужасы" },
+                { value = "2127", label = "Школа" },
+                { value = "2149", label = "Этти" },
+                { value = "2129", label = "Спорт" },
+                { value = "2151", label = "Постапокалиптика" },
+                { value = "2153", label = "Трагедия" },
+                { value = "2156", label = "Гендерная интрига" },
+                { value = "2137", label = "Кодомо" },
+                { value = "8032", label = "Киберпанк" },
+                { value = "9450", label = "Исэкай" },
+                { value = "9514", label = "Музыка" },
+                { value = "9524", label = "Пародия" },
+                { value = "2159", label = "Сверхъестественное" },
+                { value = "10196", label = "Женщины" },
+                { value = "10197", label = "Мужчины" },
+                { value = "2143", label = "Боевые искусства" },
+            },
+        },
+        {
+            type = "select",
+            key = "category",
+            label = "Категория",
+            defaultValue = "",
+            options = {
+                { value = "", label = "Все" },
+                { value = "9451", label = "Манга" },
+                { value = "3001", label = "Манхва" },
+                { value = "3002", label = "Маньхуа" },
+                { value = "2141", label = "Додзинси" },
+                { value = "3515", label = "Комикс" },
+                { value = "2161", label = "Ёнкома" },
+                { value = "9577", label = "OEL-манга" },
+                { value = "5685", label = "Арт" },
+            },
+        },
+        {
+            type = "select",
+            key = "productionStatus",
+            label = "Статус выхода",
+            defaultValue = "",
+            options = {
+                { value = "", label = "Любые" },
+                { value = "PROGRESS", label = "Продолжается" },
+                { value = "FINISHED", label = "Завершён" },
+                { value = "PLANNED", label = "Запланирован" },
+                { value = "POSTPONED", label = "Приостановлен" },
+                { value = "CANCELED", label = "Отменён" },
+                { value = "NON_FINISHED", label = "Не окончен" },
+            },
+        },
+        {
+            type = "select",
+            key = "translationStatus",
+            label = "Статус перевода",
+            defaultValue = "",
+            options = {
+                { value = "", label = "Любые" },
+                { value = "PROGRESS", label = "Продолжается" },
+                { value = "FINISHED", label = "Завершён" },
+                { value = "STARTED", label = "Начат" },
+                { value = "POSTPONED", label = "Приостановлен" },
+                { value = "NONE", label = "Отсутствует" },
+                { value = "NO_NEED", label = "Нет необходимости" },
+            },
+        },
+        {
+            type = "sort",
+            key = "year",
+            label = "Год",
+            defaultValue = "",
+            options = {
+                { value = "", label = "Любой" },
+                { value = "2025,2025", label = "2025" },
+                { value = "2024,2024", label = "2024" },
+                { value = "2023,2023", label = "2023" },
+                { value = "2020,2025", label = "2020-2025" },
+                { value = "2015,2019", label = "2015-2019" },
+                { value = "2010,2014", label = "2010-2014" },
+                { value = "2000,2009", label = "2000-2009" },
+                { value = "1990,1999", label = "1990-1999" },
+                { value = "1980,1989", label = "1980-1989" },
             },
         },
     }
@@ -118,7 +237,34 @@ end
 function getCatalogFiltered(index, filters)
     local sort = filters["sort"] or "DATE_UPDATE"
     local offset = 50 * index
-    local body = fetch(baseUrl .. "/api/catalog/search?offset=" .. offset .. "&sortType=" .. sort)
+    local params = "offset=" .. offset .. "&sortType=" .. sort
+    
+    local genre = filters["genre"] or ""
+    if genre ~= "" then
+        params = params .. "&includeElementIds=" .. genre
+    end
+    
+    local category = filters["category"] or ""
+    if category ~= "" then
+        params = params .. "&includeElementIds=" .. category
+    end
+    
+    local prodStatus = filters["productionStatus"] or ""
+    if prodStatus ~= "" then
+        params = params .. "&includeProductionStatuses=" .. prodStatus
+    end
+    
+    local transStatus = filters["translationStatus"] or ""
+    if transStatus ~= "" then
+        params = params .. "&includeTranslationStatuses=" .. transStatus
+    end
+    
+    local year = filters["year"] or ""
+    if year ~= "" then
+        params = params .. "&years=" .. year
+    end
+    
+    local body = fetch(baseUrl .. "/api/catalog/search?" .. params)
     if not body then return { items = {}, hasNext = false } end
     local ok, data = pcall(json_parse, body)
     if not ok or not data or not data.list then
@@ -244,9 +390,15 @@ function getChapterList(bookUrl)
             table.insert(chapters, {
                 title = "Том " .. vol .. " Глава " .. num,
                 url = absUrl(href),
+                vol = tonumber(vol),
+                num = tonumber(num),
             })
         end
     end
+    table.sort(chapters, function(a, b)
+        if a.vol ~= b.vol then return a.vol < b.vol end
+        return a.num < b.num
+    end)
     return chapters
 end
 
@@ -265,22 +417,40 @@ function getPageList(html, url)
         html = body
     end
     local pages = {}
-    for match in string.gmatch(html, "%['(.-)'%],['(.-)'%],['(.-)'%]") do
-        local host, middle, endPart = match:match("^(.-)\t(.-)\t(.-)$")
-        if host and middle and endPart then
-            local imageUrl
-            if middle == "" and endPart:find("^/static/") then
-                imageUrl = baseUrl .. endPart
-            elseif middle:find("/manga/$") then
-                imageUrl = host .. endPart
-            else
-                imageUrl = middle .. host .. endPart
-            end
+    local riStart = html:find("readerInit(", 1, true)
+    if not riStart then return {} end
+    local arrStart = html:find("[", riStart, true)
+    if not arrStart then return {} end
+    local depth = 0
+    local pos = arrStart
+    local arrEnd = nil
+    while pos <= #html do
+        local c = html:sub(pos, pos)
+        if c == "[" then depth = depth + 1
+        elseif c == "]" then
+            depth = depth - 1
+            if depth == 0 then arrEnd = pos; break end
+        end
+        pos = pos + 1
+    end
+    if not arrEnd then return {} end
+    local pageArray = html:sub(arrStart + 1, arrEnd - 1)
+    local entryStart = 1
+    while entryStart <= #pageArray do
+        local s = pageArray:find("[", entryStart, true)
+        if not s then break end
+        local e = pageArray:find("]", s + 1, true)
+        if not e then break end
+        local entry = pageArray:sub(s + 1, e - 1)
+        local a, b, c = entry:match("['\"]([^'\"]*)['\"]%s*,%s*['\"]([^'\"]*)['\"]%s*,%s*['\"]([^'\"]*)['\"]")
+        if a and b and c then
+            local imageUrl = a .. b .. c
             if not imageUrl:find("://") then
                 imageUrl = "https:" .. imageUrl
             end
             table.insert(pages, imageUrl)
         end
+        entryStart = e + 1
     end
     return pages
 end

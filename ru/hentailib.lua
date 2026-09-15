@@ -1,7 +1,7 @@
 -- ── Метаданные ────────────────────────────────────────────────────────────────
 id       = "hentailib"
 name     = "HentaiLib"
-version  = "1.0.0"
+version  = "1.1.0"
 baseUrl  = "https://hentailib.me/"
 language = "ru"
 icon     = "https://raw.githubusercontent.com/HnDK0/external-sources/main/icons/hentailib.png"
@@ -411,30 +411,24 @@ end
 
 -- ── Текст главы (JSON API /api/manga/{slug}/chapter?...) ─────────────────────
 
-function getChapterText(html, chapterUrl)
-  if not chapterUrl or chapterUrl == "" then return "" end
+local function fetchChapterPages(chapterUrl)
+  if not chapterUrl or chapterUrl == "" then return {} end
 
   local slug   = chapterUrl:match("/ru/([^/]+)/read/")
   local volume = chapterUrl:match("/v([^/]+)/c")
   local number = chapterUrl:match("/c([^?]+)")
   local bid    = chapterUrl:match("[?&]bid=([^&]+)")
 
-  if not slug or not volume or not number then
-    log_error("hentailib: cannot parse chapterUrl: " .. chapterUrl)
-    return ""
-  end
+  if not slug or not volume or not number then return {} end
 
   local apiUrl = apiBase .. slug .. "/chapter?volume=" .. volume .. "&number=" .. number
   if bid then apiUrl = apiUrl .. "&branch_id=" .. bid end
 
   local r = http_get(apiUrl, { headers = apiHeaders })
-  if not r.success then
-    log_error("hentailib: chapter API failed code=" .. tostring(r.code))
-    return ""
-  end
+  if not r.success then return {} end
 
   local parsed = json_parse(r.body)
-  if not parsed or not parsed.data then return "" end
+  if not parsed or not parsed.data then return {} end
 
   local data        = parsed.data
   local contentNode = data.content
@@ -443,7 +437,7 @@ function getChapterText(html, chapterUrl)
   local attachMap = {}
   if attachments then
     for _, att in ipairs(attachments) do
-      local attId  = tostring(att.id   or att.name or "")
+      local attId  = tostring(att.id or att.name or "")
       local attUrl = att.url or ""
       if attId ~= "" and attUrl ~= "" then
         attachMap[attId] = attUrl
@@ -451,26 +445,47 @@ function getChapterText(html, chapterUrl)
     end
   end
 
-  local resultHtml = ""
+  local pages = {}
 
-  if type(contentNode) == "table" and contentNode.type == "doc" then
-    resultHtml = jsonToHtml(contentNode.content, attachMap)
+  local function extractImages(node)
+    if not node then return end
+    if type(node) == "string" then return end
+    if type(node) ~= "table" then return end
 
-  elseif type(contentNode) == "string" and contentNode ~= "" then
-    resultHtml = regex_replace(
-      contentNode,
-      'src="([^"]+)"',
-      function(m)
-        local raw = m:match('src="([^"]+)"')
-        if not raw then return m end
-        return 'src="' .. normalizeCover(raw) .. '"'
+    if node.type == "image" then
+      local src = node.attrs and node.attrs.src
+      if src and src ~= "" then
+        local imageUrl = attachMap[src] or src
+        if not imageUrl:find("://") then imageUrl = "https:" .. imageUrl end
+        table.insert(pages, imageUrl)
       end
-    )
+    end
+
+    if node.content and type(node.content) == "table" then
+      for _, child in ipairs(node.content) do
+        extractImages(child)
+      end
+    end
   end
 
-  if resultHtml == "" then return "" end
+  if type(contentNode) == "table" and contentNode.content then
+    extractImages(contentNode)
+  end
 
-  return applyStandardContentTransforms(html_text(resultHtml))
+  return pages
+end
+
+function getPageList(html, chapterUrl)
+  return fetchChapterPages(chapterUrl)
+end
+
+function getChapterText(html, chapterUrl)
+  local pages = fetchChapterPages(chapterUrl)
+  local out = {}
+  for _, p in ipairs(pages) do
+    table.insert(out, '<img src="' .. p .. '">')
+  end
+  return table.concat(out, "\n")
 end
 
 -- ── Список фильтров ───────────────────────────────────────────────────────────
