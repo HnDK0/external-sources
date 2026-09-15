@@ -1,7 +1,7 @@
 -- ── Метаданные ────────────────────────────────────────────────────────────────
 id       = "mangalib"
 name     = "MangaLib"
-version  = "1.7.1"
+version  = "1.7.2"
 baseUrl  = "https://mangalib.me/"
 language = "ru"
 icon     = "https://raw.githubusercontent.com/HnDK0/external-sources/main/icons/mangalib.png"
