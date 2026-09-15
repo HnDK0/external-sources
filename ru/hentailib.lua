@@ -455,7 +455,10 @@ local function fetchChapterPages(chapterUrl)
   if bid then apiUrl = apiUrl .. "&branch_id=" .. bid end
 
   local r = http_get(apiUrl, { headers = apiHeaders })
-  if not r.success then return {} end
+  if not r.success then
+    show_error("Ошибка загрузки", "Не удалось загрузить страницы главы (HTTP " .. tostring(r.code) .. ").\nВозможно, глава не существует или требуется авторизация.")
+    return nil
+  end
 
   if isErrorResponse(r.body) then
     show_error("Ошибка загрузки", "Не удалось загрузить страницы главы.\nТребуется авторизация.")

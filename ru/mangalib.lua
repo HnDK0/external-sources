@@ -461,7 +461,10 @@ local function fetchChapterPages(chapterUrl)
   if r.body then
     log_error("mangalib DEBUG: body(first500)=" .. tostring(r.body:sub(1, 500)))
   end
-  if not r.success then return {} end
+  if not r.success then
+    show_error("Ошибка загрузки", "Не удалось загрузить страницы главы (HTTP " .. tostring(r.code) .. ").\nВозможно, глава не существует или требуется авторизация.")
+    return nil
+  end
 
   if isErrorResponse(r.body) then
     log_error("mangalib DEBUG: isErrorResponse=true")

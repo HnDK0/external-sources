@@ -486,7 +486,7 @@ function getChapterText(html, chapterUrl)
 
   local r = http_get(apiUrl, { headers = apiHeaders })
   if not r.success then
-    log_error("ranobelib: chapter API failed code=" .. tostring(r.code))
+    show_error("Ошибка загрузки", "Не удалось загрузить страницы главы (HTTP " .. tostring(r.code) .. ").\nВозможно, глава не существует или требуется авторизация.")
     return ""
   end
 
