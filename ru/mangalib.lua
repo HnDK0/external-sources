@@ -1,22 +1,25 @@
 -- ── Метаданные ────────────────────────────────────────────────────────────────
-id       = "ranobelib"
-name     = "RanobeLib"
-version  = "1.0.9"
-baseUrl  = "https://ranobelib.me/"
+id       = "mangalib"
+name     = "MangaLib"
+version  = "1.0.0"
+baseUrl  = "https://mangalib.me/"
 language = "ru"
-icon     = "https://raw.githubusercontent.com/HnDK0/external-sources/main/icons/ranobelib.png"
+icon     = "https://raw.githubusercontent.com/HnDK0/external-sources/main/icons/mangalib.png"
+content_type = "manga"
 
--- ── Константы ─────────────────────────────────────────────────────────────────
+-- MangaLib — манга на русском (LibGroup, api.cdnlibs.org).
+-- Клон RanobeLib с siteId=1 для манги вместо ранобе.
+-- Авторизация: Bearer Token (опционально, для 18+ контента).
 
 local apiBase  = "https://api.cdnlibs.org/api/manga/"
-local siteId   = "3"
+local siteId   = "1"
 local apiHeaders = {
   ["Site-Id"]          = siteId,
   ["User-Agent"]       = "Mozilla/5.0 (Linux; Android 14; Pixel 8 Pro Build/UQ1A.240205.004) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/132.0.6834.83 Mobile Safari/537.36",
   ["Accept"]           = "application/json, text/plain, */*",
   ["Accept-Language"]  = "ru-RU,ru;q=0.9,en-US;q=0.8,en;q=0.7",
-  ["Referer"]          = "https://ranobelib.me/",
-  ["Origin"]           = "https://ranobelib.me",
+  ["Referer"]          = "https://mangalib.me/",
+  ["Origin"]           = "https://mangalib.me",
   ["Sec-Fetch-Dest"]   = "empty",
   ["Sec-Fetch-Mode"]   = "cors",
   ["Sec-Fetch-Site"]   = "cross-site",
@@ -38,10 +41,6 @@ local function normalizeCover(raw)
   return "https://" .. raw
 end
 
--- Обложки лежат на cover.cdnlibs.org, который отдаёт 403 без заголовка Referer
--- (DDoS-Guard), а движок при загрузке картинок Referer не шлёт (Coil).
--- Проксируем через images.weserv.nl: URL без схемы weserv понимает и сам
--- добавляет https. Проверено на живых обложках (thumb и default).
 local function proxyCover(raw)
   if not raw or raw == "" then return "" end
   local url = normalizeCover(raw)
@@ -58,22 +57,18 @@ local function applyStandardContentTransforms(text)
   return text
 end
 
--- Выбирает лучшее из нескольких вариантов названия
 local function pickTitle(data)
   return data.rus_name or data.eng_name or data.name or ""
 end
 
--- Извлекает slug книги из URL вида:
---   https://ranobelib.me/ru/book/12345--slug  →  "12345--slug"
---   https://ranobelib.me/ru/12345--slug        →  "12345--slug"
 local function extractSlug(bookUrl)
-  -- Убираем trailing slash и берём последний сегмент пути
   local clean = bookUrl:gsub("/?$", "")
-  return clean:match("([^/]+)$")
+  local last = clean:match("([^/]+)$")
+  if not last then return nil end
+  -- Handle "123--slug" and "manga--slug" format → strip prefix
+  return last:match("%-%-(.+)$") or last
 end
 
--- ── Вложенный доступ к JSON по "dot.path" ─────────────────────────────────────
--- Используется для путей вида "cover.default", "meta.has_next_page"
 local function getPath(tbl, path)
   if not tbl or not path then return nil end
   local cur = tbl
@@ -84,8 +79,6 @@ local function getPath(tbl, path)
   return cur
 end
 
--- Рейтинг сайта — по 10-балльной шкале ("9.7"). Движок понимает формат "9.7/10"
--- (сам нормализует к 5-балльной). "0"/пусто — рейтинга ещё нет.
 local function formatRating(avg)
   if not avg or avg == "" or avg == "0" then return nil end
   return avg .. "/10"
@@ -114,17 +107,17 @@ function getCatalogList(index)
   if not parsed or not parsed.data then return { items = {}, hasNext = false } end
 
   local items = {}
-  for _, novel in ipairs(parsed.data) do
-    local title = pickTitle(novel)
-    local slug  = novel.slug or novel.slug_url or ""
-    local cover = getPath(novel, "cover.default") or ""
+  for _, manga in ipairs(parsed.data) do
+    local title = pickTitle(manga)
+    local slug  = manga.slug or manga.slug_url or ""
+    local cover = getPath(manga, "cover.default") or ""
     if title ~= "" and slug ~= "" then
       local item = {
         title = string_clean(title),
         url   = baseUrl .. "ru/" .. slug,
         cover = proxyCover(cover)
       }
-      local avg = getPath(novel, "rating.average")
+      local avg = getPath(manga, "rating.average")
       item.rating = formatRating(avg)
       table.insert(items, item)
     end
@@ -149,17 +142,17 @@ function getCatalogSearch(index, query)
   if not parsed or not parsed.data then return { items = {}, hasNext = false } end
 
   local items = {}
-  for _, novel in ipairs(parsed.data) do
-    local title = pickTitle(novel)
-    local slug  = novel.slug_url or novel.slug or ""
-    local cover = getPath(novel, "cover.default") or ""
+  for _, manga in ipairs(parsed.data) do
+    local title = pickTitle(manga)
+    local slug  = manga.slug_url or manga.slug or ""
+    local cover = getPath(manga, "cover.default") or ""
     if title ~= "" and slug ~= "" then
       local item = {
         title = string_clean(title),
         url   = baseUrl .. "ru/" .. slug,
         cover = proxyCover(cover)
       }
-      local avg = getPath(novel, "rating.average")
+      local avg = getPath(manga, "rating.average")
       item.rating = formatRating(avg)
       table.insert(items, item)
     end
@@ -176,6 +169,7 @@ local function fetchBookJson(bookUrl)
   if not slug then return nil end
   local r = http_get(apiBase .. slug, { headers = apiHeaders })
   if not r.success then return nil end
+  if isErrorResponse(r.body) then return nil end
   local parsed = json_parse(r.body)
   return parsed and parsed.data or nil
 end
@@ -183,7 +177,6 @@ end
 function getBookTitle(bookUrl)
   local data = fetchBookJson(bookUrl)
   if not data then return nil end
-  -- parseBookData в KT читает data.names.rus/.eng
   local names = data.names
   local title
   if names then
@@ -201,42 +194,41 @@ function getBookCoverImageUrl(bookUrl)
   return cover ~= "" and proxyCover(cover) or nil
 end
 
+local function extractTextFromTipTap(node)
+  if not node then return "" end
+  if type(node) == "string" then return node end
+  if type(node) ~= "table" then return "" end
+  local parts = {}
+  if node.type == "text" then
+    table.insert(parts, node.text or "")
+  end
+  if node.content and type(node.content) == "table" then
+    for _, child in ipairs(node.content) do
+      table.insert(parts, extractTextFromTipTap(child))
+    end
+  end
+  return table.concat(parts, "")
+end
+
+local mangaDetailFields = "fields[]=eng_name&fields[]=otherNames&fields[]=summary&fields[]=rate&fields[]=genres&fields[]=tags&fields[]=teams&fields[]=authors&fields[]=publisher&fields[]=userRating&fields[]=manga_status_id&fields[]=status_id&fields[]=artists"
+
 function getBookDescription(bookUrl)
   local slug = extractSlug(bookUrl)
   if not slug then return nil end
-
-  local r = http_get(apiBase .. slug .. "?fields[]=summary", { headers = apiHeaders })
+  local r = http_get(apiBase .. slug .. "?" .. mangaDetailFields, { headers = apiHeaders })
   if not r.success then return nil end
-
+  if isErrorResponse(r.body) then return nil end
   local parsed = json_parse(r.body)
   local data = parsed and parsed.data
   if not data then return nil end
-
-  local desc = data.summary or data.description or ""
-
-  if type(desc) == "table" then
-    -- ProseMirror JSON — извлекаем текст
-    local parts = {}
-    local function extract(n)
-      if not n then return end
-      if type(n) == "string" then table.insert(parts, n); return end
-      if type(n) ~= "table" then return end
-      if n.type == "text" then table.insert(parts, n.text or "") end
-      if n.type == "hardBreak" then table.insert(parts, "\n") end
-      if n.type == "paragraph" then
-        if n.content and type(n.content) == "table" then
-          for _, c in ipairs(n.content) do extract(c) end
-        end
-        table.insert(parts, "\n")
-      elseif n.content and type(n.content) == "table" then
-        for _, c in ipairs(n.content) do extract(c) end
-      end
-    end
-    extract(desc)
-    desc = table.concat(parts, "")
+  local summary = data.summary
+  if summary and type(summary) == "table" then
+    local desc = extractTextFromTipTap(summary)
+    if string_trim(desc) ~= "" then return string_trim(desc) end
+  elseif summary and type(summary) == "string" then
+    if string_trim(summary) ~= "" then return string_trim(summary) end
   end
-
-  return string_trim(desc) ~= "" and string_trim(desc) or nil
+  return nil
 end
 
 function getBookGenres(bookUrl)
@@ -269,11 +261,6 @@ function getBookGenres(bookUrl)
   return genres
 end
 
--- ── Рейтинг (JSON API, поля rate_avg/rate) ───────────────────────────────────
--- Базовая книга /api/manga/{slug} рейтинг не содержит — SPA запрашивает
--- ?fields[]=rate_avg&fields[]=rate, тогда в data появляется rating.average
--- (проверено на живом API и на странице сайта).
-
 function getBookRating(bookUrl)
   local slug = extractSlug(bookUrl)
   if not slug then return nil end
@@ -289,16 +276,12 @@ function getBookRating(bookUrl)
   return formatRating(avg)
 end
 
--- ── Статус и дата обновления (JSON API /api/manga/{slug}) ────────────────────
--- Поле updated_at отдаётся только при явном запросе fields[]=updated_at;
--- status (объект {id,label}) есть и в базовом ответе. Один запрос покрывает обе
--- функции. Формат updated_at — ISO 8601: "2026-08-22T15:54:36.000000Z".
-
 local function fetchBookStatusJson(bookUrl)
   local slug = extractSlug(bookUrl)
   if not slug then return nil end
   local r = http_get(apiBase .. slug .. "?fields[]=updated_at", { headers = apiHeaders })
   if not r.success then return nil end
+  if isErrorResponse(r.body) then return nil end
   local parsed = json_parse(r.body)
   return parsed and parsed.data or nil
 end
@@ -319,7 +302,6 @@ function getBookLastUpdate(bookUrl)
   if not data then return nil end
   local ua = data.updated_at
   if not ua or ua == "" then return nil end
-  -- Из ISO 8601 берём только часть YYYY-MM-DD (уже в нужном формате)
   local date = string.match(ua, "^(%d%d%d%d%-%d%d%-%d%d)")
   return date ~= "" and date or nil
 end
@@ -329,13 +311,13 @@ end
 function getChapterList(bookUrl)
   local slug = extractSlug(bookUrl)
   if not slug then
-    log_error("ranobelib: cannot extract slug from " .. bookUrl)
+    log_error("mangalib: cannot extract slug from " .. bookUrl)
     return {}
   end
 
   local r = http_get(apiBase .. slug .. "/chapters", { headers = apiHeaders })
   if not r.success then
-    log_error("ranobelib: chapters failed code=" .. tostring(r.code))
+    log_error("mangalib: chapters failed code=" .. tostring(r.code))
     return {}
   end
 
@@ -393,8 +375,6 @@ function getChapterList(bookUrl)
   return chapters
 end
 
--- ── Хэш для обновлений ────────────────────────────────────────────────────────
-
 function getChapterListHash(bookUrl)
   local slug = extractSlug(bookUrl)
   if not slug then return nil end
@@ -409,9 +389,6 @@ function getChapterListHash(bookUrl)
 end
 
 -- ── JSON → HTML (рендер структурированного контента главы) ───────────────────
---
--- RanobeLib отдаёт главу как JSON-дерево ProseMirror (type="doc").
--- Рекурсивно обходим узлы и строим HTML.
 
 local function jsonToHtml(nodes, attachMap)
   if not nodes then return "" end
@@ -425,7 +402,6 @@ local function jsonToHtml(nodes, attachMap)
 
     if ntype == "text" then
       local text = node.text or ""
-      -- Применяем marks (bold, italic, underline)
       if node.marks then
         for _, mark in ipairs(node.marks) do
           local mt = mark.type or ""
@@ -447,7 +423,6 @@ local function jsonToHtml(nodes, attachMap)
 
     elseif ntype == "image" then
       local attrs = node.attrs or {}
-      -- ID может быть прямо в attrs или в attrs.images[1]
       local imgId = attrs.id
       if not imgId and attrs.images and attrs.images[1] then
         imgId = attrs.images[1].id
@@ -458,7 +433,6 @@ local function jsonToHtml(nodes, attachMap)
       end
 
     else
-      -- Неизвестный узел-контейнер — просто обходим детей
       if inner ~= "" then table.insert(parts, inner) end
     end
   end
@@ -468,46 +442,53 @@ end
 
 -- ── Текст главы (JSON API /api/manga/{slug}/chapter?...) ─────────────────────
 
-function getChapterText(html, chapterUrl)
-  if not chapterUrl or chapterUrl == "" then return "" end
+local function fetchChapterPages(chapterUrl)
+  if not chapterUrl or chapterUrl == "" then return {} end
 
   local slug   = chapterUrl:match("/ru/([^/]+)/read/")
   local volume = chapterUrl:match("/v([^/]+)/c")
   local number = chapterUrl:match("/v[^/]+/c([^?]+)")
   local bid    = chapterUrl:match("[?&]bid=([^&]+)")
 
-  if not slug or not volume or not number then
-    log_error("ranobelib: cannot parse chapterUrl: " .. chapterUrl)
-    return ""
-  end
+  if not slug or not volume or not number then return {} end
 
   local apiUrl = apiBase .. slug .. "/chapter?volume=" .. volume .. "&number=" .. number
   if bid then apiUrl = apiUrl .. "&branch_id=" .. bid end
 
+  log_error("mangalib DEBUG: apiUrl=" .. apiUrl)
   local r = http_get(apiUrl, { headers = apiHeaders })
-  if not r.success then
-    log_error("ranobelib: chapter API failed code=" .. tostring(r.code))
-    return ""
+  log_error("mangalib DEBUG: success=" .. tostring(r.success) .. " code=" .. tostring(r.code) .. " bodyLen=" .. tostring(#(r.body or "")))
+  if r.body then
+    log_error("mangalib DEBUG: body(first500)=" .. tostring(r.body:sub(1, 500)))
   end
+  if not r.success then return {} end
 
   if isErrorResponse(r.body) then
+    log_error("mangalib DEBUG: isErrorResponse=true")
     show_error("Ошибка загрузки", "Не удалось загрузить страницы главы.\nТребуется авторизация.")
-    return ""
+    return nil
   end
 
   local parsed = json_parse(r.body)
-  if not parsed or not parsed.data then return "" end
+  if not parsed or not parsed.data then
+    log_error("mangalib DEBUG: parse failed or no data")
+    return {}
+  end
 
   local data = parsed.data
+  log_error("mangalib DEBUG: data keys=" .. tostring(data.pages and "has_pages" or "no_pages") .. " restricted_view=" .. tostring(data.restricted_view and "present" or "nil") .. " bundle=" .. tostring(data.bundle and "present" or "nil") .. " content=" .. tostring(data.content and "present" or "nil"))
 
   local rv = data.restricted_view
+  if rv then
+    log_error("mangalib DEBUG: restricted_view.is_open=" .. tostring(rv.is_open) .. " price=" .. tostring(rv.price))
+  end
   if rv and rv.is_open == false then
     local price = rv.price or 0
     local msg = "Эта глава является платной."
     if price > 0 then msg = msg .. "\nЦена: " .. tostring(price) .. " ₽" end
-    msg = msg .. "\nКупить можно на ranobelib.me"
+    msg = msg .. "\nКупить можно на mangalib.me"
     show_error("Платная глава", msg)
-    return ""
+    return nil
   end
 
   if data.bundle and data.bundle.is_open == false then
@@ -516,18 +497,33 @@ function getChapterText(html, chapterUrl)
     local msg = "Эта глава является платной."
     if name ~= "" then msg = msg .. "\nБандл: " .. name end
     if price > 0 then msg = msg .. "\nЦена: " .. tostring(price) .. " ₽" end
-    msg = msg .. "\nКупить можно на ranobelib.me"
+    msg = msg .. "\nКупить можно на mangalib.me"
     show_error("Платный том", msg)
-    return ""
+    return nil
+  end
+
+  if data.pages and type(data.pages) == "table" then
+    log_error("mangalib DEBUG: data.pages count=" .. tostring(#data.pages))
+    local pages = {}
+    for _, page in ipairs(data.pages) do
+      local url = page.url
+      if url and url ~= "" then
+        if not url:find("://") then url = "https://img3.cdnlibs.org" .. url end
+        table.insert(pages, url)
+      end
+    end
+    log_error("mangalib DEBUG: returning pages count=" .. tostring(#pages))
+    return pages
   end
 
   local contentNode = data.content
   local attachments = data.attachments
+  log_error("mangalib DEBUG: contentNode=" .. tostring(contentNode and "present" or "nil") .. " attachments=" .. tostring(attachments and "present" or "nil"))
 
   local attachMap = {}
   if attachments then
     for _, att in ipairs(attachments) do
-      local attId  = tostring(att.id   or att.name or "")
+      local attId  = tostring(att.id or att.name or "")
       local attUrl = att.url or ""
       if attId ~= "" and attUrl ~= "" then
         attachMap[attId] = attUrl
@@ -535,27 +531,50 @@ function getChapterText(html, chapterUrl)
     end
   end
 
-  local resultHtml = ""
+  local pages = {}
 
-  if type(contentNode) == "table" and contentNode.type == "doc" then
-    resultHtml = jsonToHtml(contentNode.content, attachMap)
+  local function extractImages(node)
+    if not node then return end
+    if type(node) == "string" then return end
+    if type(node) ~= "table" then return end
 
-  elseif type(contentNode) == "string" and contentNode ~= "" then
-    resultHtml = regex_replace(
-      contentNode,
-      'src="([^"]+)"',
-      function(m)
-        local raw = m:match('src="([^"]+)"')
-        if not raw then return m end
-        return 'src="' .. normalizeCover(raw) .. '"'
+    if node.type == "image" then
+      local src = node.attrs and node.attrs.src
+      if src and src ~= "" then
+        local imageUrl = attachMap[src] or src
+        if not imageUrl:find("://") then imageUrl = "https:" .. imageUrl end
+        table.insert(pages, imageUrl)
       end
-    )
+    end
+
+    if node.content and type(node.content) == "table" then
+      for _, child in ipairs(node.content) do
+        extractImages(child)
+      end
+    end
   end
 
-  if resultHtml == "" then return "" end
+  if type(contentNode) == "table" and contentNode.content then
+    extractImages(contentNode)
+  end
 
-  return applyStandardContentTransforms(html_text(resultHtml))
+  log_error("mangalib DEBUG: final pages count=" .. tostring(#pages))
+  return pages
 end
+
+function getPageList(html, chapterUrl)
+  return fetchChapterPages(chapterUrl)
+end
+
+function getChapterText(html, chapterUrl)
+  local pages = fetchChapterPages(chapterUrl)
+  local out = {}
+  for _, p in ipairs(pages) do
+    table.insert(out, '<img src="' .. p .. '">')
+  end
+  return table.concat(out, "\n")
+end
+
 -- ── Список фильтров ───────────────────────────────────────────────────────────
 
 function getFilterList()
@@ -587,22 +606,25 @@ function getFilterList()
       }
     },
     {
-      type  = "switch",
+      type  = "select",
       key   = "require_chapters",
       label = "Только проекты с главами",
-      defaultValue = true,
+      defaultValue = "true",
+      options = {
+        { value = "true",  label = "Да" },
+        { value = "false", label = "Нет" },
+      }
     },
     {
       type  = "checkbox",
       key   = "types",
       label = "Тип",
       options = {
-        { value = "10", label = "Япония"     },
-        { value = "11", label = "Корея"      },
-        { value = "12", label = "Китай"      },
-        { value = "13", label = "Английский" },
-        { value = "14", label = "Авторский"  },
-        { value = "15", label = "Фанфик"     },
+        { value = "1", label = "Манга"      },
+        { value = "5", label = "Манхва"     },
+        { value = "6", label = "Маньхуа"    },
+        { value = "9", label = "Комикс"     },
+        { value = "4", label = "OEL-манга"  },
       }
     },
     {
@@ -623,7 +645,6 @@ function getFilterList()
       options = {
         { value = "1", label = "Онгоинг"            },
         { value = "2", label = "Завершён"            },
-        { value = "3", label = "Анонс"              },
         { value = "4", label = "Приостановлен"      },
         { value = "5", label = "Выпуск прекращён"   },
       }
@@ -633,139 +654,45 @@ function getFilterList()
       key   = "genres",
       label = "Жанры",
       options = {
-        { value = "32",  label = "Арт"                    },
-        { value = "91",  label = "Безумие"                },
-        { value = "34",  label = "Боевик"                 },
-        { value = "35",  label = "Боевые искусства"       },
-        { value = "36",  label = "Вампиры"                },
-        { value = "89",  label = "Военное"                },
-        { value = "37",  label = "Гарем"                  },
-        { value = "38",  label = "Гендерная интрига"      },
-        { value = "39",  label = "Героическое фэнтези"    },
-        { value = "81",  label = "Демоны"                 },
-        { value = "40",  label = "Детектив"               },
-        { value = "88",  label = "Детское"                },
-        { value = "41",  label = "Дзёсэй"                 },
-        { value = "43",  label = "Драма"                  },
-        { value = "44",  label = "Игра"                   },
-        { value = "79",  label = "Исекай"                 },
-        { value = "45",  label = "История"                },
-        { value = "46",  label = "Киберпанк"              },
-        { value = "76",  label = "Кодомо"                 },
-        { value = "47",  label = "Комедия"                },
-        { value = "83",  label = "Космос"                 },
-        { value = "85",  label = "Магия"                  },
-        { value = "48",  label = "Махо-сёдзё"             },
-        { value = "90",  label = "Машины"                 },
-        { value = "49",  label = "Меха"                   },
-        { value = "50",  label = "Мистика"                },
-        { value = "80",  label = "Музыка"                 },
-        { value = "51",  label = "Научная фантастика"     },
-        { value = "77",  label = "Омегаверс"              },
-        { value = "86",  label = "Пародия"                },
-        { value = "52",  label = "Повседневность"         },
-        { value = "82",  label = "Полиция"                },
-        { value = "53",  label = "Постапокалиптика"       },
-        { value = "54",  label = "Приключения"            },
-        { value = "55",  label = "Психология"             },
-        { value = "56",  label = "Романтика"              },
-        { value = "57",  label = "Самурайский боевик"     },
-        { value = "58",  label = "Сверхъестественное"     },
-        { value = "59",  label = "Сёдзё"                  },
-        { value = "60",  label = "Сёдзё-ай"               },
-        { value = "61",  label = "Сёнэн"                  },
-        { value = "62",  label = "Сёнэн-ай"               },
-        { value = "63",  label = "Спорт"                  },
-        { value = "87",  label = "Супер сила"             },
-        { value = "64",  label = "Сэйнэн"                 },
-        { value = "65",  label = "Трагедия"               },
-        { value = "66",  label = "Триллер"                },
-        { value = "67",  label = "Ужасы"                  },
-        { value = "68",  label = "Фантастика"             },
-        { value = "69",  label = "Фэнтези"                },
-        { value = "84",  label = "Хентай"                 },
-        { value = "70",  label = "Школа"                  },
-        { value = "71",  label = "Эротика"                },
-        { value = "72",  label = "Этти"                   },
-        { value = "73",  label = "Юри"                    },
-        { value = "74",  label = "Яой"                    },
-      }
-    },
-    {
-      type  = "tristate",
-      key   = "tags",
-      label = "Теги",
-      options = {
-        { value = "328", label = "Авантюристы"                  },
-        { value = "175", label = "Антигерой"                    },
-        { value = "333", label = "Бессмертные"                  },
-        { value = "218", label = "Боги"                         },
-        { value = "309", label = "Борьба за власть"             },
-        { value = "360", label = "Брат и сестра"                },
-        { value = "339", label = "Ведьма"                       },
-        { value = "204", label = "Видеоигры"                    },
-        { value = "214", label = "Виртуальная реальность"       },
-        { value = "349", label = "Владыка демонов"              },
-        { value = "198", label = "Военные"                      },
-        { value = "310", label = "Воспоминания из другого мира" },
-        { value = "212", label = "Выживание"                    },
-        { value = "294", label = "ГГ женщина"                   },
-        { value = "292", label = "ГГ имба"                      },
-        { value = "295", label = "ГГ мужчина"                   },
-        { value = "325", label = "ГГ не ояш"                    },
-        { value = "331", label = "ГГ не человек"                },
-        { value = "326", label = "ГГ ояш"                       },
-        { value = "324", label = "Главный герой бог"            },
-        { value = "298", label = "Глупый ГГ"                    },
-        { value = "171", label = "Горничные"                    },
-        { value = "306", label = "Гуро"                         },
-        { value = "197", label = "Гяру"                         },
-        { value = "157", label = "Демоны"                       },
-        { value = "313", label = "Драконы"                      },
-        { value = "317", label = "Древний мир"                  },
-        { value = "163", label = "Зверолюди"                    },
-        { value = "155", label = "Зомби"                        },
-        { value = "323", label = "Исторические фигуры"          },
-        { value = "158", label = "Кулинария"                    },
-        { value = "161", label = "Культивация"                  },
-        { value = "344", label = "ЛГБТ"                         },
-        { value = "319", label = "ЛитРПГ"                       },
-        { value = "206", label = "Лоли"                         },
-        { value = "170", label = "Магия"                        },
-        { value = "345", label = "Машинный перевод"             },
-        { value = "159", label = "Медицина"                     },
-        { value = "330", label = "Межгалактическая война"       },
-        { value = "207", label = "Монстр Девушки"               },
-        { value = "208", label = "Монстры"                      },
-        { value = "316", label = "Мрачный мир"                  },
-        { value = "209", label = "Музыка"                       },
-        { value = "199", label = "Ниндзя"                       },
-        { value = "210", label = "Обратный Гарем"               },
-        { value = "200", label = "Офисные Работники"            },
-        { value = "341", label = "Пираты"                       },
-        { value = "314", label = "Подземелья"                   },
-        { value = "311", label = "Политика"                     },
-        { value = "201", label = "Полиция"                      },
-        { value = "205", label = "Преступники / Криминал"       },
-        { value = "196", label = "Призраки / Духи"              },
-        { value = "329", label = "Призыватели"                  },
-        { value = "321", label = "Прыжки между мирами"          },
-        { value = "318", label = "Путешествие в другой мир"     },
-        { value = "213", label = "Путешествие во времени"       },
-        { value = "355", label = "Рабы"                         },
-        { value = "312", label = "Ранги силы"                   },
-        { value = "154", label = "Реинкарнация"                 },
-        { value = "202", label = "Самураи"                      },
-        { value = "315", label = "Скрытие личности"             },
-        { value = "174", label = "Средневековье"                },
-        { value = "203", label = "Традиционные игры"            },
-        { value = "303", label = "Умный ГГ"                     },
-        { value = "332", label = "Характерный рост"             },
-        { value = "167", label = "Хикикомори"                   },
-        { value = "322", label = "Эволюция"                     },
-        { value = "327", label = "Элементы РПГ"                 },
-        { value = "217", label = "Эльфы"                        },
-        { value = "165", label = "Якудза"                       },
+        { value = "34", label = "Боевик"                 },
+        { value = "35", label = "Боевые искусства"       },
+        { value = "36", label = "Вампиры"                },
+        { value = "37", label = "Гарем"                  },
+        { value = "39", label = "Героическое фэнтези"    },
+        { value = "40", label = "Детектив"               },
+        { value = "41", label = "Дзёсэй"                 },
+        { value = "43", label = "Драма"                  },
+        { value = "44", label = "Игра"                   },
+        { value = "45", label = "История"                },
+        { value = "47", label = "Комедия"                },
+        { value = "49", label = "Меха"                   },
+        { value = "50", label = "Мистика"                },
+        { value = "51", label = "Научная фантастика"     },
+        { value = "52", label = "Повседневность"         },
+        { value = "53", label = "Постапокалиптика"       },
+        { value = "54", label = "Приключения"            },
+        { value = "55", label = "Психология"             },
+        { value = "56", label = "Романтика"              },
+        { value = "57", label = "Самурайский боевик"     },
+        { value = "58", label = "Сверхъестественное"     },
+        { value = "59", label = "Сёдзё"                  },
+        { value = "61", label = "Сёнэн"                  },
+        { value = "63", label = "Спорт"                  },
+        { value = "64", label = "Сэйнэн"                 },
+        { value = "65", label = "Трагедия"               },
+        { value = "66", label = "Триллер"                },
+        { value = "67", label = "Ужасы"                  },
+        { value = "68", label = "Фантастика"             },
+        { value = "69", label = "Фэнтези"                },
+        { value = "70", label = "Школа"                  },
+        { value = "72", label = "Этти"                   },
+        { value = "79", label = "Исекай"                 },
+        { value = "80", label = "Музыка"                 },
+        { value = "81", label = "Демоны"                 },
+        { value = "85", label = "Магия"                  },
+        { value = "87", label = "Супер сила"             },
+        { value = "89", label = "Военное"                },
+        { value = "91", label = "Безумие"                },
       }
     },
   }
@@ -777,15 +704,13 @@ function getCatalogFiltered(index, filters)
   local page      = index + 1
   local sort_by   = filters["sort_by"]   or "rating_score"
   local sort_type = filters["sort_type"] or "desc"
-  local req_ch    = filters["require_chapters"]  -- switch: "true"/"false"/nil
+  local req_ch    = filters["require_chapters"]
 
   local types_inc        = filters["types_included"]          or {}
   local scanlate_inc     = filters["scanlateStatus_included"] or {}
   local manga_status_inc = filters["manga_status_included"]   or {}
   local genres_inc       = filters["genres_included"]         or {}
   local genres_exc       = filters["genres_excluded"]         or {}
-  local tags_inc         = filters["tags_included"]           or {}
-  local tags_exc         = filters["tags_excluded"]           or {}
 
   local url = apiBase .. "?site_id[0]=" .. siteId
               .. "&page="      .. tostring(page)
@@ -801,8 +726,6 @@ function getCatalogFiltered(index, filters)
   for _, v in ipairs(manga_status_inc) do url = url .. "&manga_status[]="   .. v end
   for _, v in ipairs(genres_inc)       do url = url .. "&genres[]="         .. v end
   for _, v in ipairs(genres_exc)       do url = url .. "&genres_exclude[]=" .. v end
-  for _, v in ipairs(tags_inc)         do url = url .. "&tags[]="           .. v end
-  for _, v in ipairs(tags_exc)         do url = url .. "&tags_exclude[]="   .. v end
 
   local r = http_get(url, { headers = apiHeaders })
   if not r.success then return { items = {}, hasNext = false } end
@@ -811,17 +734,17 @@ function getCatalogFiltered(index, filters)
   if not parsed or not parsed.data then return { items = {}, hasNext = false } end
 
   local items = {}
-  for _, novel in ipairs(parsed.data) do
-    local title = pickTitle(novel)
-    local slug  = novel.slug_url or novel.slug or ""
-    local cover = getPath(novel, "cover.default") or ""
+  for _, manga in ipairs(parsed.data) do
+    local title = pickTitle(manga)
+    local slug  = manga.slug_url or manga.slug or ""
+    local cover = getPath(manga, "cover.default") or ""
     if title ~= "" and slug ~= "" then
       local item = {
         title = string_clean(title),
         url   = baseUrl .. "ru/" .. slug,
         cover = proxyCover(cover)
       }
-      local avg = getPath(novel, "rating.average")
+      local avg = getPath(manga, "rating.average")
       item.rating = formatRating(avg)
       table.insert(items, item)
     end
