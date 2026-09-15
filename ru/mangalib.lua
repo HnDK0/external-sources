@@ -1,7 +1,7 @@
 -- ── Метаданные ────────────────────────────────────────────────────────────────
 id       = "mangalib"
 name     = "MangaLib"
-version  = "1.1.0"
+version  = "1.2.0"
 baseUrl  = "https://mangalib.me/"
 language = "ru"
 icon     = "https://raw.githubusercontent.com/HnDK0/external-sources/main/icons/mangalib.png"
@@ -320,7 +320,10 @@ function getChapterList(bookUrl)
     local name   = chapter.name and chapter.name ~= "" and chapter.name or nil
     local bid    = "0"
     if chapter.branches and chapter.branches[1] then
-      bid = tostring(chapter.branches[1].branch_id or "0")
+      local branchId = chapter.branches[1].branch_id
+      if branchId ~= nil and branchId ~= "" then
+        bid = tostring(branchId)
+      end
     end
 
     local title = "Том " .. volume .. " Глава " .. number
@@ -433,7 +436,20 @@ local function fetchChapterPages(chapterUrl)
   local parsed = json_parse(r.body)
   if not parsed or not parsed.data then return {} end
 
-  local data        = parsed.data
+  local data = parsed.data
+
+  if data.pages and type(data.pages) == "table" then
+    local pages = {}
+    for _, page in ipairs(data.pages) do
+      local url = page.url
+      if url and url ~= "" then
+        if not url:find("://") then url = "https:" .. url end
+        table.insert(pages, url)
+      end
+    end
+    return pages
+  end
+
   local contentNode = data.content
   local attachments = data.attachments
 
@@ -537,10 +553,10 @@ function getFilterList()
       label = "Тип",
       options = {
         { value = "1", label = "Манга"      },
-        { value = "2", label = "Манхва"     },
-        { value = "3", label = "Маньхуа"    },
-        { value = "4", label = "Комикс"     },
-        { value = "5", label = "OEL-манга"  },
+        { value = "5", label = "Манхва"     },
+        { value = "6", label = "Маньхуа"    },
+        { value = "9", label = "Комикс"     },
+        { value = "4", label = "OEL-манга"  },
       }
     },
     {
@@ -561,7 +577,6 @@ function getFilterList()
       options = {
         { value = "1", label = "Онгоинг"            },
         { value = "2", label = "Завершён"            },
-        { value = "3", label = "Анонс"              },
         { value = "4", label = "Приостановлен"      },
         { value = "5", label = "Выпуск прекращён"   },
       }
@@ -571,38 +586,45 @@ function getFilterList()
       key   = "genres",
       label = "Жанры",
       options = {
-        { value = "1",  label = "Арт"                    },
-        { value = "2",  label = "Боевик"                 },
-        { value = "3",  label = "Боевые искусства"       },
-        { value = "4",  label = "Вампиры"                },
-        { value = "5",  label = "Гарем"                  },
-        { value = "6",  label = "Героическое фэнтези"    },
-        { value = "7",  label = "Демоны"                 },
-        { value = "8",  label = "Детектив"               },
-        { value = "9",  label = "Дзёсэй"                 },
-        { value = "10", label = "Драма"                  },
-        { value = "11", label = "История"                },
-        { value = "12", label = "Комедия"                },
-        { value = "13", label = "Магия"                  },
-        { value = "14", label = "Меха"                   },
-        { value = "15", label = "Мистика"                },
-        { value = "16", label = "Научная фантастика"     },
-        { value = "17", label = "Повседневность"         },
-        { value = "18", label = "Приключения"            },
-        { value = "19", label = "Психология"             },
-        { value = "20", label = "Романтика"              },
-        { value = "21", label = "Сверхъестественное"     },
-        { value = "22", label = "Сёдзё"                  },
-        { value = "23", label = "Сёнэн"                  },
-        { value = "24", label = "Спорт"                  },
-        { value = "25", label = "Сэйнэн"                 },
-        { value = "26", label = "Трагедия"               },
-        { value = "27", label = "Триллер"                },
-        { value = "28", label = "Ужасы"                  },
-        { value = "29", label = "Фантастика"             },
-        { value = "30", label = "Фэнтези"                },
-        { value = "31", label = "Школа"                  },
-        { value = "32", label = "Этти"                   },
+        { value = "34", label = "Боевик"                 },
+        { value = "35", label = "Боевые искусства"       },
+        { value = "36", label = "Вампиры"                },
+        { value = "37", label = "Гарем"                  },
+        { value = "39", label = "Героическое фэнтези"    },
+        { value = "40", label = "Детектив"               },
+        { value = "41", label = "Дзёсэй"                 },
+        { value = "43", label = "Драма"                  },
+        { value = "44", label = "Игра"                   },
+        { value = "45", label = "История"                },
+        { value = "47", label = "Комедия"                },
+        { value = "49", label = "Меха"                   },
+        { value = "50", label = "Мистика"                },
+        { value = "51", label = "Научная фантастика"     },
+        { value = "52", label = "Повседневность"         },
+        { value = "53", label = "Постапокалиптика"       },
+        { value = "54", label = "Приключения"            },
+        { value = "55", label = "Психология"             },
+        { value = "56", label = "Романтика"              },
+        { value = "57", label = "Самурайский боевик"     },
+        { value = "58", label = "Сверхъестественное"     },
+        { value = "59", label = "Сёдзё"                  },
+        { value = "61", label = "Сёнэн"                  },
+        { value = "63", label = "Спорт"                  },
+        { value = "64", label = "Сэйнэн"                 },
+        { value = "65", label = "Трагедия"               },
+        { value = "66", label = "Триллер"                },
+        { value = "67", label = "Ужасы"                  },
+        { value = "68", label = "Фантастика"             },
+        { value = "69", label = "Фэнтези"                },
+        { value = "70", label = "Школа"                  },
+        { value = "72", label = "Этти"                   },
+        { value = "79", label = "Исекай"                 },
+        { value = "80", label = "Музыка"                 },
+        { value = "81", label = "Демоны"                 },
+        { value = "85", label = "Магия"                  },
+        { value = "87", label = "Супер сила"             },
+        { value = "89", label = "Военное"                },
+        { value = "91", label = "Безумие"                },
       }
     },
   }
