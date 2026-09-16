@@ -1,6 +1,6 @@
 id       = "mintmanga"
 name     = "MintManga"
-version  = "1.2.0"
+version  = "1.2.1"
 baseUrl  = "https://mintmanga.com"
 language = "ru"
 icon     = "https://raw.githubusercontent.com/HnDK0/external-sources/main/icons/mintmanga.png"
