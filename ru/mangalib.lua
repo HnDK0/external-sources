@@ -622,6 +622,7 @@ function getFilterList()
         { value = "chap_count",      label = "Количеству глав"     },
         { value = "last_chapter_at", label = "Дате обновления"     },
         { value = "created_at",      label = "Дате добавления"     },
+        { value = "releaseDate",     label = "Дате релиза"         },
         { value = "name",            label = "По названию (A-Z)"   },
         { value = "rus_name",        label = "По названию (А-Я)"   },
       }
@@ -651,11 +652,26 @@ function getFilterList()
       key   = "types",
       label = "Тип",
       options = {
-        { value = "1", label = "Манга"      },
-        { value = "5", label = "Манхва"     },
-        { value = "6", label = "Маньхуа"    },
-        { value = "9", label = "Комикс"     },
-        { value = "4", label = "OEL-манга"  },
+        { value = "1", label = "Манга"     },
+        { value = "4", label = "OEL-манга" },
+        { value = "5", label = "Манхва"    },
+        { value = "6", label = "Маньхуа"   },
+        { value = "8", label = "Руманга"   },
+        { value = "9", label = "Комикс"    },
+      }
+    },
+    {
+      type  = "tristate",
+      key   = "format",
+      label = "Формат",
+      options = {
+        { value = "1", label = "4-кома (Ёнкома)" },
+        { value = "2", label = "Сборник"         },
+        { value = "3", label = "Додзинси"        },
+        { value = "4", label = "В цвете"         },
+        { value = "5", label = "Сингл"           },
+        { value = "6", label = "Веб"             },
+        { value = "7", label = "Вебтун"          },
       }
     },
     {
@@ -664,7 +680,7 @@ function getFilterList()
       label = "Статус перевода",
       options = {
         { value = "1", label = "Продолжается" },
-        { value = "2", label = "Завершен"     },
+        { value = "2", label = "Завершён"     },
         { value = "3", label = "Заморожен"    },
         { value = "4", label = "Заброшен"     },
       }
@@ -674,10 +690,22 @@ function getFilterList()
       key   = "manga_status",
       label = "Статус тайтла",
       options = {
-        { value = "1", label = "Онгоинг"            },
-        { value = "2", label = "Завершён"            },
-        { value = "4", label = "Приостановлен"      },
-        { value = "5", label = "Выпуск прекращён"   },
+        { value = "1", label = "Онгоинг"          },
+        { value = "2", label = "Завершён"          },
+        { value = "3", label = "Анонс"             },
+        { value = "4", label = "Приостановлен"    },
+        { value = "5", label = "Выпуск прекращён" },
+      }
+    },
+    {
+      type  = "checkbox",
+      key   = "age",
+      label = "Возрастное ограничение",
+      options = {
+        { value = "1", label = "6+"  },
+        { value = "2", label = "12+" },
+        { value = "3", label = "16+" },
+        { value = "4", label = "18+" },
       }
     },
     {
@@ -685,45 +713,55 @@ function getFilterList()
       key   = "genres",
       label = "Жанры",
       options = {
-        { value = "34", label = "Боевик"                 },
-        { value = "35", label = "Боевые искусства"       },
-        { value = "36", label = "Вампиры"                },
-        { value = "37", label = "Гарем"                  },
-        { value = "39", label = "Героическое фэнтези"    },
-        { value = "40", label = "Детектив"               },
-        { value = "41", label = "Дзёсэй"                 },
-        { value = "43", label = "Драма"                  },
-        { value = "44", label = "Игра"                   },
-        { value = "45", label = "История"                },
-        { value = "47", label = "Комедия"                },
-        { value = "49", label = "Меха"                   },
-        { value = "50", label = "Мистика"                },
-        { value = "51", label = "Научная фантастика"     },
-        { value = "52", label = "Повседневность"         },
-        { value = "53", label = "Постапокалиптика"       },
-        { value = "54", label = "Приключения"            },
-        { value = "55", label = "Психология"             },
-        { value = "56", label = "Романтика"              },
-        { value = "57", label = "Самурайский боевик"     },
-        { value = "58", label = "Сверхъестественное"     },
-        { value = "59", label = "Сёдзё"                  },
-        { value = "61", label = "Сёнэн"                  },
-        { value = "63", label = "Спорт"                  },
-        { value = "64", label = "Сэйнэн"                 },
-        { value = "65", label = "Трагедия"               },
-        { value = "66", label = "Триллер"                },
-        { value = "67", label = "Ужасы"                  },
-        { value = "68", label = "Фантастика"             },
-        { value = "69", label = "Фэнтези"                },
-        { value = "70", label = "Школа"                  },
-        { value = "72", label = "Этти"                   },
-        { value = "79", label = "Исекай"                 },
-        { value = "80", label = "Музыка"                 },
-        { value = "81", label = "Демоны"                 },
-        { value = "85", label = "Магия"                  },
-        { value = "87", label = "Супер сила"             },
-        { value = "89", label = "Военное"                },
-        { value = "91", label = "Безумие"                },
+        { value = "32", label = "Арт"                    },
+        { value = "91", label = "Безумие"                 },
+        { value = "34", label = "Боевик"                  },
+        { value = "36", label = "Вампиры"                 },
+        { value = "89", label = "Военное"                 },
+        { value = "37", label = "Гарем"                   },
+        { value = "38", label = "Гендерная интрига"       },
+        { value = "39", label = "Героическое фэнтези"     },
+        { value = "81", label = "Демоны"                  },
+        { value = "40", label = "Детектив"                },
+        { value = "41", label = "Дзёсэй"                  },
+        { value = "43", label = "Драма"                   },
+        { value = "44", label = "Игра"                    },
+        { value = "79", label = "Исекай"                  },
+        { value = "45", label = "История"                 },
+        { value = "46", label = "Киберпанк"               },
+        { value = "76", label = "Кодомо"                  },
+        { value = "47", label = "Комедия"                 },
+        { value = "83", label = "Космос"                  },
+        { value = "85", label = "Магия"                   },
+        { value = "48", label = "Махо-сёдзё"              },
+        { value = "90", label = "Машины"                  },
+        { value = "49", label = "Меха"                    },
+        { value = "50", label = "Мистика"                 },
+        { value = "80", label = "Музыка"                  },
+        { value = "51", label = "Научная фантастика"      },
+        { value = "77", label = "Омегаверс"               },
+        { value = "86", label = "Пародия"                 },
+        { value = "52", label = "Повседневность"          },
+        { value = "82", label = "Полиция"                 },
+        { value = "53", label = "Постапокалиптика"        },
+        { value = "54", label = "Приключения"             },
+        { value = "55", label = "Психология"              },
+        { value = "56", label = "Романтика"               },
+        { value = "57", label = "Самурайский боевик"      },
+        { value = "58", label = "Сверхъестественное"      },
+        { value = "59", label = "Сёдзё"                   },
+        { value = "61", label = "Сёнэн"                   },
+        { value = "63", label = "Спорт"                   },
+        { value = "87", label = "Супер сила"              },
+        { value = "64", label = "Сэйнэн"                  },
+        { value = "65", label = "Трагедия"                },
+        { value = "66", label = "Триллер"                 },
+        { value = "67", label = "Ужасы"                   },
+        { value = "68", label = "Фантастика"              },
+        { value = "69", label = "Фэнтези"                 },
+        { value = "70", label = "Школа"                   },
+        { value = "71", label = "Эротика"                 },
+        { value = "72", label = "Этти"                    },
       }
     },
   }
@@ -738,8 +776,11 @@ function getCatalogFiltered(index, filters)
   local req_ch    = filters["require_chapters"]
 
   local types_inc        = filters["types_included"]          or {}
+  local format_inc       = filters["format_included"]         or {}
+  local format_exc       = filters["format_excluded"]         or {}
   local scanlate_inc     = filters["scanlateStatus_included"] or {}
   local manga_status_inc = filters["manga_status_included"]   or {}
+  local age_inc          = filters["age_included"]            or {}
   local genres_inc       = filters["genres_included"]         or {}
   local genres_exc       = filters["genres_excluded"]         or {}
 
@@ -749,14 +790,17 @@ function getCatalogFiltered(index, filters)
               .. "&sort_type=" .. sort_type
 
   if req_ch ~= "false" then
-    url = url .. "&chapters[min]=1"
+    url = url .. "&chap_count_min=1"
   end
 
-  for _, v in ipairs(types_inc)        do url = url .. "&types[]="          .. v end
-  for _, v in ipairs(scanlate_inc)     do url = url .. "&scanlateStatus[]=" .. v end
-  for _, v in ipairs(manga_status_inc) do url = url .. "&manga_status[]="   .. v end
-  for _, v in ipairs(genres_inc)       do url = url .. "&genres[]="         .. v end
-  for _, v in ipairs(genres_exc)       do url = url .. "&genres_exclude[]=" .. v end
+  for _, v in ipairs(types_inc)        do url = url .. "&types[]="            .. v end
+  for _, v in ipairs(format_inc)       do url = url .. "&format[]="           .. v end
+  for _, v in ipairs(format_exc)       do url = url .. "&format_exclude[]="   .. v end
+  for _, v in ipairs(scanlate_inc)     do url = url .. "&scanlate_status[]="  .. v end
+  for _, v in ipairs(manga_status_inc) do url = url .. "&status[]="           .. v end
+  for _, v in ipairs(age_inc)          do url = url .. "&caution[]="          .. v end
+  for _, v in ipairs(genres_inc)       do url = url .. "&genres[]="           .. v end
+  for _, v in ipairs(genres_exc)       do url = url .. "&genres_exclude[]="   .. v end
 
   local r = http_get(url, { headers = buildHeaders() })
   if not r.success then return { items = {}, hasNext = false } end

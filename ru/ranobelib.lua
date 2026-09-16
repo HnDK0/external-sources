@@ -601,6 +601,7 @@ function getFilterList()
         { value = "chap_count",      label = "Количеству глав"     },
         { value = "last_chapter_at", label = "Дате обновления"     },
         { value = "created_at",      label = "Дате добавления"     },
+        { value = "releaseDate",     label = "Дате релиза"         },
         { value = "name",            label = "По названию (A-Z)"   },
         { value = "rus_name",        label = "По названию (А-Я)"   },
       }
@@ -616,10 +617,14 @@ function getFilterList()
       }
     },
     {
-      type  = "switch",
+      type  = "select",
       key   = "require_chapters",
       label = "Только проекты с главами",
-      defaultValue = true,
+      defaultValue = "true",
+      options = {
+        { value = "true",  label = "Да" },
+        { value = "false", label = "Все" },
+      }
     },
     {
       type  = "checkbox",
@@ -655,6 +660,17 @@ function getFilterList()
         { value = "3", label = "Анонс"              },
         { value = "4", label = "Приостановлен"      },
         { value = "5", label = "Выпуск прекращён"   },
+      }
+    },
+    {
+      type  = "checkbox",
+      key   = "ageRestriction",
+      label = "Возрастное ограничение",
+      options = {
+        { value = "1", label = "6+"  },
+        { value = "2", label = "12+" },
+        { value = "3", label = "16+" },
+        { value = "4", label = "18+" },
       }
     },
     {
@@ -720,83 +736,6 @@ function getFilterList()
         { value = "74",  label = "Яой"                    },
       }
     },
-    {
-      type  = "tristate",
-      key   = "tags",
-      label = "Теги",
-      options = {
-        { value = "328", label = "Авантюристы"                  },
-        { value = "175", label = "Антигерой"                    },
-        { value = "333", label = "Бессмертные"                  },
-        { value = "218", label = "Боги"                         },
-        { value = "309", label = "Борьба за власть"             },
-        { value = "360", label = "Брат и сестра"                },
-        { value = "339", label = "Ведьма"                       },
-        { value = "204", label = "Видеоигры"                    },
-        { value = "214", label = "Виртуальная реальность"       },
-        { value = "349", label = "Владыка демонов"              },
-        { value = "198", label = "Военные"                      },
-        { value = "310", label = "Воспоминания из другого мира" },
-        { value = "212", label = "Выживание"                    },
-        { value = "294", label = "ГГ женщина"                   },
-        { value = "292", label = "ГГ имба"                      },
-        { value = "295", label = "ГГ мужчина"                   },
-        { value = "325", label = "ГГ не ояш"                    },
-        { value = "331", label = "ГГ не человек"                },
-        { value = "326", label = "ГГ ояш"                       },
-        { value = "324", label = "Главный герой бог"            },
-        { value = "298", label = "Глупый ГГ"                    },
-        { value = "171", label = "Горничные"                    },
-        { value = "306", label = "Гуро"                         },
-        { value = "197", label = "Гяру"                         },
-        { value = "157", label = "Демоны"                       },
-        { value = "313", label = "Драконы"                      },
-        { value = "317", label = "Древний мир"                  },
-        { value = "163", label = "Зверолюди"                    },
-        { value = "155", label = "Зомби"                        },
-        { value = "323", label = "Исторические фигуры"          },
-        { value = "158", label = "Кулинария"                    },
-        { value = "161", label = "Культивация"                  },
-        { value = "344", label = "ЛГБТ"                         },
-        { value = "319", label = "ЛитРПГ"                       },
-        { value = "206", label = "Лоли"                         },
-        { value = "170", label = "Магия"                        },
-        { value = "345", label = "Машинный перевод"             },
-        { value = "159", label = "Медицина"                     },
-        { value = "330", label = "Межгалактическая война"       },
-        { value = "207", label = "Монстр Девушки"               },
-        { value = "208", label = "Монстры"                      },
-        { value = "316", label = "Мрачный мир"                  },
-        { value = "209", label = "Музыка"                       },
-        { value = "199", label = "Ниндзя"                       },
-        { value = "210", label = "Обратный Гарем"               },
-        { value = "200", label = "Офисные Работники"            },
-        { value = "341", label = "Пираты"                       },
-        { value = "314", label = "Подземелья"                   },
-        { value = "311", label = "Политика"                     },
-        { value = "201", label = "Полиция"                      },
-        { value = "205", label = "Преступники / Криминал"       },
-        { value = "196", label = "Призраки / Духи"              },
-        { value = "329", label = "Призыватели"                  },
-        { value = "321", label = "Прыжки между мирами"          },
-        { value = "318", label = "Путешествие в другой мир"     },
-        { value = "213", label = "Путешествие во времени"       },
-        { value = "355", label = "Рабы"                         },
-        { value = "312", label = "Ранги силы"                   },
-        { value = "154", label = "Реинкарнация"                 },
-        { value = "202", label = "Самураи"                      },
-        { value = "315", label = "Скрытие личности"             },
-        { value = "174", label = "Средневековье"                },
-        { value = "203", label = "Традиционные игры"            },
-        { value = "303", label = "Умный ГГ"                     },
-        { value = "332", label = "Характерный рост"             },
-        { value = "167", label = "Хикикомори"                   },
-        { value = "322", label = "Эволюция"                     },
-        { value = "327", label = "Элементы РПГ"                 },
-        { value = "217", label = "Эльфы"                        },
-        { value = "165", label = "Якудза"                       },
-      }
-    },
   }
 end
 
@@ -806,15 +745,14 @@ function getCatalogFiltered(index, filters)
   local page      = index + 1
   local sort_by   = filters["sort_by"]   or "rating_score"
   local sort_type = filters["sort_type"] or "desc"
-  local req_ch    = filters["require_chapters"]  -- switch: "true"/"false"/nil
+  local req_ch    = filters["require_chapters"]
 
   local types_inc        = filters["types_included"]          or {}
   local scanlate_inc     = filters["scanlateStatus_included"] or {}
   local manga_status_inc = filters["manga_status_included"]   or {}
+  local age_inc          = filters["ageRestriction_included"]  or {}
   local genres_inc       = filters["genres_included"]         or {}
   local genres_exc       = filters["genres_excluded"]         or {}
-  local tags_inc         = filters["tags_included"]           or {}
-  local tags_exc         = filters["tags_excluded"]           or {}
 
   local url = apiBase .. "?site_id[0]=" .. siteId
               .. "&page="      .. tostring(page)
@@ -822,16 +760,15 @@ function getCatalogFiltered(index, filters)
               .. "&sort_type=" .. sort_type
 
   if req_ch ~= "false" then
-    url = url .. "&chapters[min]=1"
+    url = url .. "&chap_count_min=1"
   end
 
-  for _, v in ipairs(types_inc)        do url = url .. "&types[]="          .. v end
-  for _, v in ipairs(scanlate_inc)     do url = url .. "&scanlateStatus[]=" .. v end
-  for _, v in ipairs(manga_status_inc) do url = url .. "&manga_status[]="   .. v end
-  for _, v in ipairs(genres_inc)       do url = url .. "&genres[]="         .. v end
-  for _, v in ipairs(genres_exc)       do url = url .. "&genres_exclude[]=" .. v end
-  for _, v in ipairs(tags_inc)         do url = url .. "&tags[]="           .. v end
-  for _, v in ipairs(tags_exc)         do url = url .. "&tags_exclude[]="   .. v end
+  for _, v in ipairs(types_inc)        do url = url .. "&types[]="            .. v end
+  for _, v in ipairs(scanlate_inc)     do url = url .. "&scanlate_status[]="  .. v end
+  for _, v in ipairs(manga_status_inc) do url = url .. "&status[]="           .. v end
+  for _, v in ipairs(age_inc)          do url = url .. "&caution[]="          .. v end
+  for _, v in ipairs(genres_inc)       do url = url .. "&genres[]="           .. v end
+  for _, v in ipairs(genres_exc)       do url = url .. "&genres_exclude[]="   .. v end
 
   local r = http_get(url, { headers = buildHeaders() })
   if not r.success then return { items = {}, hasNext = false } end
