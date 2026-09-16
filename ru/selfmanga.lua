@@ -14,6 +14,7 @@ local function absUrl(href)
     if not href or href == "" then return "" end
     if string_starts_with(href, "http") then return href end
     if string_starts_with(href, "//") then return "https:" .. href end
+    if not string_starts_with(href, "/") then href = "/" .. href end
     return url_resolve(baseUrl, href)
 end
 
@@ -35,7 +36,10 @@ local function fetch(url)
     ensureAuth()
     local r = http_get(url, { headers = defaultHeaders })
     if not r.success then
-        if r.code == 404 then
+        if r.code == 403 then
+            log_error("selfmanga: 403 — требуется авторизация: " .. url)
+            if show_error then show_error("Требуется авторизация", "Для доступа к этой странице необходимо войти в аккаунт.") end
+        elseif r.code == 404 then
             log_error("selfmanga: 404 — страница не найдена: " .. url)
             if show_error then show_error("Ошибка загрузки", "Страница не найдена (404).") end
         else
