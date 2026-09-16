@@ -1,6 +1,6 @@
 id       = "readmanga"
 name     = "ReadManga"
-version  = "1.1.0"
+version  = "1.1.1"
 baseUrl  = "https://readmanga.me"
 language = "ru"
 icon     = "https://raw.githubusercontent.com/HnDK0/external-sources/main/icons/readmanga.png"
@@ -24,8 +24,18 @@ local defaultHeaders = {
 }
 
 local function fetch(url)
+    ensureAuth()
     local r = http_get(url, { headers = defaultHeaders })
-    if not r.success then return nil end
+    if not r.success then
+        if r.code == 404 then
+            log_error("readmanga: 404 — страница не найдена (возможно, удалена или нужна авторизация): " .. url)
+            if show_error then show_error("Ошибка загрузки", "Страница не найдена (404).\nВозможно, удалена или нужна авторизация.") end
+        else
+            log_error("readmanga: HTTP " .. (r.code or "?") .. " — " .. url)
+            if show_error then show_error("Ошибка загрузки", "HTTP " .. tostring(r.code) .. ". Попробуйте позже.") end
+        end
+        return nil
+    end
     return r.body
 end
 
@@ -40,6 +50,15 @@ local function mangaSlug(bookUrl)
         if segment ~= "" then return segment end
     end
     return nil
+end
+
+-- ── Авторизация (cookie transfer из 3.grouple.co на readmanga.me) ──
+
+local function ensureAuth()
+    local cookies = get_cookies("https://readmanga.me")
+    if cookies and cookies.remember_me then return true end
+    http_get(baseUrl .. "/internal/auth", { headers = defaultHeaders })
+    return true
 end
 
 -- ── Каталог (JSON API) ──
@@ -63,6 +82,9 @@ function getCatalogList(index)
             url = baseUrl .. "/" .. linkName,
             cover = m.picUrl or "",
         }
+        if m.forSale then
+            item.locked = true
+        end
         local rating = m.rating
         if type(rating) == "table" then rating = rating.rate or rating.value end
         if rating and type(rating) == "number" and rating > 0 then
@@ -95,6 +117,9 @@ function getCatalogSearch(index, query)
             url = baseUrl .. "/" .. linkName,
             cover = m.picUrl or "",
         }
+        if m.forSale then
+            item.locked = true
+        end
         local rating = m.rating
         if type(rating) == "table" then rating = rating.rate or rating.value end
         if rating and type(rating) == "number" and rating > 0 then
@@ -106,164 +131,213 @@ function getCatalogSearch(index, query)
     return { items = items, hasNext = false }
 end
 
--- ── Фильтры ──
+-- ── Фильтры ──────────────────────────────────────────────────────────────────
+-- readmanga API: все ID-фильтры (жанры, теги, категории, ограничения, прочее)
+-- передаются через includeElementIds/excludeElementIds (один параметр на тип).
+-- Статусы — отдельные параметры. Год — years=min,max.
 
 function getFilterList()
     return {
+        -- Сортировка
         {
             type = "select",
             key = "sort",
             label = "Сортировка",
             defaultValue = "DATE_UPDATE",
             options = {
-                { value = "RATING", label = "По рейтингу" },
-                { value = "DATE_UPDATE", label = "По обновлению" },
-                { value = "NAME", label = "По алфавиту" },
-                { value = "YEAR", label = "По году" },
-                { value = "POPULARITY", label = "По популярности" },
-                { value = "USER_RATING", label = "По оценке" },
-                { value = "DATE_CREATE", label = "Новинки" },
+                { value = "RATING",      label = "По рейтингу"      },
+                { value = "DATE_UPDATE",  label = "По обновлению"    },
+                { value = "NAME",         label = "По алфавиту"      },
+                { value = "YEAR",         label = "По году"          },
+                { value = "POPULARITY",   label = "По популярности"  },
+                { value = "USER_RATING",  label = "По оценке"        },
+                { value = "DATE_CREATE",  label = "Новинки"          },
             },
         },
+        -- Жанры (tristate: include/exclude)
         {
-            type = "select",
-            key = "genre",
-            label = "Жанр",
-            defaultValue = "",
+            type  = "tristate",
+            key   = "genres",
+            label = "Жанры",
             options = {
-                { value = "", label = "Все" },
-                { value = "2131", label = "Фэнтези" },
-                { value = "2155", label = "Боевик" },
-                { value = "2136", label = "Комедия" },
-                { value = "2121", label = "Романтика" },
-                { value = "2118", label = "Драма" },
-                { value = "2119", label = "История" },
-                { value = "2152", label = "Детектив" },
-                { value = "2130", label = "Приключения" },
-                { value = "2134", label = "Сёнэн" },
-                { value = "2138", label = "Сэйнэн" },
-                { value = "2142", label = "Гарем" },
-                { value = "2158", label = "Дзёсэй" },
-                { value = "2122", label = "Сёдзё" },
-                { value = "2133", label = "Научная фантастика" },
-                { value = "2144", label = "Психология" },
-                { value = "2150", label = "Триллер" },
-                { value = "2125", label = "Ужасы" },
-                { value = "2127", label = "Школа" },
-                { value = "2149", label = "Этти" },
-                { value = "2129", label = "Спорт" },
-                { value = "2151", label = "Постапокалиптика" },
-                { value = "2153", label = "Трагедия" },
-                { value = "2156", label = "Гендерная интрига" },
-                { value = "2137", label = "Кодомо" },
-                { value = "8032", label = "Киберпанк" },
-                { value = "9450", label = "Исэкай" },
-                { value = "9514", label = "Музыка" },
-                { value = "9524", label = "Пародия" },
-                { value = "2159", label = "Сверхъестественное" },
-                { value = "10196", label = "Женщины" },
-                { value = "10197", label = "Мужчины" },
-                { value = "2143", label = "Боевые искусства" },
+                { value = "2131", label = "Фэнтези"             },
+                { value = "2155", label = "Боевик"              },
+                { value = "2136", label = "Комедия"             },
+                { value = "2121", label = "Романтика"           },
+                { value = "2118", label = "Драма"               },
+                { value = "2119", label = "История"             },
+                { value = "2152", label = "Детектив"            },
+                { value = "2130", label = "Приключения"         },
+                { value = "2134", label = "Сёнэн"               },
+                { value = "2138", label = "Сэйнэн"              },
+                { value = "2142", label = "Гарем"               },
+                { value = "2158", label = "Дзёсэй"              },
+                { value = "2122", label = "Сёдзё"               },
+                { value = "2133", label = "Научная фантастика"   },
+                { value = "2144", label = "Психология"          },
+                { value = "2150", label = "Триллер"             },
+                { value = "2125", label = "Ужасы"               },
+                { value = "2127", label = "Школа"               },
+                { value = "2149", label = "Этти"                },
+                { value = "2129", label = "Спорт"               },
+                { value = "2151", label = "Постапокалиптика"    },
+                { value = "2153", label = "Трагедия"            },
+                { value = "2156", label = "Гендерная интрига"   },
+                { value = "2137", label = "Кодомо"              },
+                { value = "8032", label = "Киберпанк"           },
+                { value = "9450", label = "Исэкай"              },
+                { value = "9514", label = "Музыка"              },
+                { value = "2159", label = "Сверхъестественное"  },
+                { value = "2143", label = "Боевые искусства"    },
+                { value = "9524", label = "Пародия"             },
             },
         },
+        -- Категории (tristate: include/exclude)
         {
-            type = "select",
-            key = "category",
-            label = "Категория",
-            defaultValue = "",
+            type  = "tristate",
+            key   = "categories",
+            label = "Категории",
             options = {
-                { value = "", label = "Все" },
-                { value = "9451", label = "Манга" },
-                { value = "3001", label = "Манхва" },
-                { value = "3002", label = "Маньхуа" },
-                { value = "2141", label = "Додзинси" },
-                { value = "3515", label = "Комикс" },
-                { value = "2161", label = "Ёнкома" },
-                { value = "9577", label = "OEL-манга" },
-                { value = "5685", label = "Арт" },
+                { value = "9451", label = "Манга"       },
+                { value = "3001", label = "Манхва"      },
+                { value = "3002", label = "Маньхуа"     },
+                { value = "2141", label = "Додзинси"    },
+                { value = "3515", label = "Комикс"      },
+                { value = "2161", label = "Ёнкома"      },
+                { value = "9577", label = "OEL-манга"   },
+                { value = "5685", label = "Арт"         },
             },
         },
+        -- Возрастная рекомендация (tristate: include/exclude)
+        {
+            type  = "tristate",
+            key   = "limitation",
+            label = "Возраст",
+            options = {
+                { value = "0",  label = "6+"   },
+                { value = "1",  label = "12+"  },
+                { value = "2",  label = "16+"  },
+                { value = "3",  label = "18+"  },
+                { value = "4",  label = "NC-17" },
+            },
+        },
+        -- Прочее (tristate: include/exclude) — формат, доп. теги
+        {
+            type  = "tristate",
+            key   = "another",
+            label = "Прочее",
+            options = {
+                { value = "2160", label = "Веб"            },
+                { value = "7290", label = "В цвете"        },
+                { value = "2162", label = "Ч/б"            },
+                { value = "2163", label = "Цветной"        },
+                { value = "9516", label = "Джамп"          },
+                { value = "9517", label = "Дзюмп"          },
+                { value = "9518", label = "Список"         },
+                { value = "9519", label = "Ранобэ"         },
+                { value = "9520", label = "Руманга"        },
+                { value = "9521", label = "Манхуа"         },
+                { value = "9522", label = "Маньхуа"        },
+                { value = "9523", label = "Manhwa"         },
+            },
+        },
+        -- Статус выхода (select)
         {
             type = "select",
             key = "productionStatus",
             label = "Статус выхода",
             defaultValue = "",
             options = {
-                { value = "", label = "Любые" },
-                { value = "PROGRESS", label = "Продолжается" },
-                { value = "FINISHED", label = "Завершён" },
-                { value = "PLANNED", label = "Запланирован" },
+                { value = "",          label = "Любые"       },
+                { value = "PROGRESS",  label = "Продолжается" },
+                { value = "FINISHED",  label = "Завершён"    },
+                { value = "PLANNED",   label = "Запланирован" },
                 { value = "POSTPONED", label = "Приостановлен" },
-                { value = "CANCELED", label = "Отменён" },
+                { value = "CANCELED",  label = "Отменён"     },
                 { value = "NON_FINISHED", label = "Не окончен" },
             },
         },
+        -- Статус перевода (select)
         {
             type = "select",
             key = "translationStatus",
             label = "Статус перевода",
             defaultValue = "",
             options = {
-                { value = "", label = "Любые" },
-                { value = "PROGRESS", label = "Продолжается" },
-                { value = "FINISHED", label = "Завершён" },
-                { value = "STARTED", label = "Начат" },
+                { value = "",         label = "Любые"          },
+                { value = "PROGRESS", label = "Продолжается"   },
+                { value = "FINISHED", label = "Завершён"       },
+                { value = "STARTED",  label = "Начат"          },
                 { value = "POSTPONED", label = "Приостановлен" },
-                { value = "NONE", label = "Отсутствует" },
-                { value = "NO_NEED", label = "Нет необходимости" },
+                { value = "NONE",     label = "Отсутствует"    },
+                { value = "NO_NEED",  label = "Нет необходимости" },
             },
         },
+        -- Год выпуска (sort — диапазон через min,max)
         {
             type = "sort",
             key = "year",
             label = "Год",
             defaultValue = "",
             options = {
-                { value = "", label = "Любой" },
-                { value = "2025,2025", label = "2025" },
-                { value = "2024,2024", label = "2024" },
-                { value = "2023,2023", label = "2023" },
-                { value = "2020,2025", label = "2020-2025" },
-                { value = "2015,2019", label = "2015-2019" },
-                { value = "2010,2014", label = "2010-2014" },
-                { value = "2000,2009", label = "2000-2009" },
-                { value = "1990,1999", label = "1990-1999" },
-                { value = "1980,1989", label = "1980-1989" },
+                { value = "",           label = "Любой"     },
+                { value = "2025,2025",  label = "2025"      },
+                { value = "2024,2024",  label = "2024"      },
+                { value = "2023,2023",  label = "2023"      },
+                { value = "2020,2025",  label = "2020–2025" },
+                { value = "2015,2019",  label = "2015–2019" },
+                { value = "2010,2014",  label = "2010–2014" },
+                { value = "2000,2009",  label = "2000–2009" },
+                { value = "1990,1999",  label = "1990–1999" },
+                { value = "1980,1989",  label = "1980–1989" },
             },
         },
     }
 end
 
+-- ── Каталог с фильтрами ───────────────────────────────────────────────────────
+
 function getCatalogFiltered(index, filters)
-    local sort = filters["sort"] or "DATE_UPDATE"
-    local offset = 50 * index
-    local params = "offset=" .. offset .. "&sortType=" .. sort
-    
-    local genre = filters["genre"] or ""
-    if genre ~= "" then
-        params = params .. "&includeElementIds=" .. genre
-    end
-    
-    local category = filters["category"] or ""
-    if category ~= "" then
-        params = params .. "&includeElementIds=" .. category
-    end
-    
-    local prodStatus = filters["productionStatus"] or ""
-    if prodStatus ~= "" then
-        params = params .. "&includeProductionStatuses=" .. prodStatus
-    end
-    
-    local transStatus = filters["translationStatus"] or ""
-    if transStatus ~= "" then
-        params = params .. "&includeTranslationStatuses=" .. transStatus
-    end
-    
+    local sort    = filters["sort"] or "DATE_UPDATE"
+    local offset  = 50 * index
+    local params  = "offset=" .. offset .. "&sortType=" .. sort
+
+    -- Жанры: tristate → includeElementIds / excludeElementIds
+    local genres_inc = filters["genres_included"] or {}
+    local genres_exc = filters["genres_excluded"] or {}
+    for _, v in ipairs(genres_inc) do params = params .. "&includeElementIds=" .. v end
+    for _, v in ipairs(genres_exc) do params = params .. "&excludeElementIds=" .. v end
+
+    -- Категории: tristate → includeElementIds / excludeElementIds
+    local cat_inc = filters["categories_included"] or {}
+    local cat_exc = filters["categories_excluded"] or {}
+    for _, v in ipairs(cat_inc) do params = params .. "&includeElementIds=" .. v end
+    for _, v in ipairs(cat_exc) do params = params .. "&excludeElementIds=" .. v end
+
+    -- Возраст: tristate → includeElementIds / excludeElementIds
+    local lim_inc = filters["limitation_included"] or {}
+    local lim_exc = filters["limitation_excluded"] or {}
+    for _, v in ipairs(lim_inc) do params = params .. "&includeElementIds=" .. v end
+    for _, v in ipairs(lim_exc) do params = params .. "&excludeElementIds=" .. v end
+
+    -- Прочее: tristate → includeElementIds / excludeElementIds
+    local ano_inc = filters["another_included"] or {}
+    local ano_exc = filters["another_excluded"] or {}
+    for _, v in ipairs(ano_inc) do params = params .. "&includeElementIds=" .. v end
+    for _, v in ipairs(ano_exc) do params = params .. "&excludeElementIds=" .. v end
+
+    -- Статус выхода: select → includeProductionStatuses
+    local prod = filters["productionStatus"] or ""
+    if prod ~= "" then params = params .. "&includeProductionStatuses=" .. prod end
+
+    -- Статус перевода: select → includeTranslationStatuses
+    local trans = filters["translationStatus"] or ""
+    if trans ~= "" then params = params .. "&includeTranslationStatuses=" .. trans end
+
+    -- Год: sort → years=min,max
     local year = filters["year"] or ""
-    if year ~= "" then
-        params = params .. "&years=" .. year
-    end
-    
+    if year ~= "" then params = params .. "&years=" .. year end
+
     local body = fetch(baseUrl .. "/api/catalog/search?" .. params)
     if not body then return { items = {}, hasNext = false } end
     local ok, data = pcall(json_parse, body)
@@ -281,6 +355,9 @@ function getCatalogFiltered(index, filters)
             url = baseUrl .. "/" .. linkName,
             cover = m.picUrl or "",
         }
+        if m.forSale then
+            item.locked = true
+        end
         local rating = m.rating
         if type(rating) == "table" then rating = rating.rate or rating.value end
         if rating and type(rating) == "number" and rating > 0 then
@@ -380,6 +457,21 @@ end
 function getChapterList(bookUrl)
     local body = fetchMangaDetails(bookUrl)
     if not body then return {} end
+
+    -- Лицензирована — главы удалены
+    if body:find("Запрещена публикация произведения по копирайту", 1, true) then
+        log_error("readmanga: лицензировано — главы удалены по требованию правообладателя: " .. bookUrl)
+        if show_error then show_error("Лицензия", "Произведение лицензировано.\nГлавы удалены по требованию правообладателя.") end
+        return {}
+    end
+
+    -- Требуется авторизация
+    if body:find("blockedForAnonymous", 1, true) and not body:find("current_user_id", 1, true) then
+        log_error("readmanga: нужна авторизация через WebView: " .. bookUrl)
+        if show_error then show_error("Авторизация", "Для просмотра контента необходима авторизация через WebView.") end
+        return {}
+    end
+
     local slug = mangaSlug(bookUrl)
     local chapters = {}
     local seen = {}
@@ -416,6 +508,21 @@ function getPageList(html, url)
         if not body then return {} end
         html = body
     end
+
+    -- Платная глава или требование покупки
+    if html:find("purchase%-form", 1, true) or html:find("class=\"alert\"", 1, true) then
+        log_error("readmanga: глава платная — " .. url)
+        if show_error then show_error("Платная глава", "Эта глава является платной.\nКупить можно на readmanga.me") end
+        return {}
+    end
+
+    -- Требуется премиум
+    if html:find("требуется премиум", 1, true) then
+        log_error("readmanga: нужна премиум-подписка — " .. url)
+        if show_error then show_error("Премиум", "Для доступа к главе требуется премиум-подписка.") end
+        return {}
+    end
+
     local pages = {}
     local riStart = html:find("readerInit(", 1, true)
     if not riStart then return {} end

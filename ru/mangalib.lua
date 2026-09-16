@@ -348,7 +348,7 @@ function getChapterList(bookUrl)
   end
 
   if isErrorResponse(r.body) then
-    show_error("Ошибка загрузки", "Не удалось загрузить список глав.\nВозможно, требуется авторизация.")
+    if show_error then show_error("Ошибка загрузки", "Не удалось загрузить список глав.\nВозможно, требуется авторизация.") end
     return nil
   end
 
@@ -490,13 +490,13 @@ local function fetchChapterPages(chapterUrl)
     log_error("mangalib DEBUG: body(first500)=" .. tostring(r.body:sub(1, 500)))
   end
   if not r.success then
-    show_error("Ошибка загрузки", "Не удалось загрузить страницы главы (HTTP " .. tostring(r.code) .. ").\nВозможно, глава не существует или требуется авторизация.")
+    if show_error then show_error("Ошибка загрузки", "Не удалось загрузить страницы главы (HTTP " .. tostring(r.code) .. ").\nВозможно, глава не существует или требуется авторизация.") end
     return nil
   end
 
   if isErrorResponse(r.body) then
     log_error("mangalib DEBUG: isErrorResponse=true")
-    show_error("Ошибка загрузки", "Не удалось загрузить страницы главы.\nТребуется авторизация.")
+    if show_error then show_error("Ошибка загрузки", "Не удалось загрузить страницы главы.\nТребуется авторизация.") end
     return nil
   end
 
@@ -518,7 +518,7 @@ local function fetchChapterPages(chapterUrl)
     local msg = "Эта глава является платной."
     if price > 0 then msg = msg .. "\nЦена: " .. tostring(price) .. " ₽" end
     msg = msg .. "\nКупить можно на mangalib.me"
-    show_error("Платная глава", msg)
+    if show_error then show_error("Платная глава", msg) end
     return nil
   end
 
@@ -529,7 +529,7 @@ local function fetchChapterPages(chapterUrl)
     if name ~= "" then msg = msg .. "\nБандл: " .. name end
     if price > 0 then msg = msg .. "\nЦена: " .. tostring(price) .. " ₽" end
     msg = msg .. "\nКупить можно на mangalib.me"
-    show_error("Платный том", msg)
+    if show_error then show_error("Платный том", msg) end
     return nil
   end
 

@@ -367,7 +367,7 @@ function getChapterList(bookUrl)
   end
 
   if isErrorResponse(r.body) then
-    show_error("Ошибка загрузки", "Не удалось загрузить список глав.\nВозможно, требуется авторизация.")
+    if show_error then show_error("Ошибка загрузки", "Не удалось загрузить список глав.\nВозможно, требуется авторизация.") end
     return nil
   end
 
@@ -515,12 +515,12 @@ function getChapterText(html, chapterUrl)
 
   local r = http_get(apiUrl, { headers = buildHeaders() })
   if not r.success then
-    show_error("Ошибка загрузки", "Не удалось загрузить страницы главы (HTTP " .. tostring(r.code) .. ").\nВозможно, глава не существует или требуется авторизация.")
+    if show_error then show_error("Ошибка загрузки", "Не удалось загрузить страницы главы (HTTP " .. tostring(r.code) .. ").\nВозможно, глава не существует или требуется авторизация.") end
     return ""
   end
 
   if isErrorResponse(r.body) then
-    show_error("Ошибка загрузки", "Не удалось загрузить страницы главы.\nТребуется авторизация.")
+    if show_error then show_error("Ошибка загрузки", "Не удалось загрузить страницы главы.\nТребуется авторизация.") end
     return ""
   end
 
@@ -535,7 +535,7 @@ function getChapterText(html, chapterUrl)
     local msg = "Эта глава является платной."
     if price > 0 then msg = msg .. "\nЦена: " .. tostring(price) .. " ₽" end
     msg = msg .. "\nКупить можно на ranobelib.me"
-    show_error("Платная глава", msg)
+    if show_error then show_error("Платная глава", msg) end
     return ""
   end
 
@@ -546,7 +546,7 @@ function getChapterText(html, chapterUrl)
     if name ~= "" then msg = msg .. "\nБандл: " .. name end
     if price > 0 then msg = msg .. "\nЦена: " .. tostring(price) .. " ₽" end
     msg = msg .. "\nКупить можно на ranobelib.me"
-    show_error("Платный том", msg)
+    if show_error then show_error("Платный том", msg) end
     return ""
   end
 
