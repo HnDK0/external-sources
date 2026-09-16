@@ -1,6 +1,6 @@
 id       = "readmanga"
 name     = "ReadManga"
-version  = "1.1.2"
+version  = "1.2.0"
 baseUrl  = "https://readmanga.me"
 language = "ru"
 icon     = "https://raw.githubusercontent.com/HnDK0/external-sources/main/icons/readmanga.png"
@@ -25,7 +25,7 @@ local defaultHeaders = {
 
 local function ensureAuth()
     if not get_cookies then return true end
-    local cookies = get_cookies("https://readmanga.me")
+    local cookies = get_cookies(baseUrl)
     if cookies and cookies.remember_me then return true end
     http_get(baseUrl .. "/internal/auth", { headers = defaultHeaders })
     return true
@@ -464,12 +464,7 @@ function getChapterList(bookUrl)
         return {}
     end
 
-    -- Требуется авторизация
-    if body:find("blockedForAnonymous", 1, true) and not body:find("current_user_id", 1, true) then
-        log_error("readmanga: нужна авторизация через WebView: " .. bookUrl)
-        if show_error then show_error("Авторизация", "Для просмотра контента необходима авторизация через WebView.") end
-        return {}
-    end
+    -- ponytail: blockedForAnonymous — CSS-класс UI, не блокировка контента
 
     local slug = mangaSlug(bookUrl)
     local chapters = {}
@@ -503,19 +498,34 @@ end
 
 function getPageList(html, url)
     if not html or html == "" then
-        local body = fetch(url)
+        local fetchUrl = url
+        if not fetchUrl:find("mtr=true", 1, true) then
+            fetchUrl = fetchUrl .. (fetchUrl:find("?", 1, true) and "&" or "?") .. "mtr=true"
+        end
+        local body = fetch(fetchUrl)
         if not body then return {} end
         html = body
     end
 
-    -- Платная глава или требование покупки
+    local riStart = html:find("readerInit(", 1, true)
+    if not riStart then
+        local fetchUrl = url
+        if not fetchUrl:find("mtr=true", 1, true) then
+            fetchUrl = fetchUrl .. (fetchUrl:find("?", 1, true) and "&" or "?") .. "mtr=true"
+        end
+        local body = fetch(fetchUrl)
+        if not body then return {} end
+        html = body
+        riStart = html:find("readerInit(", 1, true)
+        if not riStart then return {} end
+    end
+
     if html:find("purchase%-form", 1, true) or html:find("class=\"alert\"", 1, true) then
         log_error("readmanga: глава платная — " .. url)
         if show_error then show_error("Платная глава", "Эта глава является платной.\nКупить можно на readmanga.me") end
         return {}
     end
 
-    -- Требуется премиум
     if html:find("требуется премиум", 1, true) then
         log_error("readmanga: нужна премиум-подписка — " .. url)
         if show_error then show_error("Премиум", "Для доступа к главе требуется премиум-подписка.") end

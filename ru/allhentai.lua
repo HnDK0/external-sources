@@ -1,12 +1,12 @@
-id       = "seimanga"
-name     = "SeiManga"
-version  = "1.2.0"
-baseUrl  = "https://1.seimanga.me"
+id       = "allhentai"
+name     = "AllHentai"
+version  = "1.0.0"
+baseUrl  = "https://20.allhen.online"
 language = "ru"
-icon     = "https://raw.githubusercontent.com/HnDK0/external-sources/main/icons/seimanga.png"
+icon     = "https://raw.githubusercontent.com/HnDK0/external-sources/main/icons/allhentai.png"
 content_type = "manga"
 
--- SeiManga (GroupLe) — взрослая манга на русском.
+-- AllHentai (GroupLe) — хентай манга на русском.
 -- API: $baseUrl/api/catalog/search (JSON), детали/главы/страницы — HTML.
 -- Авторизация: cookie-based через 3.grouple.co (не обязательна для чтения).
 
@@ -36,10 +36,10 @@ local function fetch(url)
     local r = http_get(url, { headers = defaultHeaders })
     if not r.success then
         if r.code == 404 then
-            log_error("seimanga: 404 — страница не найдена: " .. url)
+            log_error("allhentai: 404 — страница не найдена: " .. url)
             if show_error then show_error("Ошибка загрузки", "Страница не найдена (404).") end
         else
-            log_error("seimanga: HTTP " .. (r.code or "?") .. " — " .. url)
+            log_error("allhentai: HTTP " .. (r.code or "?") .. " — " .. url)
             if show_error then show_error("Ошибка загрузки", "HTTP " .. tostring(r.code) .. ". Попробуйте позже.") end
         end
         return nil
@@ -148,6 +148,9 @@ function getFilterList()
             key   = "genres",
             label = "Жанры",
             options = {
+                { value = "2149", label = "Этти"                },
+                { value = "2142", label = "Гарем"               },
+                { value = "2133", label = "Научная фантастика"   },
                 { value = "2131", label = "Фэнтези"             },
                 { value = "2155", label = "Боевик"              },
                 { value = "2136", label = "Комедия"             },
@@ -158,15 +161,12 @@ function getFilterList()
                 { value = "2130", label = "Приключения"         },
                 { value = "2134", label = "Сёнэн"               },
                 { value = "2138", label = "Сэйнэн"              },
-                { value = "2142", label = "Гарем"               },
                 { value = "2158", label = "Дзёсэй"              },
                 { value = "2122", label = "Сёдзё"               },
-                { value = "2133", label = "Научная фантастика"   },
                 { value = "2144", label = "Психология"          },
                 { value = "2150", label = "Триллер"             },
                 { value = "2125", label = "Ужасы"               },
                 { value = "2127", label = "Школа"               },
-                { value = "2149", label = "Этти"                },
                 { value = "2129", label = "Спорт"               },
                 { value = "2151", label = "Постапокалиптика"    },
                 { value = "2153", label = "Трагедия"            },
@@ -344,16 +344,26 @@ function getCatalogFiltered(index, filters)
 end
 
 local _mangaCache = {}
+local _userHashCache = {}
 
 local function fetchMangaDetails(bookUrl)
     local slug = mangaSlug(bookUrl)
-    if not slug then log_error("seimanga: no slug from " .. bookUrl); return nil end
+    if not slug then log_error("allhentai: no slug from " .. bookUrl); return nil end
     if _mangaCache[slug] then return _mangaCache[slug] end
     local body = fetch(bookUrl)
-    if not body then log_error("seimanga: fetch failed for " .. bookUrl); return nil end
-    log_error("seimanga: fetched " .. #body .. " bytes for " .. bookUrl)
+    if not body then log_error("allhentai: fetch failed for " .. bookUrl); return nil end
+    log_error("allhentai: fetched " .. #body .. " bytes for " .. bookUrl)
     _mangaCache[slug] = body
+    local hash = body:match("user_hash%s*=%s*'([^']+)'")
+    if hash then _userHashCache[slug] = hash end
     return body
+end
+
+local function getUserHash(bookUrl)
+    local slug = mangaSlug(bookUrl)
+    if slug and _userHashCache[slug] then return _userHashCache[slug] end
+    fetchMangaDetails(bookUrl)
+    return slug and _userHashCache[slug] or nil
 end
 
 function getBookTitle(bookUrl)
@@ -378,6 +388,8 @@ function getBookDescription(bookUrl)
     local body = fetchMangaDetails(bookUrl)
     if not body then return "" end
     local desc = body:match('itemprop="description"%s+content="([^"]*)"')
+    if desc and desc ~= "" then return string_trim(desc) end
+    desc = body:match('<meta%s+name="description"%s+content="([^"]*)"')
     if desc then return string_trim(desc) end
     return ""
 end
@@ -428,7 +440,7 @@ function getChapterList(bookUrl)
     if not body then return {} end
 
     if body:find("Запрещена публикация произведения по копирайту", 1, true) then
-        log_error("seimanga: лицензировано — главы удалены: " .. bookUrl)
+        log_error("allhentai: лицензировано — главы удалены: " .. bookUrl)
         if show_error then show_error("Лицензия", "Произведение лицензировано.\nГлавы удалены по требованию правообладателя.") end
         return {}
     end
@@ -436,13 +448,16 @@ function getChapterList(bookUrl)
     local slug = mangaSlug(bookUrl)
     local chapters = {}
     local seen = {}
+    local userHash = getUserHash(bookUrl)
     for href in body:gmatch('href="(/' .. slug .. '/vol(%d+)/(%d+))"') do
         local vol, num = href:match('/vol(%d+)/(%d+)')
         if vol and num and not seen[vol .. num] then
             seen[vol .. num] = true
+            local chUrl = absUrl(href)
+            if userHash then chUrl = chUrl .. "?d=" .. userHash end
             table.insert(chapters, {
                 title = "Том " .. vol .. " Глава " .. num,
-                url = absUrl(href),
+                url = chUrl,
                 vol = tonumber(vol),
                 num = tonumber(num),
             })
@@ -486,13 +501,13 @@ function getPageList(html, url)
     end
 
     if html:find("purchase%-form", 1, true) or html:find("class=\"alert\"", 1, true) then
-        log_error("seimanga: глава платная — " .. url)
+        log_error("allhentai: глава платная — " .. url)
         if show_error then show_error("Платная глава", "Эта глава является платной.") end
         return {}
     end
 
     if html:find("требуется премиум", 1, true) then
-        log_error("seimanga: нужна премиум-подписка — " .. url)
+        log_error("allhentai: нужна премиум-подписка — " .. url)
         if show_error then show_error("Премиум", "Для доступа к главе требуется премиум-подписка.") end
         return {}
     end
@@ -526,10 +541,7 @@ function getPageList(html, url)
         local a, b, c = entry:match("['\"]([^'\"]*)['\"]%s*,%s*['\"]([^'\"]*)['\"]%s*,%s*['\"]([^'\"]*)['\"]")
         if a and b and c then
             local imageUrl = a .. b .. c
-            if not imageUrl:find("://") then
-                imageUrl = "https:" .. imageUrl
-            end
-            table.insert(pages, imageUrl)
+            table.insert(pages, absUrl(imageUrl))
         end
         entryStart = e + 1
     end
