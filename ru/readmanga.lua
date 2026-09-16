@@ -1,6 +1,6 @@
 id       = "readmanga"
 name     = "ReadManga"
-version  = "1.1.1"
+version  = "1.1.2"
 baseUrl  = "https://readmanga.me"
 language = "ru"
 icon     = "https://raw.githubusercontent.com/HnDK0/external-sources/main/icons/readmanga.png"
@@ -22,6 +22,14 @@ local defaultHeaders = {
     ["Accept"] = "text/html,application/xhtml+xml,application/xml;q=0.9,image/webp,*/*;q=0.8",
     ["Accept-Language"] = "ru-RU,ru;q=0.9,en-US;q=0.8,en;q=0.7",
 }
+
+local function ensureAuth()
+    if not get_cookies then return true end
+    local cookies = get_cookies("https://readmanga.me")
+    if cookies and cookies.remember_me then return true end
+    http_get(baseUrl .. "/internal/auth", { headers = defaultHeaders })
+    return true
+end
 
 local function fetch(url)
     ensureAuth()
@@ -50,15 +58,6 @@ local function mangaSlug(bookUrl)
         if segment ~= "" then return segment end
     end
     return nil
-end
-
--- ── Авторизация (cookie transfer из 3.grouple.co на readmanga.me) ──
-
-local function ensureAuth()
-    local cookies = get_cookies("https://readmanga.me")
-    if cookies and cookies.remember_me then return true end
-    http_get(baseUrl .. "/internal/auth", { headers = defaultHeaders })
-    return true
 end
 
 -- ── Каталог (JSON API) ──
