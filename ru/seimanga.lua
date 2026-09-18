@@ -1,6 +1,6 @@
 id       = "seimanga"
 name     = "SeiManga"
-version  = "1.2.2"
+version  = "1.2.3"
 baseUrl  = "https://1.seimanga.me"
 language = "ru"
 icon     = "https://raw.githubusercontent.com/HnDK0/external-sources/main/icons/seimanga.png"
@@ -447,8 +447,8 @@ function getChapterList(bookUrl)
         return {}
     end
 
-    if body:find("viewSettings", 1, true) and body:find("blockedForAnonymous", 1, true) and not body:find("window.current_user_id", 1, true) then
-        log_error("seimanga: требуется авторизация — blockedForAnonymous: " .. bookUrl)
+    if body:find("viewSettings", 1, true) and body:find("blockedForAnonymous[^}]*true", 1) and not body:find("window.current_user_id", 1, true) then
+        log_error("seimanga: требуется авторизация — blockedForAnonymous=true: " .. bookUrl)
         if show_error then show_error("Требуется авторизация", "Для просмотра контента необходима авторизация через WebView.") end
         return {}
     end

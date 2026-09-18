@@ -1,6 +1,6 @@
 id       = "allhentai"
 name     = "AllHentai"
-version  = "1.0.2"
+version  = "1.0.3"
 baseUrl  = "https://20.allhen.online"
 language = "ru"
 icon     = "https://raw.githubusercontent.com/HnDK0/external-sources/main/icons/allhentai.png"
@@ -431,8 +431,8 @@ function getChapterList(bookUrl)
     end
 
     -- AllHentai: blockedForAnonymous через UI.ViewContext + отсутствие .user-avatar
-    if body:find("UI.ViewContext", 1, true) and body:find("blockedForAnonymous", 1, true) and not body:find(".user-avatar", 1, true) then
-        log_error("allhentai: требуется авторизация — blockedForAnonymous: " .. bookUrl)
+    if body:find("UI.ViewContext", 1, true) and body:find("blockedForAnonymous[^}]*true", 1) and not body:find(".user-avatar", 1, true) then
+        log_error("allhentai: требуется авторизация — blockedForAnonymous=true: " .. bookUrl)
         if show_error then show_error("Требуется авторизация", "Для просмотра контента необходима авторизация через WebView.") end
         return {}
     end
