@@ -1,6 +1,6 @@
 id       = "mintmanga"
 name     = "MintManga"
-version  = "1.2.3"
+version  = "1.2.4"
 baseUrl  = "https://mintmanga.com"
 language = "ru"
 icon     = "https://raw.githubusercontent.com/HnDK0/external-sources/main/icons/mintmanga.png"
@@ -444,12 +444,6 @@ function getChapterList(bookUrl)
     if body:find("Запрещена публикация произведения по копирайту", 1, true) then
         log_error("mintmanga: лицензировано — главы удалены: " .. bookUrl)
         if show_error then show_error("Лицензия", "Произведение лицензировано.\nГлавы удалены по требованию правообладателя.") end
-        return {}
-    end
-
-    if body:find("viewSettings", 1, true) and body:find("blockedForAnonymous[^}]*true", 1) and not body:find("window.current_user_id", 1, true) then
-        log_error("mintmanga: требуется авторизация — blockedForAnonymous=true: " .. bookUrl)
-        if show_error then show_error("Требуется авторизация", "Для просмотра контента необходима авторизация через WebView.") end
         return {}
     end
 

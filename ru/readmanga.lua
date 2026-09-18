@@ -1,6 +1,6 @@
 id       = "readmanga"
 name     = "ReadManga"
-version  = "1.2.3"
+version  = "1.2.4"
 baseUrl  = "https://readmanga.me"
 language = "ru"
 icon     = "https://raw.githubusercontent.com/HnDK0/external-sources/main/icons/readmanga.png"
@@ -475,14 +475,6 @@ function getChapterList(bookUrl)
     if body:find("Запрещена публикация произведения по копирайту", 1, true) then
         log_error("readmanga: лицензировано — главы удалены по требованию правообладателя: " .. bookUrl)
         if show_error then show_error("Лицензия", "Произведение лицензировано.\nГлавы удалены по требованию правообладателя.") end
-        return {}
-    end
-
-    -- ponytail: blockedForAnonymous — ключ viewSettings есть на ВСЕХ страницах,
-    -- проверяем именно значение true, а не просто наличие ключа
-    if body:find("viewSettings", 1, true) and body:find("blockedForAnonymous[^}]*true", 1) and not body:find("window.current_user_id", 1, true) then
-        log_error("readmanga: требуется авторизация — blockedForAnonymous=true: " .. bookUrl)
-        if show_error then show_error("Требуется авторизация", "Для просмотра контента необходима авторизация через WebView.") end
         return {}
     end
 
