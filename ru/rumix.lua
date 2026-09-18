@@ -545,6 +545,7 @@ function getPageList(html, url)
         local a, b, c = entry:match("['\"]([^'\"]*)['\"]%s*,%s*['\"]([^'\"]*)['\"]%s*,%s*['\"]([^'\"]*)['\"]")
         if a and b and c then
             local imageUrl = a .. b .. c
+            imageUrl = imageUrl:gsub("%?.*", "")
             if not imageUrl:find("://") then
                 imageUrl = "https:" .. imageUrl
             end

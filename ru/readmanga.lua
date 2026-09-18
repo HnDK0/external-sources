@@ -1,6 +1,6 @@
 id       = "readmanga"
 name     = "ReadManga"
-version  = "1.2.4"
+version  = "1.2.5"
 baseUrl  = "https://readmanga.me"
 language = "ru"
 icon     = "https://raw.githubusercontent.com/HnDK0/external-sources/main/icons/readmanga.png"
@@ -576,6 +576,7 @@ function getPageList(html, url)
         local a, b, c = entry:match("['\"]([^'\"]*)['\"]%s*,%s*['\"]([^'\"]*)['\"]%s*,%s*['\"]([^'\"]*)['\"]")
         if a and b and c then
             local imageUrl = a .. b .. c
+            imageUrl = imageUrl:gsub("%?.*", "")
             if not imageUrl:find("://") then
                 imageUrl = "https:" .. imageUrl
             end

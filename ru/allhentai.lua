@@ -1,6 +1,6 @@
 id       = "allhentai"
 name     = "AllHentai"
-version  = "1.0.4"
+version  = "1.0.5"
 baseUrl  = "https://20.allhen.online"
 language = "ru"
 icon     = "https://raw.githubusercontent.com/HnDK0/external-sources/main/icons/allhentai.png"
@@ -526,6 +526,10 @@ function getPageList(html, url)
         local a, b, c = entry:match("['\"]([^'\"]*)['\"]%s*,%s*['\"]([^'\"]*)['\"]%s*,%s*['\"]([^'\"]*)['\"]")
         if a and b and c then
             local imageUrl = a .. b .. c
+            imageUrl = imageUrl:gsub("%?.*", "")
+            if not imageUrl:find("://") then
+                imageUrl = "https:" .. imageUrl
+            end            
             table.insert(pages, absUrl(imageUrl))
         end
         entryStart = e + 1
