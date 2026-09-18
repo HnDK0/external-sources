@@ -1,6 +1,6 @@
 id       = "allhentai"
 name     = "AllHentai"
-version  = "1.0.1"
+version  = "1.0.2"
 baseUrl  = "https://20.allhen.online"
 language = "ru"
 icon     = "https://raw.githubusercontent.com/HnDK0/external-sources/main/icons/allhentai.png"
@@ -138,13 +138,12 @@ function getFilterList()
             label = "Сортировка",
             defaultValue = "DATE_UPDATE",
             options = {
-                { value = "RATING",      label = "По рейтингу"      },
-                { value = "DATE_UPDATE",  label = "По обновлению"    },
+                { value = "RATING",      label = "По популярности"   },
                 { value = "NAME",         label = "По алфавиту"      },
-                { value = "YEAR",         label = "По году"          },
-                { value = "POPULARITY",   label = "По популярности"  },
+                { value = "POPULARITY",   label = "Популярность сейчас" },
                 { value = "USER_RATING",  label = "По оценке"        },
                 { value = "DATE_CREATE",  label = "Новинки"          },
+                { value = "DATE_UPDATE",  label = "По обновлению"    },
             },
         },
         {
@@ -152,36 +151,38 @@ function getFilterList()
             key   = "genres",
             label = "Жанры",
             options = {
-                { value = "2149", label = "Этти"                },
-                { value = "2142", label = "Гарем"               },
-                { value = "2133", label = "Научная фантастика"   },
-                { value = "2131", label = "Фэнтези"             },
-                { value = "2155", label = "Боевик"              },
-                { value = "2136", label = "Комедия"             },
-                { value = "2121", label = "Романтика"           },
-                { value = "2118", label = "Драма"               },
-                { value = "2119", label = "История"             },
-                { value = "2152", label = "Детектив"            },
-                { value = "2130", label = "Приключения"         },
-                { value = "2134", label = "Сёнэн"               },
-                { value = "2138", label = "Сэйнэн"              },
-                { value = "2158", label = "Дзёсэй"              },
-                { value = "2122", label = "Сёдзё"               },
-                { value = "2144", label = "Психология"          },
-                { value = "2150", label = "Триллер"             },
-                { value = "2125", label = "Ужасы"               },
-                { value = "2127", label = "Школа"               },
-                { value = "2129", label = "Спорт"               },
-                { value = "2151", label = "Постапокалиптика"    },
-                { value = "2153", label = "Трагедия"            },
-                { value = "2156", label = "Гендерная интрига"   },
-                { value = "2137", label = "Кодомо"              },
-                { value = "8032", label = "Киберпанк"           },
-                { value = "9450", label = "Исэкай"              },
-                { value = "9514", label = "Музыка"              },
-                { value = "2159", label = "Сверхъестественное"  },
-                { value = "2143", label = "Боевые искусства"    },
-                { value = "9524", label = "Пародия"             },
+                { value = "855",  label = "Ahegao"             },
+                { value = "828",  label = "Анал"               },
+                { value = "78",   label = "Бдсм"               },
+                { value = "888",  label = "Без цензуры"        },
+                { value = "837",  label = "Большая грудь"      },
+                { value = "3156", label = "Большая попка"      },
+                { value = "884",  label = "Большой член"       },
+                { value = "5754", label = "Бондаж"             },
+                { value = "811",  label = "В первый раз"       },
+                { value = "290",  label = "В цвете"            },
+                { value = "87",   label = "Гарем"              },
+                { value = "89",   label = "Гендерная интрига"  },
+                { value = "88",   label = "Групповой секс"     },
+                { value = "95",   label = "Драма"              },
+                { value = "5679", label = "Зрелые женщины"     },
+                { value = "291",  label = "Измена"             },
+                { value = "124",  label = "Изнасилование"      },
+                { value = "85",   label = "Инцест"             },
+                { value = "93",   label = "Исторический"       },
+                { value = "73",   label = "Комедия"            },
+                { value = "870",  label = "Маленькая грудь"    },
+                { value = "76",   label = "Научная фантастика" },
+                { value = "303",  label = "Нетораре"           },
+                { value = "853",  label = "Оральный секс"      },
+                { value = "74",   label = "Романтика"          },
+                { value = "69",   label = "Тентакли"           },
+                { value = "1321", label = "Трагедия"           },
+                { value = "75",   label = "Ужасы"              },
+                { value = "77",   label = "Футанари"           },
+                { value = "70",   label = "Фэнтези"           },
+                { value = "1059", label = "Чикан"              },
+                { value = "798",  label = "Этти"               },
             },
         },
         {
@@ -189,45 +190,28 @@ function getFilterList()
             key   = "categories",
             label = "Категории",
             options = {
-                { value = "9451", label = "Манга"       },
-                { value = "3001", label = "Манхва"      },
-                { value = "3002", label = "Маньхуа"     },
-                { value = "2141", label = "Додзинси"    },
-                { value = "3515", label = "Комикс"      },
-                { value = "2161", label = "Ёнкома"      },
-                { value = "9577", label = "OEL-манга"   },
-                { value = "5685", label = "Арт"         },
+                { value = "626",  label = "3D"        },
+                { value = "5777", label = "Анимация"  },
+                { value = "3157", label = "Без текста" },
+                { value = "1003", label = "Комикс"    },
+                { value = "6449", label = "Манга"     },
+                { value = "1104", label = "Манхва"    },
+                { value = "5902", label = "Маньхуа"   },
+                { value = "5896", label = "Руманга"   },
             },
         },
         {
             type  = "tristate",
-            key   = "limitation",
-            label = "Возраст",
+            key   = "additional",
+            label = "Дополнительно",
             options = {
-                { value = "0",  label = "6+"   },
-                { value = "1",  label = "12+"  },
-                { value = "2",  label = "16+"  },
-                { value = "3",  label = "18+"  },
-                { value = "4",  label = "NC-17" },
-            },
-        },
-        {
-            type  = "tristate",
-            key   = "another",
-            label = "Прочее",
-            options = {
-                { value = "2160", label = "Веб"            },
-                { value = "7290", label = "В цвете"        },
-                { value = "2162", label = "Ч/б"            },
-                { value = "2163", label = "Цветной"        },
-                { value = "9516", label = "Джамп"          },
-                { value = "9517", label = "Дзюмп"          },
-                { value = "9518", label = "Список"         },
-                { value = "9519", label = "Ранобэ"         },
-                { value = "9520", label = "Руманга"        },
-                { value = "9521", label = "Манхуа"         },
-                { value = "9522", label = "Маньхуа"        },
-                { value = "9523", label = "Manhwa"         },
+                { value = "HIGH_RATE",         label = "Высокий рейтинг" },
+                { value = "SINGLE",            label = "Сингл"           },
+                { value = "MATURE",            label = "Для взрослых"    },
+                { value = "TRANSLATED",        label = "Переведено"      },
+                { value = "ABANDONED_POPULAR", label = "Заброшен перевод" },
+                { value = "MANY_CHAPTERS",     label = "Длинная"         },
+                { value = "WAIT_UPLOAD",       label = "Ожидает загрузки" },
             },
         },
         {
@@ -237,11 +221,11 @@ function getFilterList()
             defaultValue = "",
             options = {
                 { value = "",          label = "Любые"       },
-                { value = "PROGRESS",  label = "Продолжается" },
-                { value = "FINISHED",  label = "Завершён"    },
                 { value = "PLANNED",   label = "Запланирован" },
+                { value = "PROGRESS",  label = "Продолжается" },
                 { value = "POSTPONED", label = "Приостановлен" },
                 { value = "CANCELED",  label = "Отменён"     },
+                { value = "FINISHED",  label = "Завершён"    },
                 { value = "NON_FINISHED", label = "Не окончен" },
             },
         },
@@ -252,11 +236,11 @@ function getFilterList()
             defaultValue = "",
             options = {
                 { value = "",         label = "Любые"          },
-                { value = "PROGRESS", label = "Продолжается"   },
-                { value = "FINISHED", label = "Завершён"       },
-                { value = "STARTED",  label = "Начат"          },
-                { value = "POSTPONED", label = "Приостановлен" },
                 { value = "NONE",     label = "Отсутствует"    },
+                { value = "STARTED",  label = "Начат"          },
+                { value = "PROGRESS", label = "Продолжается"   },
+                { value = "POSTPONED", label = "Приостановлен" },
+                { value = "FINISHED", label = "Завершён"       },
                 { value = "NO_NEED",  label = "Нет необходимости" },
             },
         },
@@ -267,6 +251,8 @@ function getFilterList()
             defaultValue = "",
             options = {
                 { value = "",           label = "Любой"     },
+                { value = "2027,2027",  label = "2027"      },
+                { value = "2026,2026",  label = "2026"      },
                 { value = "2025,2025",  label = "2025"      },
                 { value = "2024,2024",  label = "2024"      },
                 { value = "2023,2023",  label = "2023"      },
@@ -275,7 +261,7 @@ function getFilterList()
                 { value = "2010,2014",  label = "2010–2014" },
                 { value = "2000,2009",  label = "2000–2009" },
                 { value = "1990,1999",  label = "1990–1999" },
-                { value = "1980,1989",  label = "1980–1989" },
+                { value = "1988,1989",  label = "1988–1989" },
             },
         },
     }
@@ -296,15 +282,10 @@ function getCatalogFiltered(index, filters)
     for _, v in ipairs(cat_inc) do params = params .. "&includeElementIds=" .. v end
     for _, v in ipairs(cat_exc) do params = params .. "&excludeElementIds=" .. v end
 
-    local lim_inc = filters["limitation_included"] or {}
-    local lim_exc = filters["limitation_excluded"] or {}
-    for _, v in ipairs(lim_inc) do params = params .. "&includeElementIds=" .. v end
-    for _, v in ipairs(lim_exc) do params = params .. "&excludeElementIds=" .. v end
-
-    local ano_inc = filters["another_included"] or {}
-    local ano_exc = filters["another_excluded"] or {}
-    for _, v in ipairs(ano_inc) do params = params .. "&includeElementIds=" .. v end
-    for _, v in ipairs(ano_exc) do params = params .. "&excludeElementIds=" .. v end
+    local add_inc = filters["additional_included"] or {}
+    local add_exc = filters["additional_excluded"] or {}
+    for _, v in ipairs(add_inc) do params = params .. "&includeSearchFilters=" .. v end
+    for _, v in ipairs(add_exc) do params = params .. "&excludeSearchFilters=" .. v end
 
     local prod = filters["productionStatus"] or ""
     if prod ~= "" then params = params .. "&includeProductionStatuses=" .. prod end
@@ -381,7 +362,7 @@ end
 function getBookCoverImageUrl(bookUrl)
     local body = fetchMangaDetails(bookUrl)
     if not body then return "" end
-    local src = body:match('PICTURE_PREVIEWS_DATA%s*=%s*%{[^}]*"poster"%s*:%s*%[%s*\{[^}]*"src"%s*:%s*"([^"]+)"')
+    local src = body:match('PICTURE_PREVIEWS_DATA%s*=%s*{[^}]*"poster"%s*:%s*%[%s*{[^}]*"src"%s*:%s*"([^"]+)"')
     if src then return absUrl(src) end
     src = body:match('cr-hero-poster__img"[^>]*src="([^"]+)"')
     if src then return absUrl(src) end
@@ -446,6 +427,13 @@ function getChapterList(bookUrl)
     if body:find("Запрещена публикация произведения по копирайту", 1, true) then
         log_error("allhentai: лицензировано — главы удалены: " .. bookUrl)
         if show_error then show_error("Лицензия", "Произведение лицензировано.\nГлавы удалены по требованию правообладателя.") end
+        return {}
+    end
+
+    -- AllHentai: blockedForAnonymous через UI.ViewContext + отсутствие .user-avatar
+    if body:find("UI.ViewContext", 1, true) and body:find("blockedForAnonymous", 1, true) and not body:find(".user-avatar", 1, true) then
+        log_error("allhentai: требуется авторизация — blockedForAnonymous: " .. bookUrl)
+        if show_error then show_error("Требуется авторизация", "Для просмотра контента необходима авторизация через WebView.") end
         return {}
     end
 

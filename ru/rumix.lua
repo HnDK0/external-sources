@@ -1,6 +1,6 @@
 id       = "rumix"
 name     = "RuMix"
-version  = "1.2.1"
+version  = "1.2.2"
 baseUrl  = "https://rumix.me"
 language = "ru"
 icon     = "https://raw.githubusercontent.com/HnDK0/external-sources/main/icons/rumix.png"
@@ -348,6 +348,7 @@ function getCatalogFiltered(index, filters)
 end
 
 local _mangaCache = {}
+local _userHashCache = {}
 
 local function fetchMangaDetails(bookUrl)
     local slug = mangaSlug(bookUrl)
@@ -357,7 +358,16 @@ local function fetchMangaDetails(bookUrl)
     if not body then log_error("rumix: fetch failed for " .. bookUrl); return nil end
     log_error("rumix: fetched " .. #body .. " bytes for " .. bookUrl)
     _mangaCache[slug] = body
+    local hash = body:match("user_hash%s*=%s*'([^']+)'")
+    if hash then _userHashCache[slug] = hash end
     return body
+end
+
+local function getUserHash(bookUrl)
+    local slug = mangaSlug(bookUrl)
+    if slug and _userHashCache[slug] then return _userHashCache[slug] end
+    fetchMangaDetails(bookUrl)
+    return slug and _userHashCache[slug] or nil
 end
 
 function getBookTitle(bookUrl)
@@ -371,7 +381,7 @@ end
 function getBookCoverImageUrl(bookUrl)
     local body = fetchMangaDetails(bookUrl)
     if not body then return "" end
-    local src = body:match('PICTURE_PREVIEWS_DATA%s*=%s*%{[^}]*"poster"%s*:%s*%[%s*\{[^}]*"src"%s*:%s*"([^"]+)"')
+    local src = body:match('PICTURE_PREVIEWS_DATA%s*=%s*{[^}]*"poster"%s*:%s*%[%s*{[^}]*"src"%s*:%s*"([^"]+)"')
     if src then return absUrl(src) end
     src = body:match('cr-hero-poster__img"[^>]*src="([^"]+)"')
     if src then return absUrl(src) end
@@ -439,16 +449,25 @@ function getChapterList(bookUrl)
         return {}
     end
 
+    if body:find("viewSettings", 1, true) and body:find("blockedForAnonymous", 1, true) and not body:find("window.current_user_id", 1, true) then
+        log_error("rumix: требуется авторизация — blockedForAnonymous: " .. bookUrl)
+        if show_error then show_error("Требуется авторизация", "Для просмотра контента необходима авторизация через WebView.") end
+        return {}
+    end
+
     local slug = mangaSlug(bookUrl)
     local chapters = {}
     local seen = {}
+    local userHash = getUserHash(bookUrl)
     for href in body:gmatch('href="(/' .. slug .. '/vol(%d+)/(%d+))"') do
         local vol, num = href:match('/vol(%d+)/(%d+)')
         if vol and num and not seen[vol .. num] then
             seen[vol .. num] = true
+            local chUrl = absUrl(href)
+            if userHash then chUrl = chUrl .. "?d=" .. userHash end
             table.insert(chapters, {
                 title = "Том " .. vol .. " Глава " .. num,
-                url = absUrl(href),
+                url = chUrl,
                 vol = tonumber(vol),
                 num = tonumber(num),
             })
