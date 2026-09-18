@@ -1,6 +1,6 @@
 id       = "rumix"
 name     = "RuMix"
-version  = "1.2.4"
+version  = "1.2.5"
 baseUrl  = "https://rumix.me"
 language = "ru"
 icon     = "https://raw.githubusercontent.com/HnDK0/external-sources/main/icons/rumix.png"
@@ -385,7 +385,7 @@ function getBookCoverImageUrl(bookUrl)
     if src then return absUrl(src) end
     src = body:match('cr-hero-poster__img"[^>]*src="([^"]+)"')
     if src then return absUrl(src) end
-    src = body:match('(uploads/pics/[^"\']+%.jpg)')
+    src = body:match('(https?://[^"\']*uploads/pics/[^"\']+)') or body:match('(uploads/pics/[^"\']+%.jpg)')
     if src then return absUrl(src) end
     return ""
 end
