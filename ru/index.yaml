@@ -81,7 +81,7 @@ sources:
     content_type: "manga"
   - id: "rumix"
     name: "RuMix"
-    version: "1.2.4"
+    version: "1.2.5"
     url: "https://raw.githubusercontent.com/HnDK0/external-sources/refs/heads/mangatest2/ru/rumix.lua"
     icon: "https://raw.githubusercontent.com/HnDK0/external-sources/refs/heads/mangatest2/icons/rumix.png"
     language: "ru"
