@@ -1,6 +1,6 @@
 id       = "mintmanga"
 name     = "MintManga"
-version  = "2.0.0"
+version  = "2.0.1"
 baseUrl  = "https://mintmanga.com"
 language = "ru"
 icon     = "https://raw.githubusercontent.com/HnDK0/external-sources/main/icons/readmanga.png"
@@ -366,29 +366,52 @@ function getPageList(html, url)
         html = body
     end
 
+    -- Платная глава
     if html:find("purchase%-form", 1, true) then
         log_error(name .. ": платная глава — " .. url)
         if show_error then show_error("Платная глава", "Эта глава является платной.") end
         return {}
     end
+    -- Премиум
     if html:find("требуется премиум", 1, true) then
         log_error(name .. ": премиум — " .. url)
         if show_error then show_error("Премиум", "Требуется премиум-подписка.") end
         return {}
     end
+    -- Лицензия
     if html:find("Запрещена публикация произведения по копирайту", 1, true) then
         if show_error then show_error("Лицензия", "Главы удалены по требованию правообладателя.") end
         return {}
     end
+    -- 18+ age gate
+    if html:find("подтвердите возраст", 1, true) or html:find("подтвердить возраст", 1, true) then
+        log_error(name .. ": 18+ контент — " .. url)
+        if show_error then show_error("18+", "Для доступа необходимо подтвердить возраст.") end
+        return {}
+    end
 
-    local readerMark = html:find("rm_h.readerInit(", 1, true)
-        or html:find("rm_h.readerDoInit(", 1, true)
-        or html:find("readerInit(", 1, true)
-    if not readerMark then return {} end
+    -- readerInit
+    local readerMark = nil
+    if html:find("rm_h.readerInit(", 1, true) then
+        readerMark = "rm_h.readerInit("
+    elseif html:find("rm_h.readerDoInit(", 1, true) then
+        readerMark = "rm_h.readerDoInit("
+    elseif html:find("readerInit(", 1, true) then
+        readerMark = "readerInit("
+    end
+    if not readerMark then
+        log_error(name .. ": readerInit не найден — " .. url)
+        if show_error then show_error("Ошибка чтения", "Не удалось найти данные страниц.") end
+        return {}
+    end
 
     local beginIndex = html:find(readerMark, 1, true)
     local endIndex = html:find(");", beginIndex, true)
-    if not endIndex then return {} end
+    if not endIndex then
+        log_error(name .. ": readerInit не закрыт — " .. url)
+        if show_error then show_error("Ошибка чтения", "Повреждённые данные readerInit.") end
+        return {}
+    end
     local trimmed = html:sub(beginIndex, endIndex)
 
     local pages = {}
@@ -403,11 +426,27 @@ function getPageList(html, url)
             imageUrl = path .. prefix .. suffix
         end
         if not imageUrl:find("://") then imageUrl = "https:" .. imageUrl end
-        if imageUrl:find("deleted1.png", 1, true) then stubCount = stubCount + 1 end
+        -- Подсчёт заглушек
+        if imageUrl:find("deleted1.png", 1, true)
+            or imageUrl:find("deleted2.png", 1, true)
+            or imageUrl:find("placeholder", 1, true)
+            or imageUrl:find("no-cover", 1, true)
+            or imageUrl:find("now_printing", 1, true)
+            or imageUrl:find("restricted", 1, true) then
+            stubCount = stubCount + 1
+        end
         table.insert(pages, imageUrl)
     end
 
-    if #pages > 0 and stubCount == #pages then
+    if #pages == 0 then
+        log_error(name .. ": readerInit найден, но страниц нет — " .. url)
+        if show_error then show_error("Нет страниц", "ReaderInit найден, но страницы не извлечены.") end
+        return {}
+    end
+
+    -- Все страницы — заглушки (18+ без auth)
+    if stubCount == #pages then
+        log_error(name .. ": все страницы — заглушки — " .. url)
         if show_error then show_error("Требуется авторизация", "Для просмотра главы необходима авторизация.") end
         return {}
     end

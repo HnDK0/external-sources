@@ -1,6 +1,6 @@
 id       = "readmanga"
 name     = "ReadManga"
-version  = "2.0.0"
+version  = "2.0.1"
 baseUrl  = "https://readmanga.me"
 language = "ru"
 icon     = "https://raw.githubusercontent.com/HnDK0/external-sources/main/icons/readmanga.png"
@@ -381,9 +381,14 @@ function getPageList(html, url)
         return {}
     end
 
-    local readerMark = html:find("rm_h.readerInit(", 1, true)
-        or html:find("rm_h.readerDoInit(", 1, true)
-        or html:find("readerInit(", 1, true)
+    local readerMark = nil
+    if html:find("rm_h.readerInit(", 1, true) then
+        readerMark = "rm_h.readerInit("
+    elseif html:find("rm_h.readerDoInit(", 1, true) then
+        readerMark = "rm_h.readerDoInit("
+    elseif html:find("readerInit(", 1, true) then
+        readerMark = "readerInit("
+    end
     if not readerMark then return {} end
 
     local beginIndex = html:find(readerMark, 1, true)
@@ -403,7 +408,14 @@ function getPageList(html, url)
             imageUrl = path .. prefix .. suffix
         end
         if not imageUrl:find("://") then imageUrl = "https:" .. imageUrl end
-        if imageUrl:find("deleted1.png", 1, true) then stubCount = stubCount + 1 end
+        if imageUrl:find("deleted1.png", 1, true)
+            or imageUrl:find("deleted2.png", 1, true)
+            or imageUrl:find("placeholder", 1, true)
+            or imageUrl:find("no-cover", 1, true)
+            or imageUrl:find("now_printing", 1, true)
+            or imageUrl:find("restricted", 1, true) then
+            stubCount = stubCount + 1
+        end
         table.insert(pages, imageUrl)
     end
 
