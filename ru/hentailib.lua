@@ -1,7 +1,7 @@
 -- ── Метаданные ────────────────────────────────────────────────────────────────
 id       = "hentailib"
 name     = "HentaiLib"
-version  = "1.0.4"
+version  = "1.0.5"
 baseUrl  = "https://hentailib.me/"
 language = "ru"
 icon     = "https://raw.githubusercontent.com/HnDK0/external-sources/main/icons/hentailib.png"
@@ -194,7 +194,16 @@ local function fetchBookJson(bookUrl)
   local slug = extractSlug(bookUrl)
   if not slug then return nil end
   local r = http_get(apiBase .. slug, { headers = buildHeaders() })
-  if not r.success then return nil end
+  if not r.success then
+    -- Проверяем HTML-страницу на age gate
+    local htmlR = http_get(bookUrl, { headers = buildHeaders() })
+    if htmlR.success and htmlR.body then
+      if htmlR.body:find("возрастным ограничением", 1, true) or htmlR.body:find("Предупреждение", 1, true) then
+        if show_error then show_error("Требуется авторизация", "Контент 18+. Войдите для доступа.") end
+      end
+    end
+    return nil
+  end
   if isErrorResponse(r.body) then return nil end
   local parsed = json_parse(r.body)
   return parsed and parsed.data or nil
