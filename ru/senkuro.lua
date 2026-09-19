@@ -1,7 +1,7 @@
 id       = "senkuro"
 name     = "Senkuro"
-version  = "1.0.2"
-baseUrl  = "https://senkuro.org/"
+version  = "1.0.3"
+baseUrl  = "https://senkuro.me/"
 language = "ru"
 icon     = "https://raw.githubusercontent.com/HnDK0/external-sources/main/icons/senkuro.png"
 content_type = "manga"
@@ -592,7 +592,7 @@ function getChapterList(bookUrl)
         if title == "" then title = "Глава " .. (ch.number or "?") end
         table.insert(result, {
             title = title,
-            url = baseUrl .. "chapter/" .. (ch.slug or ch.id),
+            url = baseUrl .. "manga/" .. slug .. "/chapters/" .. (ch.slug or ch.id),
         })
     end
     return result
@@ -606,18 +606,19 @@ function getChapterListHash(bookUrl)
     if #chapters == 0 then return "" end
 
     local latest = chapters[#chapters]
-    return baseUrl .. "chapter/" .. (latest.slug or latest.id)
+    return baseUrl .. "manga/" .. slug .. "/chapters/" .. (latest.slug or latest.id)
 end
 
 local _chapterPagesCache = {}
 
 function getPageList(html, url)
-    local chapterSlug = string.match(url, "/chapter/([^/?]+)")
+    -- Поддерживаем оба формата URL: /chapter/SLUG и /manga/SLUG/chapters/SLUG
+    local chapterSlug = string.match(url, "/chapter/([^/?]+)") or string.match(url, "/chapters/([^/?]+)")
     if not chapterSlug then return {} end
 
     for slug, chapters in pairs(_chaptersCache) do
         for _, ch in ipairs(chapters) do
-            if (ch.slug == chapterSlug or ch.id == chapterSlug) and ch.pages then
+            if (tostring(ch.slug) == chapterSlug or tostring(ch.id) == chapterSlug) and ch.pages then
                 local pages = {}
                 for _, p in ipairs(ch.pages) do
                     if p.image and p.image.original and p.image.original.url then

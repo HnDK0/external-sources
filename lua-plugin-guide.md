@@ -18,7 +18,8 @@
 10. [Список глав](#список-глав)
 11. [Пагинированный список глав (parsePage)](#пагинированный-список-глав-parsepage)
 12. [Текст главы](#текст-главы)
-13. [Фильтры каталога](#фильтры-каталога)
+13. [Ошибки плагина (show_error)](#ошибки-плагина-show_error)
+14. [Фильтры каталога](#фильтры-каталога)
 14. [Настройки плагина](#настройки-плагина)
 15. [Хелперы и утилиты](#хелперы-и-утилиты)
 16. [Полный справочник API](#полный-справочник-api)
@@ -523,6 +524,25 @@ set_cookies("https://example.com", {
     ["token"]      = "xyz"
 })
 ```
+
+### Работа с localStorage
+
+Движок автоматически сохраняет localStorage из WebView при загрузке страниц (в `onPageFinished` и каждые 3 секунды). Плагины могут читать эти данные через `get_localStorage` — например, чтобы получить Bearer-токен или другой ключ авторизации.
+
+```lua
+-- Получить значение по URL и ключу
+local token = get_localStorage("https://example.com", "auth_token")
+if token and token ~= "" then
+    -- Используем токен в заголовках
+    local r = http_get(apiUrl, {
+        headers = {
+            ["Authorization"] = "Bearer " .. token,
+        }
+    })
+end
+```
+
+Данные кэшируются по хосту. Если пользователь уже залогинен на сайте — токен будет доступен сразу. Если ключ отсутствует — возвращается `nil`.
 
 ### Задержки (rate limiting)
 
@@ -1314,6 +1334,86 @@ end
 
 ---
 
+## Ошибки плагина (show_error)
+
+### show_error(title, message)
+
+Плагин может показать пользователю диалог с ошибкой, вызвав `show_error(title, message)`.
+
+| Параметр | Тип     | Описание                     |
+|----------|---------|------------------------------|
+| `title`  | string  | Заголовок диалога            |
+| `message`| string  | Текст ошибки (тело диалога)  |
+
+### Когда использовать
+
+- Платный контент / подписка
+- Требуется авторизация на сайте
+- Страница не найдена / глава удалена
+- Источник временно недоступен
+
+### Примеры
+
+#### Платная глава
+
+```lua
+function getChapterText(doc)
+    if doc:selectFirst(".paid-chapter") then
+        show_error("Платный контент", "Эта глава доступна только по подписке.")
+        return nil
+    end
+    -- ...парсинг текста...
+end
+```
+
+#### Требуется логин
+
+```lua
+function getChapterPages(doc)
+    if doc:selectFirst(".login-required") then
+        show_error("Требуется авторизация", "Войдите на сайт, чтобы прочитать эту главу.")
+        return nil
+    end
+    -- ...получение страниц...
+end
+```
+
+#### Комбинирование с другими проверками
+
+```lua
+function getChapterText(doc)
+    local errorDiv = doc:selectFirst(".error-message")
+    if errorDiv then
+        show_error("Ошибка источника", errorDiv:text())
+        return nil
+    end
+
+    local content = doc:selectFirst(".chapter-content")
+    if not content then
+        show_error("Глава не найдена", "Не удалось извлечь текст главы.")
+        return nil
+    end
+
+    return content:text()
+end
+```
+
+### Поведение
+
+- `show_error()` **останавливает загрузку** главы — после вызова функция должна вернуть `nil`
+- Пользователь видит диалог с указанным заголовком и текстом
+- При закрытии диалога читатель закрывается (возврат к списку глав)
+- **Ретраи не выполняются** — ошибка плагина не является сетевой проблемой
+- Существующие плагины без `show_error()` работают без изменений
+
+### Важно
+
+- `show_error()` вызывается **внутри** `getChapterText()` или `getChapterPages()`
+- После вызова верните `nil` — иначе поведение не определено
+- Не используйте `show_error()` для штатных ситуаций (глава просто отсутствует) — только для настоящих ошибок, требующих внимания пользователя
+
+---
+
 ## Фильтры каталога
 
 Чтобы плагин поддерживал фильтры, нужно объявить две функции: `getFilterList()` и `getCatalogFiltered(index, filters)`.
@@ -1657,6 +1757,7 @@ end
 |---|---|
 | `get_preference(key)` | Чтение из SharedPreferences "lua_preferences" |
 | `set_preference(key, value)` | Запись в SharedPreferences "lua_preferences" |
+| `get_localStorage(url, key)` | Чтение значения из localStorage WebView по URL и ключу (returns `nil` если ключ не найден) |
 
 ### Утилиты
 
@@ -1666,6 +1767,7 @@ end
 | `detect_pagination(html)` | Определить hasNext → `{hasNext, next_url}` |
 | `log_info(msg)` | Лог INFO (Timber) |
 | `log_error(msg)` | Лог ERROR (Timber) |
+| `show_error(title, message)` | Показать диалог ошибки пользователю. Останавливает загрузку главы, после вызова верните `nil` |
 | `os_time()` | Unix timestamp в миллисекундах |
 
 ---

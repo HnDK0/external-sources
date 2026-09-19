@@ -18,7 +18,8 @@
 10. [Chapter List](#chapter-list)
 11. [Paginated Chapter List (parsePage)](#paginated-chapter-list-parsepage)
 12. [Chapter Text](#chapter-text)
-13. [Catalog Filters](#catalog-filters)
+13. [Plugin Errors (show_error)](#plugin-errors-show_error)
+14. [Catalog Filters](#catalog-filters)
 14. [Plugin Settings](#plugin-settings)
 15. [Helpers and Utilities](#helpers-and-utilities)
 16. [Full API Reference](#full-api-reference)
@@ -523,6 +524,25 @@ set_cookies("https://example.com", {
     ["token"]      = "xyz"
 })
 ```
+
+### Working with localStorage
+
+The engine automatically saves localStorage from the WebView when pages load (in `onPageFinished` and every 3 seconds). Plugins can read this data via `get_localStorage` — for example, to get a Bearer token or other auth key.
+
+```lua
+-- Get a value by URL and key
+local token = get_localStorage("https://example.com", "auth_token")
+if token and token ~= "" then
+    -- Use the token in headers
+    local r = http_get(apiUrl, {
+        headers = {
+            ["Authorization"] = "Bearer " .. token,
+        }
+    })
+end
+```
+
+Data is cached by host. If the user is already logged in on the site — the token is available immediately. If the key is absent — `nil` is returned.
 
 ### Delays (rate limiting)
 
@@ -1317,6 +1337,86 @@ end
 
 ---
 
+## Plugin Errors (show_error)
+
+### show_error(title, message)
+
+A plugin can show an error dialog to the user by calling `show_error(title, message)`.
+
+| Parameter | Type   | Description                    |
+|-----------|--------|--------------------------------|
+| `title`   | string | Dialog title                   |
+| `message` | string | Error message (dialog body)    |
+
+### When to use
+
+- Paid content / subscription required
+- Site requires login
+- Page not found / chapter deleted
+- Source temporarily unavailable
+
+### Examples
+
+#### Paid chapter
+
+```lua
+function getChapterText(doc)
+    if doc:selectFirst(".paid-chapter") then
+        show_error("Paid Content", "This chapter is only available with a subscription.")
+        return nil
+    end
+    -- ...parse text...
+end
+```
+
+#### Login required
+
+```lua
+function getChapterPages(doc)
+    if doc:selectFirst(".login-required") then
+        show_error("Login Required", "Please log in to the site to read this chapter.")
+        return nil
+    end
+    -- ...fetch pages...
+end
+```
+
+#### Combining with other checks
+
+```lua
+function getChapterText(doc)
+    local errorDiv = doc:selectFirst(".error-message")
+    if errorDiv then
+        show_error("Source Error", errorDiv:text())
+        return nil
+    end
+
+    local content = doc:selectFirst(".chapter-content")
+    if not content then
+        show_error("Chapter Not Found", "Could not extract chapter text.")
+        return nil
+    end
+
+    return content:text()
+end
+```
+
+### Behavior
+
+- `show_error()` **stops chapter loading** — the function must return `nil` after calling it
+- The user sees a dialog with the specified title and message
+- When the dialog is closed, the reader closes (returns to chapter list)
+- **No retries are performed** — a plugin error is not a network issue
+- Existing plugins without `show_error()` continue to work unchanged
+
+### Important
+
+- `show_error()` is called **inside** `getChapterText()` or `getChapterPages()`
+- After calling it, return `nil` — otherwise behavior is undefined
+- Do not use `show_error()` for normal situations (chapter simply doesn't exist) — only for real errors that require user attention
+
+---
+
 ## Catalog Filters
 
 For a plugin to support filters, it needs to declare two functions: `getFilterList()` and `getCatalogFiltered(index, filters)`.
@@ -1660,6 +1760,7 @@ end
 | ---------------------------------- | ----------------------------------------------------- |
 | `get_preference(key)`            | Read from SharedPreferences "lua_preferences"    |
 | `set_preference(key, value)`     | Write to SharedPreferences "lua_preferences"     |
+| `get_localStorage(url, key)`     | Read a value from WebView localStorage by URL and key (returns `nil` if key not found) |
 
 ### Utilities
 
@@ -1669,6 +1770,7 @@ end
 | `detect_pagination(html)`       | Detect hasNext → `{hasNext, next_url}`         |
 | `log_info(msg)`                 | INFO log (Timber)                              |
 | `log_error(msg)`                | ERROR log (Timber)                             |
+| `show_error(title, message)`    | Show error dialog to user. Stops chapter loading, return `nil` after calling |
 | `os_time()`                     | Unix timestamp in milliseconds                 |
 
 ---
