@@ -1,6 +1,6 @@
 id       = "novelfull"
 name     = "NovelFull"
-version  = "1.0.7"
+version  = "1.1.0"
 baseUrl  = "https://novelfull.net/"
 language = "en"
 icon     = "https://raw.githubusercontent.com/HnDK0/external-sources/main/icons/novelfull.png"
@@ -105,63 +105,137 @@ function getBookDescription(bookUrl)
     return el and string_trim(el.text) or nil
 end
 
--- ── Список глав ───────────────────────────────────────────────────────────────
+-- ── Список глав (parsePage, пачками через AJAX) ───────────────────────────────
 
-function getChapterList(bookUrl)
-    local r = http_get(bookUrl)
-    if not r.success then return {} end
+-- Список отдаётся постраничным AJAX:
+--   GET /ajax-chapter-list?novelId=<id>&page=<N>
+--   → JSON { code, html, page, pageSize, totalPage, totalChapters }
+-- В html-фрагменте ровно главы страницы (по возрастанию номера), страница 1 =
+-- самые старые главы → порядок совпадает с ожиданием движка (инверсия не нужна).
+--
+-- Сайт рейт-лимитит МГНОВЕННЫЕ залпы запросов: HTTP 429 валит ~2/3 страниц,
+-- если тянуть их все параллельно (это и был баг «прыгающих» списков глав —
+-- старый getChapterList делал http_get_batch на все страницы разом).
+-- Последовательно запросы проходят, но 7 тыс. глав (182 страницы) грузятся
+-- ~100 c. Решение — пачками: мини-батчи по BURST_CHUNK страниц с паузой между
+-- ними; замерено на живом сайте: 182/182 OK за 14.5 c.
 
-    -- Число страниц списка глав: <option data-url="...?page=N"> в селекте навигации
-    local maxPage = 1
-    for page in r.body:gmatch('data%-url="[^"]*%?page=(%d+)"') do
-        local n = tonumber(page) or 1
-        if n > maxPage then maxPage = n end
-    end
+local BURST_CHUNK   = 6    -- страниц на один параллельный батч (залп >=7 ловит 429)
+local BURST_GAP_MS  = 250  -- пауза между батчами
 
-    -- ul-list5 — реальный список глав. Кнопка "Read first" (ссылка на главу 1)
-    -- находится вне этого блока, поэтому не попадает сюда и не дублирует главу 1.
-    local seen = {}
-    local res, order = {}, {}
-    local function parsePage(html)
-        for _, a in ipairs(html_select(html, "ul.ul-list5 a[href*='/chapter-']")) do
-            local href = absUrl(a.href)
-            if not seen[href] then
-                seen[href] = true
-                local title = html_attr(a.html, "a", "title")
-                if title == "" then title = a.text end
-                local num = tonumber((href:match("/chapter%-(%d+)")) or "0") or 0
-                table.insert(res, { title = string_clean(title), url = href })
-                table.insert(order, num)
-            end
-        end
-    end
+local _bursts = {} -- bookUrl → { bodies = { [страница] = JSON-тело }, totalPages = N }
 
-    parsePage(r.body)
-
-    if maxPage > 1 then
-        local urls = {}
-        for p = 2, maxPage do table.insert(urls, bookUrl .. "?page=" .. p) end
-        local results = http_get_batch(urls)
-        for _, res2 in ipairs(results) do
-            if res2.success then parsePage(res2.body) end
-        end
-    end
-
-    -- Сайт отдаёт главы от новых к старым — сортируем по возрастанию номера,
-    -- чтобы глава 1 оказалась первой в списке.
-    local idx = {}
-    for i = 1, #res do idx[i] = i end
-    table.sort(idx, function(a, b) return order[a] < order[b] end)
-    local out = {}
-    for _, i in ipairs(idx) do out[#out + 1] = res[i] end
-    return out
+local function chapterAjaxUrl(novelId, page)
+    return baseUrl:gsub("/$", "") .. "/ajax-chapter-list?novelId=" .. novelId .. "&page=" .. tostring(page)
 end
 
-function getChapterListHash(bookUrl)
-    local r = http_get(bookUrl)
+-- Одиночный AJAX-запрос страницы списка глав (один повтор против случайного 429).
+-- Возвращает JSON-тело или nil.
+local function fetchAjaxPage(novelId, page)
+    local r = http_get(chapterAjaxUrl(novelId, page))
+    if not r.success then
+        sleep(math.random(600, 900))
+        r = http_get(chapterAjaxUrl(novelId, page))
+    end
     if not r.success then return nil end
-    local el = html_select_first(r.body, "ul.ul-list5 a[href*='/chapter-']")
-    return el and el.href or nil
+    return r.body
+end
+
+-- Парсинг глав из JSON-тела AJAX-страницы.
+local function parseChapters(jsonBody)
+    local data = json_parse(jsonBody)
+    if not data or not data.html then return {} end
+    local chapters = {}
+    for _, a in ipairs(html_select(data.html, "a[href*='/chapter-']")) do
+        local title = a.title or ""
+        if title == "" then title = a.text end
+        local chUrl = absUrl(a.href)
+        if chUrl ~= "" then
+            table.insert(chapters, { title = string_clean(title), url = chUrl })
+        end
+    end
+    return chapters
+end
+
+-- Первичная загрузка: страницы 1..totalPages тянутся пачками BURST_CHUNK,
+-- тела складываются в _bursts[bookUrl], откуда движок раздаёт их
+-- последовательными вызовами parsePage (см. empirenovel.lua — тот же приём).
+local function burstLoad(bookUrl, novelId, totalPages)
+    local bodies = {}
+    local p = 1
+    while p <= totalPages do
+        local last = math.min(p + BURST_CHUNK - 1, totalPages)
+        local urls = {}
+        for i = p, last do urls[#urls + 1] = chapterAjaxUrl(novelId, i) end
+        local rs = http_get_batch(urls)
+        local failed = false
+        for i, res in ipairs(rs) do
+            if res.success then
+                bodies[p + i - 1] = res.body
+            else
+                failed = true
+            end
+        end
+        if failed then
+            -- Однократный повтор неудачного чанка с паузой.
+            sleep(math.random(600, 900))
+            rs = http_get_batch(urls)
+            for i, res in ipairs(rs) do
+                if res.success then bodies[p + i - 1] = res.body end
+            end
+        end
+        if last < totalPages then sleep(BURST_GAP_MS) end
+        p = last + 1
+    end
+    _bursts[bookUrl] = { bodies = bodies, totalPages = totalPages }
+end
+
+function parsePage(bookUrl, page)
+    -- Горячий путь: страница уже предзагружена burst-загрузкой.
+    local burst = _bursts[bookUrl]
+    if burst then
+        local body = burst.bodies[page]
+        if body then
+            if page == burst.totalPages then _bursts[bookUrl] = nil end
+            return { chapters = parseChapters(body), totalPages = burst.totalPages }
+        end
+    end
+
+    -- Холодный путь: novelId и число страниц со страницы книги.
+    local html = fetchBookPage(bookUrl)
+    if not html then
+        log_error("novelfull: parsePage failed to load " .. bookUrl)
+        return { chapters = {}, totalPages = 1 }
+    end
+
+    local novelId = html_attr(html, "#list-chapter", "data-novel-id")
+    if novelId == "" then novelId = html_attr(html, "#rating", "data-novel-id") end
+    if novelId == "" then
+        log_error("novelfull: novelId not found at " .. bookUrl)
+        return { chapters = {}, totalPages = 1 }
+    end
+
+    local totalPages = tonumber(html_attr(html, "#list-chapter", "data-total-page")) or 1
+
+    -- Первый вызов (первичная загрузка): тянем все страницы пачками.
+    if page == 1 and totalPages > 1 then
+        burstLoad(bookUrl, novelId, totalPages)
+        local body = _bursts[bookUrl].bodies[1]
+        if body then
+            return { chapters = parseChapters(body), totalPages = totalPages }
+        end
+    end
+
+    -- Вне очереди / обновление: одиночный свежий запрос; totalPages берём из
+    -- ответа AJAX, чтобы движок увидел выросшее число страниц.
+    local jsonBody = fetchAjaxPage(novelId, page)
+    if not jsonBody then
+        log_error("novelfull: chapters ajax failed page=" .. tostring(page))
+        return { chapters = {}, totalPages = totalPages }
+    end
+    local data = json_parse(jsonBody)
+    local freshTotal = data and tonumber(data.totalPage) or totalPages
+    return { chapters = parseChapters(jsonBody), totalPages = freshTotal }
 end
 
 -- ── Текст главы ───────────────────────────────────────────────────────────────
@@ -205,19 +279,33 @@ function getBookStatus(bookUrl)
   return nil
 end
 
+-- ponytail: относительные даты вида "5 years ago" / "3 days ago" → YYYY-MM-DD.
+-- Ceiling: месяц=30д, год=365д — для апдейтов новелл точность достаточна.
+local unitSecs = {
+  minute = 60, minutes = 60,
+  hour = 3600, hours = 3600,
+  day = 86400, days = 86400,
+  week = 7 * 86400, weeks = 7 * 86400,
+  month = 30 * 86400, months = 30 * 86400,
+  year = 365 * 86400, years = 365 * 86400,
+}
+
 function getBookLastUpdate(bookUrl)
   local html = fetchBookPage(bookUrl)
   if not html then return nil end
-  -- Блок ".lastupdate": "[ Updated 8 minutes ago ]" — относительная дата
+  -- Блок ".lastupdate": "[ Updated 19 hours ago ]" — относительная дата
   -- (абсолютной даты на странице книги novelfull.net нет)
   local el = html_select_first(html, ".lastupdate")
   if not el then return nil end
-  local t = string_trim(el.text)
-  t = string.gsub(t, "^%s*%[?%s*", "")
-  t = string.gsub(t, "%s*%]?%s*$", "")
-  t = string.gsub(t, "^[Uu]pdated%s+", "")
-  t = string_trim(t)
-  return (t ~= "" and t) or nil
+  local raw = string_clean(el.text)
+  local n, unit = string.match(raw, "(%d+)%s+(%w+)%s+ago")
+  if not n and string.match(raw, "just now") then
+    return os.date("%Y-%m-%d")
+  end
+  if not n then return nil end
+  local secs = unitSecs[unit]
+  if not secs then return nil end
+  return os.date("%Y-%m-%d", os.time() - tonumber(n) * secs)
 end
 
 -- ── Список фильтров ───────────────────────────────────────────────────────────
