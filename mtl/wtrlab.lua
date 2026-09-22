@@ -1,102 +1,9 @@
 -- ═══════════════════════════════════════════════════════════════════════════
 -- WTR-LAB source plugin for NoveLA
--- Version 1.1.8 (2026-09-07)
---
--- 1.1.7 (2026-08-26) — comprehensive upgrade on top of upstream 1.1.6.
---   Fixes two long-standing root causes of bad reader UX and adds full
---   novel-finder filter parity:
---
--- 1.1.8 (2026-09-07) — add Web+ translation mode (closes #10).
---
---   Gibberish-chapters fix (root cause):
---   • Chapter bodies returned as `arr:`/`str:` AES-256-GCM payloads by
---     /api/reader/get are now decrypted LOCALLY in pure Lua (no third-party
---     proxy round-trip needed). The old fly.dev proxy is kept only as an
---     automatic fallback, and a clear error is raised if both paths fail.
---     Previously, when fly.dev was slow/dead, the raw `arr:…` blob was
---     saved as the chapter text — this was the "large gibberish every
---     2-3 chapters" complaint.
---
---   "Security Check" / Turnstile fix (root cause):
---   • WTR-Lab has an APPLICATION-LEVEL per-IP rate limit on
---     /api/reader/get: once the counter crosses threshold (15), the API
---     returns HTTP 200 with `{"success":false,"requireTurnstile":true,…}`
---     and only submitting a valid turnstileToken resets it. The plugin now
---     detects this, retries with backoff (2 extra attempts — blocking is
---     per-instance and intermittent, so retries often land on a healthy
---     instance), and on persistent failure raises an actionable error
---     telling the user to solve the challenge once in the integrated
---     browser (instead of the old "[?] Unknown API error").
---   • IMPORTANT — do NOT add `cf_options = { whitelist = true }`:
---     NoveLA's CloudfareVerificationInterceptor ALREADY auto-detects
---     both real Cloudflare challenges AND wtr-lab's own `requireTurnstile`
---     JSON responses (marker + `server: cloudflare` + HTTP 200) and runs
---     the integrated WebView bypass ladder (hidden WebView → manual
---     WebViewActivity → retry). `whitelist = true` DISABLES that recovery
---     path for wtr-lab.com — the community v2.0.0 draft shipped it with a
---     comment claiming the opposite; keep it out.
---
---   Full novel-finder filter parity:
---   • Tag list expanded 208 → 882 (every tag the site exposes, incl.
---     Honghuang #801), split into 11 category-grouped tristate pickers
---     matching the site's own finder grouping (Protagonist / Power
---     Systems / Worldbuilding / Socio-Political / Relationships /
---     Narrative / Beings & Factions / Professional / Tone / Adaptations /
---     Misc). NoveLA renders every tristate option as an eagerly-built
---     chip, so a single 882-item list was a literal wall of chips.
---     getCatalogFiltered collects the included/excluded ids from all 11
---     groups into one combined ti=/te= list (single tc= operator applies
---     to the combined set — request params identical to a flat layout).
---   • Tag Search: two free-text filters (Tag Search include / exclude)
---     on top of the 11 grouped chip pickers. Type keywords like
---     "Honghuang, Naruto, adapted" and the plugin resolves them to the
---     matching tag IDs via case-insensitive substring matching against
---     all 882 tag labels, then merges the IDs into the same ti=/te=
---     params the chip pickers populate. Numeric IDs (e.g. "801") are
---     also accepted verbatim. Lets users find a specific tag in one
---     text field instead of scrolling through up to 190 chips per group.
---   • Added Minimum Reviews filter (minrc, 5-50 step 5); full
---     addition_age list (3month / 6month / last_month / last_year /
---     this_year); Daily View / Character Count / Weighted ordering.
---     WORKING chapter & character count filters via
---     count_type/count_filter/count_value (the old `minc=` parameter
---     was silently ignored by the site).
---
---   Catalog/search infrastructure:
---   • Switched from HTML scraping to the Next.js data JSON API
---     (/_next/data/{buildId}/en/novel-list.json / -finder.json) with
---     session buildId caching + stale-once refresh-retry. Reliable,
---     and the response's `count` field enables exact pagination:
---     `hasNext = #items > 0 and returned >= PAGE_SIZE and page *
---     PAGE_SIZE < countNum` (PAGE_SIZE = 10) — short-circuits on a
---     partial final page so it no longer over-fetches one empty page
---     at the end of a list. Note: the site returns `count` as a JSON
---     STRING (must tonumber() it).
---
---   Update detection:
---   • getChapterListHash now returns "<chapterCount>|<serie_data.updated_at>"
---     so re-translations / metadata edits that don't change the chapter
---     count are still detected. In 1.1.6 it returned the literal string
---     "Chapters" (both the label and the number span carry translate="no",
---     so html_select_first returned the label) — chapter-list updates were
---     NEVER detected.
---
---   Robustness:
---   • b64ToBytes now fails loud on a dangling base64 char (len%4==1)
---     instead of silently dropping it; the GCM tag check catches the
---     corruption anyway, but a nil lets the caller distinguish "malformed
---     input" from "decrypted garbage" and exercise the proxy fallback cleanly.
---   • cleanParagraph: line-anchored, word-bounded watermark/credit patterns
---     with correctly-escaped \\s (the community v2.0.0 draft used single
---     backslashes → Lua string literal "s", making those patterns dead).
---   • Optional Chapter Fetch Delay setting (None/2s/4s/6s) — may reduce
---     "Security Check" triggers during bulk downloads, at the cost of speed.
--- ═══════════════════════════════════════════════════════════════════════════
-
 -- ── Metadata ───────────────────────────────────────────────────────────────
 id = "wtrlab"
 name = "WTR-LAB"
-version = "1.1.8"
+version = "1.1.9"
 baseUrl = "https://wtr-lab.com/"
 language = "MTL"
 icon = "https://raw.githubusercontent.com/HnDK0/external-sources/main/icons/wtr-lab.png"
@@ -135,6 +42,19 @@ local function absUrl(href)
         return "https:" .. href
     end
     return url_resolve(baseUrl, href)
+end
+
+-- Resolve wtr-lab "debranding" tokens (site stores some titles as
+-- `%{Display|base64OfRealName}`, e.g. `%{Ninja World|TmFydXRv}`; its client
+-- JS replaces them with the Display part). Mirror that behavior so catalog /
+-- book / chapter titles never leak the raw `%{…}` form. Pure gsub, no regex.
+local function resolveTokens(text)
+    if not text then return "" end
+    -- %{Display|base64} -> Display
+    text = text:gsub("%%{%s*([^|{}]+)%s*|%s*([%w_%-]+)%s*}", "%1")
+    -- legacy %{"D":"b64"} -> D
+    text = text:gsub('%%{%s*"([^"]*)"%s*:%s*"[^"]*"%s*}', "%1")
+    return text
 end
 
 local function fetchPage(url)
@@ -576,7 +496,7 @@ local function seriesToItems(series)
             local cover = (novel.data and novel.data.image) or ""
             local slug = novel.slug or ""
             local item = {
-                title = string_clean(title),
+                title = string_clean(resolveTokens(title)),
                 url = baseUrl .. "en/novel/" .. rawId .. "/" .. slug,
                 cover = absUrl(cover)
             }
@@ -1589,7 +1509,7 @@ function getBookTitle(bookUrl)
     end
     local el = html_select_first(body, "h1")
     if el then
-        return string_trim(el.text)
+        return resolveTokens(string_trim(el.text))
     end
     return nil
 end
@@ -1686,7 +1606,7 @@ function getChapterList(bookUrl)
     for i = 1, #data.chapters do
         local ch = data.chapters[i]
         local order = ch.order or i
-        local title = ch.title or ("Chapter " .. tostring(order))
+        local title = resolveTokens(ch.title or ("Chapter " .. tostring(order)))
         local chUrl = baseUrl .. "novel/" .. novelId .. "/" .. slug .. "/chapter-" .. tostring(order)
         table.insert(chapters, {
             title = tostring(order) .. ": " .. title,
