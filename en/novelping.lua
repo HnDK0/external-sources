@@ -1,7 +1,7 @@
 -- ── Метаданные ───────────────────────────────────────────────────────────────
 id        = "NovelPing"
 name      = "Novel Ping"
-version   = "1.0.0"
+version   = "1.0.1"
 baseUrl   = "https://novelping.com/"
 language  = "en"
 icon      = "https://raw.githubusercontent.com/HnDK0/external-sources/main/icons/novelping.png"
@@ -501,34 +501,42 @@ function getCatalogFiltered(index, filters)
   local tags_exc   = filters["tags_excluded"] or {}
 
   local url = baseUrl .. "search?advanced=1"
+  -- Сервер рендерит список только при наличии хотя бы одного активирующего
+  -- параметра (status/language/genres/tags/min_chapters/max_chapters).
+  -- sort, genre_mode и tag_mode сами по себе список не активируют — если
+  -- фильтров нет, добавляем нейтральный активатор &min_chapters=1.
+  local hadFilter = false
   -- Значения жанров/тегов содержат пробелы и спецсимволы
   -- ("ANIME & COMICS", "ANTIHERO PROTAGONIST") — всё кодируем через url_encode.
   if sort ~= ""       then url = url .. "&sort="       .. url_encode(sort)       end
-  if status ~= "all"  then url = url .. "&status="     .. url_encode(status)     end
-  if language ~= "ALL" then url = url .. "&language="  .. url_encode(language)   end
+  if status ~= "all"  then url = url .. "&status="     .. url_encode(status); hadFilter = true end
+  if language ~= "ALL" then url = url .. "&language="  .. url_encode(language); hadFilter = true end
   if genre_mode ~= "AND" then url = url .. "&genre_mode=" .. url_encode(genre_mode) end
   if tag_mode ~= "AND" then url = url .. "&tag_mode=" .. url_encode(tag_mode)   end
 
   for _, g in ipairs(genres_inc) do
-    url = url .. "&genres=" .. url_encode(g)
+    url = url .. "&genres=" .. url_encode(g); hadFilter = true
   end
   for _, g in ipairs(genres_exc) do
-    url = url .. "&genres_exclude=" .. url_encode(g)
+    url = url .. "&genres_exclude=" .. url_encode(g); hadFilter = true
   end
   for _, t in ipairs(tags_inc) do
-    url = url .. "&tags=" .. url_encode(t)
+    url = url .. "&tags=" .. url_encode(t); hadFilter = true
   end
   for _, t in ipairs(tags_exc) do
-    url = url .. "&tags_exclude=" .. url_encode(t)
+    url = url .. "&tags_exclude=" .. url_encode(t); hadFilter = true
   end
 
   -- Числовые ограничения по числу глав (пусто = фильтр не применяется)
   if filters["min_chapters"] and filters["min_chapters"] ~= "" then
-    url = url .. "&min_chapters=" .. url_encode(filters["min_chapters"])
+    url = url .. "&min_chapters=" .. url_encode(filters["min_chapters"]); hadFilter = true
   end
   if filters["max_chapters"] and filters["max_chapters"] ~= "" then
-    url = url .. "&max_chapters=" .. url_encode(filters["max_chapters"])
+    url = url .. "&max_chapters=" .. url_encode(filters["max_chapters"]); hadFilter = true
   end
+
+  -- Активный фильтр не выбран — нейтральный активатор вместо пустой страницы
+  if not hadFilter then url = url .. "&min_chapters=1" end
 
   url = url .. "&page=" .. page
 
