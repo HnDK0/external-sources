@@ -1,6 +1,6 @@
 id       = "novelfull"
 name     = "NovelFull"
-version  = "1.1.0"
+version  = "1.2.0"
 baseUrl  = "https://novelfull.net/"
 language = "en"
 icon     = "https://raw.githubusercontent.com/HnDK0/external-sources/main/icons/novelfull.png"
@@ -35,6 +35,78 @@ local function applyStandardContentTransforms(text)
     return text
 end
 
+-- ── HD-коверы каталога (novelping CDN) ────────────────────────────────────────
+-- Каталог/поиск отдают cover 100×136: /uploads/thumbs/<slug>-<hashA>-<hashB>.jpg,
+-- где хеши — случайные значения из БД движка (общий для клонов «ReadNovel-style»
+-- PHP-шаблон; подмена хеша небезопасна: у trial-marriage стандартный thumb, но
+-- кастомные бакеты 207×270/og → 404).
+
+-- ponytail: константы темпа общие с предзагрузкой списка глав (см. parsePage)
+local BURST_CHUNK  = 6    -- страниц на один параллельный батч (залп >=7 ловит 429)
+local BURST_GAP_MS = 250  -- пауза между батчами
+
+local _coverCache = {}
+
+-- Бакет CDN: /novel/<slug>.jpg — оригинал (25-190KB, 369×492); при миссе
+-- остаётся стоковая миниатюра novelfull (100×136) — третьей ступени нет,
+-- миссов в проверке не встретилось (22/22 каталог + 12/12 популярные).
+local COVER_BUCKETS = {
+    "https://images.novelping.com/novel",
+}
+
+local function upgradeCovers(items)
+    -- Slug книги берём из URL айтема, не из cover (в cover-ссылке он срезан).
+    local pending = {}
+    for _, it in ipairs(items) do
+        local slug = string.match(it.url or "", "([^/]+)%.html$")
+        if slug and not _coverCache[slug] then
+            _coverCache[slug] = it.cover -- по умолчанию: оставляем сток
+            pending[#pending + 1] = { slug = slug, original = it.cover }
+        end
+    end
+
+    for _, bucket in ipairs(COVER_BUCKETS) do
+        -- Только те, что ещё не получили ковер из предыдущего бакета.
+        local todo = {}
+        for _, e in ipairs(pending) do
+            if _coverCache[e.slug] == e.original then todo[#todo + 1] = e end
+        end
+        if #todo == 0 then break end
+
+        -- Проверка существования чанками (тот же ритм, что в burstLoad).
+        local i = 1
+        while i <= #todo do
+            local last = math.min(i + BURST_CHUNK - 1, #todo)
+            local urls = {}
+            for j = i, last do urls[#urls + 1] = bucket .. "/" .. todo[j].slug .. ".jpg" end
+            local rs = http_get_batch(urls)
+            local failed = false
+            for k, res in ipairs(rs) do
+                if res.success then
+                    _coverCache[todo[i + k - 1].slug] = urls[k]
+                else
+                    failed = true
+                end
+            end
+            if failed then
+                -- Однократный повтор неудачного чанка с паузой.
+                sleep(math.random(600, 900))
+                rs = http_get_batch(urls)
+                for k, res in ipairs(rs) do
+                    if res.success then _coverCache[todo[i + k - 1].slug] = urls[k] end
+                end
+            end
+            if last < #todo then sleep(BURST_GAP_MS) end
+            i = last + 1
+        end
+    end
+
+    for _, it in ipairs(items) do
+        local slug = string.match(it.url or "", "([^/]+)%.html$")
+        if slug and _coverCache[slug] then it.cover = _coverCache[slug] end
+    end
+end
+
 -- ── Каталог ───────────────────────────────────────────────────────────────────
 
 -- Реальная вёрстка (novelfull.net, проверено на живой странице):
@@ -53,6 +125,7 @@ local function buildCatalogItems(body)
             })
         end
     end
+    upgradeCovers(items)
     return items
 end
 
@@ -119,9 +192,6 @@ end
 -- Последовательно запросы проходят, но 7 тыс. глав (182 страницы) грузятся
 -- ~100 c. Решение — пачками: мини-батчи по BURST_CHUNK страниц с паузой между
 -- ними; замерено на живом сайте: 182/182 OK за 14.5 c.
-
-local BURST_CHUNK   = 6    -- страниц на один параллельный батч (залп >=7 ловит 429)
-local BURST_GAP_MS  = 250  -- пауза между батчами
 
 local _bursts = {} -- bookUrl → { bodies = { [страница] = JSON-тело }, totalPages = N }
 
