@@ -165,6 +165,24 @@ function getBookTitle(bookUrl)
 end
 
 function getBookCoverImageUrl(bookUrl)
+    -- Сначала оригинал с novelping CDN: slug есть в самом URL книги.
+    -- Вердикт каталога переиспользуем (_coverCache); на миссе парсим страницу.
+    local slug = string.match(bookUrl or "", "([^/]+)%.html$")
+    if slug then
+        local cached = _coverCache[slug]
+        if cached and string_starts_with(cached, "https://images.novelping.com/") then
+            return cached
+        end
+        if not cached then
+            local url = COVER_BUCKETS[1] .. "/" .. slug .. ".jpg"
+            local r = http_get(url)
+            if r.success then
+                _coverCache[slug] = url
+                return url
+            end
+        end
+    end
+
     local html = fetchBookPage(bookUrl)
     if not html then return nil end
     local cover = html_attr(html, ".m-book1 img", "src")
