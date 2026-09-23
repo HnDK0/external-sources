@@ -1,6 +1,6 @@
 id       = "freewebnovel"
 name     = "FreeWebNovel"
-version  = "1.0.5"
+version  = "1.1.0"
 baseUrl  = "https://freewebnovel.com"
 language = "en"
 icon     = "https://raw.githubusercontent.com/HnDK0/external-sources/main/icons/freewebnovel.png"
@@ -65,7 +65,9 @@ end
 
 function getCatalogList(index)
   local page = index + 1
-  local r = http_get(catalogUrl("sort/most-popular", page))
+  -- Latest Release — единственная сортировка без серверного лимита в 100
+  -- результатов (most-popular и search-adv отдают максимум 100).
+  local r = http_get(catalogUrl("sort/latest-release", page))
   if not r.success then return { items = {}, hasNext = false } end
   local items = parseItems(r.body)
   return { items = items, hasNext = #items > 0 }
@@ -245,74 +247,200 @@ function getFilterList()
   return {
     {
       type         = "select",
-      key          = "type",
-      label        = "Novel Type",
-      defaultValue = "sort/most-popular",
+      key          = "sort",
+      label        = "Sort",
+      defaultValue = "popular",
       options = {
-        { value = "sort/most-popular",                 label = "Most Popular"    },
-        { value = "sort/latest-release",               label = "Latest Release"  },
-        { value = "sort/latest-release/chinese-novel", label = "Chinese Novel"   },
-        { value = "sort/latest-release/korean-novel",  label = "Korean Novel"    },
-        { value = "sort/latest-release/japanese-novel",label = "Japanese Novel"  },
-        { value = "sort/latest-release/english-novel", label = "English Novel"   },
+        { value = "popular",   label = "Most Popular"   },
+        { value = "updated",   label = "Last Updated"   },
+        { value = "rating",    label = "Highest Rated"  },
+        { value = "collected", label = "Most Collected" },
+        { value = "chapters",  label = "Most Chapters"  },
+        { value = "title",     label = "Title A - Z"    },
       }
     },
     {
       type         = "select",
-      key          = "genre",
-      label        = "Genre",
+      key          = "genre_match",
+      label        = "Genre Match",
+      defaultValue = "all",
+      options = {
+        { value = "all",     label = "All selected"     },
+        { value = "any",     label = "Any selected"     },
+        { value = "exclude", label = "Exclude selected" },
+      }
+    },
+    {
+      type        = "checkbox",
+      key         = "genre",
+      label       = "Genre",
+      multiselect = true,
+      options = {
+        { value = "Action",        label = "Action"        },
+        { value = "Adult",         label = "Adult"         },
+        { value = "Adventure",     label = "Adventure"     },
+        { value = "Comedy",        label = "Comedy"        },
+        { value = "Drama",         label = "Drama"         },
+        { value = "Eastern",       label = "Eastern"       },
+        { value = "Ecchi",         label = "Ecchi"         },
+        { value = "Fan-fic",       label = "Fan-fic"       },
+        { value = "Fantasy",       label = "Fantasy"       },
+        { value = "Game",          label = "Game"          },
+        { value = "Gender Bender", label = "Gender Bender" },
+        { value = "Harem",         label = "Harem"         },
+        { value = "Historical",    label = "Historical"    },
+        { value = "Horror",        label = "Horror"        },
+        { value = "Josei",         label = "Josei"         },
+        { value = "Martial Arts",  label = "Martial Arts"  },
+        { value = "Mature",        label = "Mature"        },
+        { value = "Mecha",         label = "Mecha"         },
+        { value = "Mystery",       label = "Mystery"       },
+        { value = "Psychological", label = "Psychological" },
+        { value = "Reincarnation", label = "Reincarnation" },
+        { value = "Romance",       label = "Romance"       },
+        { value = "School Life",   label = "School Life"   },
+        { value = "Sci-fi",        label = "Sci-fi"        },
+        { value = "Seinen",        label = "Seinen"        },
+        { value = "Shoujo",        label = "Shoujo"        },
+        { value = "Shounen Ai",    label = "Shounen Ai"    },
+        { value = "Shounen",       label = "Shounen"       },
+        { value = "Slice of Life", label = "Slice of Life" },
+        { value = "Smut",          label = "Smut"          },
+        { value = "Sports",        label = "Sports"        },
+        { value = "Supernatural",  label = "Supernatural"  },
+        { value = "System",        label = "System"        },
+        { value = "Tragedy",       label = "Tragedy"       },
+        { value = "Wuxia",         label = "Wuxia"         },
+        { value = "Xianxia",       label = "Xianxia"       },
+        { value = "Xuanhuan",      label = "Xuanhuan"      },
+        { value = "Yaoi",          label = "Yaoi"          },
+      }
+    },
+    {
+      type         = "select",
+      key          = "content_rating",
+      label        = "Content Rating",
       defaultValue = "",
       options = {
-        { value = "",               label = "All"           },
-        { value = "genre/Action",        label = "Action"        },
-        { value = "genre/Adult",         label = "Adult"         },
-        { value = "genre/Adventure",     label = "Adventure"     },
-        { value = "genre/Comedy",        label = "Comedy"        },
-        { value = "genre/Drama",         label = "Drama"         },
-        { value = "genre/Eastern",       label = "Eastern"       },
-        { value = "genre/Ecchi",         label = "Ecchi"         },
-        { value = "genre/Fantasy",       label = "Fantasy"       },
-        { value = "genre/Game",          label = "Game"          },
-        { value = "genre/Gender+Bender", label = "Gender Bender" },
-        { value = "genre/Harem",         label = "Harem"         },
-        { value = "genre/Historical",    label = "Historical"    },
-        { value = "genre/Horror",        label = "Horror"        },
-        { value = "genre/Josei",         label = "Josei"         },
-        { value = "genre/Martial+Arts",  label = "Martial Arts"  },
-        { value = "genre/Mature",        label = "Mature"        },
-        { value = "genre/Mecha",         label = "Mecha"         },
-        { value = "genre/Mystery",       label = "Mystery"       },
-        { value = "genre/Psychological", label = "Psychological" },
-        { value = "genre/Reincarnation", label = "Reincarnation" },
-        { value = "genre/Romance",       label = "Romance"       },
-        { value = "genre/School+Life",   label = "School Life"   },
-        { value = "genre/Sci-fi",        label = "Sci-fi"        },
-        { value = "genre/Seinen",        label = "Seinen"        },
-        { value = "genre/Shoujo",        label = "Shoujo"        },
-        { value = "genre/Shounen+Ai",    label = "Shounen Ai"    },
-        { value = "genre/Shounen",       label = "Shounen"       },
-        { value = "genre/Slice+of+Life", label = "Slice of Life" },
-        { value = "genre/Smut",          label = "Smut"          },
-        { value = "genre/Sports",        label = "Sports"        },
-        { value = "genre/Supernatural",  label = "Supernatural"  },
-        { value = "genre/Tragedy",       label = "Tragedy"       },
-        { value = "genre/Wuxia",         label = "Wuxia"         },
-        { value = "genre/Xianxia",       label = "Xianxia"       },
-        { value = "genre/Xuanhuan",      label = "Xuanhuan"      },
-        { value = "genre/Yaoi",          label = "Yaoi"          },
+        { value = "",            label = "All"                    },
+        { value = "general",     label = "General Audiences"      },
+        { value = "guidance",    label = "Parental Guidance"      },
+        { value = "suggestive",  label = "Suggestive Content"     },
+        { value = "adults-only", label = "Explicit Content (18+)" },
+      }
+    },
+    {
+      type         = "select",
+      key          = "last_updated",
+      label        = "Last Updated",
+      defaultValue = "",
+      options = {
+        { value = "",         label = "Any time"        },
+        { value = "24-hours", label = "Within 24 hours" },
+        { value = "7-days",   label = "Within 7 days"   },
+        { value = "30-days",  label = "Within 30 days"  },
+        { value = "3-months", label = "Within 3 months" },
+      }
+    },
+    {
+      type         = "select",
+      key          = "chapters",
+      label        = "Chapters",
+      defaultValue = "",
+      options = {
+        { value = "",          label = "All"       },
+        { value = "under-50",  label = "< 50"      },
+        { value = "50-100",    label = "50 - 100"  },
+        { value = "100-200",   label = "100 - 200" },
+        { value = "200-500",   label = "200 - 500" },
+        { value = "500-1000",  label = "500 - 1000"},
+        { value = "over-1000", label = "> 1000"    },
+      }
+    },
+    {
+      type         = "select",
+      key          = "rating",
+      label        = "Rating",
+      defaultValue = "",
+      options = {
+        { value = "",    label = "Any Rating" },
+        { value = "3",   label = "3+ Stars"   },
+        { value = "4",   label = "4+ Stars"   },
+        { value = "4.5", label = "4.5+ Stars" },
+      }
+    },
+    {
+      type         = "select",
+      key          = "status",
+      label        = "Status",
+      defaultValue = "",
+      options = {
+        { value = "",          label = "All"       },
+        { value = "ongoing",   label = "Ongoing"   },
+        { value = "completed", label = "Completed" },
+      }
+    },
+    {
+      type        = "checkbox",
+      key         = "language",
+      label       = "Original Language",
+      multiselect = true,
+      options = {
+        { value = "1", label = "Chinese Novel" },
+        { value = "2", label = "Korean Novel"  },
+        { value = "3", label = "Japanese Novel"},
+        { value = "4", label = "English Novel" },
       }
     },
   }
 end
 
 function getCatalogFiltered(index, filters)
-  local page   = index + 1
-  local ftype  = filters["type"] or "sort/most-popular"
-  local genre  = filters["genre"] or ""
+  local page  = index + 1
+  local parts = { "genre_match=all" }
 
-  local basePath = genre ~= "" and genre or ftype
+  local function addParam(key, val)
+    if val and val ~= "" then
+      parts[#parts + 1] = key .. "=" .. url_encode(val)
+    end
+  end
 
-  local r = http_get(catalogUrl(basePath, page))
+  -- Чекбоксы движок отдаёт в filters[key .. "_included"] (массив).
+  local genres = filters["genre_included"] or filters["genre"] or {}
+  if type(genres) == "string" then genres = { genres } end
+  local gmatch = filters["genre_match"] or "all"
+
+  -- Исключённые жанры (долгий тап в UI): сайт выражает это через genre_match=exclude.
+  if #genres == 0 then
+    local excl = filters["genre_excluded"] or {}
+    if #excl > 0 then
+      genres = excl
+      gmatch = "exclude"
+    end
+  end
+
+  parts[1] = "genre_match=" .. url_encode(gmatch)
+  for _, g in ipairs(genres) do
+    parts[#parts + 1] = "genre[]=" .. url_encode(g)
+  end
+
+  addParam("content_rating", filters["content_rating"])
+  addParam("last_updated",   filters["last_updated"])
+  addParam("chapters",       filters["chapters"])
+  addParam("rating",         filters["rating"])
+  addParam("status",         filters["status"])
+  addParam("sort",           filters["sort"] or "popular")
+
+  local langs = filters["language_included"] or filters["language"] or {}
+  if type(langs) == "string" then langs = { langs } end
+  for _, l in ipairs(langs) do
+    parts[#parts + 1] = "language[]=" .. url_encode(l)
+  end
+
+  parts[#parts + 1] = "apply=1"
+  parts[#parts + 1] = "page=" .. tostring(page)
+
+  local r = http_get(baseUrl .. "/search-adv?" .. table.concat(parts, "&"))
   if not r.success then return { items = {}, hasNext = false } end
   local items = parseItems(r.body)
   return { items = items, hasNext = #items > 0 }
