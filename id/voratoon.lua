@@ -1,6 +1,6 @@
 id       = "voratoon"
 name     = "VoraToon"
-version  = "1.0.0"
+version  = "1.0.1"
 baseUrl  = "https://v2.voratoon.com/"
 language = "id"
 icon     = "https://raw.githubusercontent.com/HnDK0/external-sources/main/icons/voratoon.webp"
@@ -22,7 +22,10 @@ local function apiGet(path, params)
             end
         end
     end
-    local r = http_get(url)
+    -- Cloudflare на api.voratoon.com блокирует запросы без Referer с основного сайта
+    local r = http_get(url, {
+        headers = { ["Referer"] = "https://v2.voratoon.com/" },
+    })
     if not r.success then return nil, nil end
     local ok, resp = pcall(json_parse, r.body)
     if not ok or not resp or resp.status ~= 200 then return nil, nil end
