@@ -34,7 +34,7 @@ sources:
     language: "en"
   - id: "freewebnovel"
     name: "FreeWebNovel"
-    version: "1.0.5"
+    version: "1.1.0"
     url: "https://raw.githubusercontent.com/HnDK0/external-sources/refs/heads/main/en/freewebnovel.lua"
     icon: "https://raw.githubusercontent.com/HnDK0/external-sources/refs/heads/main/icons/freewebnovel.png"
     language: "en"
