@@ -1,6 +1,12 @@
 language: "ja"
 name: "Japanese"
 sources:
+  - id: "kakuyomu"
+    name: "カクヨム (Kakuyomu)"
+    version: "1.0.0"
+    url: "https://raw.githubusercontent.com/HnDK0/external-sources/refs/heads/main/ja/kakuyomu.lua"
+    icon: "https://raw.githubusercontent.com/HnDK0/external-sources/refs/heads/main/icons/kakuyomu.png"
+    language: "ja"
   - id: "syosetu"
     name: "Syosetu"
     version: "1.1.0"
