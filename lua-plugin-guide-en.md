@@ -18,13 +18,14 @@
 10. [Chapter List](#chapter-list)
 11. [Paginated Chapter List (parsePage)](#paginated-chapter-list-parsepage)
 12. [Chapter Text](#chapter-text)
-13. [Plugin Errors (show_error)](#plugin-errors-show_error)
-14. [Catalog Filters](#catalog-filters)
-14. [Plugin Settings](#plugin-settings)
-15. [Helpers and Utilities](#helpers-and-utilities)
-16. [Full API Reference](#full-api-reference)
-17. [Full Plugin Template](#full-plugin-template)
-18. [Common Mistakes](#common-mistakes)
+13. [Video plugins (content_type = "video")](#video-plugins-content_type--video)
+14. [Plugin Errors (show_error)](#plugin-errors-show_error)
+15. [Catalog Filters](#catalog-filters)
+16. [Plugin Settings](#plugin-settings)
+17. [Helpers and Utilities](#helpers-and-utilities)
+18. [Full API Reference](#full-api-reference)
+19. [Full Plugin Template](#full-plugin-template)
+20. [Common Mistakes](#common-mistakes)
 
 ---
 
@@ -91,7 +92,8 @@ language = "en"               -- ISO 639-1: "en", "ru", "ja", "zh", "id"
                               -- or "MTL" for machine translation
 icon     = "https://..."      -- icon URL (optional)
 charset  = "UTF-8"            -- response encoding (optional, default UTF-8)
-content_type = "manga"        -- ONLY for manga; omit for novels (default: novel)
+content_type = "manga"        -- only for manga; omit for novels (default: novel)
+content_type = "video"        -- video mode: built-in player, see "Video plugins"
 cf_options  = {               -- Cloudflare/WAF bypass settings (optional)
     whitelist = false,         -- true = engine does NOT bypass CF for this host
     ignore_markers = {        -- domains with these markers are skipped
@@ -1334,6 +1336,44 @@ function getChapterText(html, chapterUrl)
     return applyStandardContentTransforms(table.concat(paragraphs, "\n\n"))
 end
 ```
+
+---
+
+## Video plugins (content_type = "video")
+
+With `content_type = "video"`, the plugin opens the built-in player (media3) instead of the text reader. Mapping: a series is a regular `Book` from the catalog, episodes are regular chapters from `getChapterList`, a season is the `volume` field.
+
+The only difference from a regular plugin: instead of `getChapterText`, implement `getVideoList(episodeUrl)` — it returns the stream variants for the episode. `episodeUrl` comes from `getChapterList`; the plugin fetches the page itself via `http_get`.
+
+```lua
+function getVideoList(episodeUrl)
+    local r = http_get(episodeUrl)
+    if not r.success then return nil end
+    local data = json_parse(r.body)
+    return {
+        {
+            url     = data.stream,   -- m3u8 или прямой mp4
+            quality = "1080p",       -- подпись для UI (опционально)
+            headers = {              -- опционально
+                ["Referer"] = episodeUrl,
+            },
+            subtitles = {            -- опционально: .srt / .vtt
+                { url = "https://.../ru.srt", label = "Русский", lang = "ru" },
+            },
+        },
+    }
+end
+```
+
+Rules:
+
+- A video plugin doesn't need `getChapterText`: the validator requires `getVideoList` based on `content_type` (a missing one logs a warning).
+- `return nil` or `return {}` → the app shows "No sources found" (not an error). `error("text")` → the error text is shown on screen.
+- `headers` are applied **identically to every request of the stream**: the playlist, HLS segments, subtitles, and offline download. The usual set is `Referer` (the episode page) and `User-Agent`; the source's cookies come from the app's shared jar. The contract has no separate headers "for the playlist only". The set is defined per stream variant — quality variants may carry their own headers.
+- `subtitles`: fields `url` (HTTP), `label` — track caption in the player, `lang` — language code; the mime type is derived from the URL extension (`.srt`, `.vtt`).
+- `quality`, `headers`, `subtitles` are optional; entries without `url` are skipped — that's not an error.
+
+The rest of the contract (catalog, search, book card, chapters, filters, settings) is the same as for regular plugins. Full minimal sample: `docs/lua-plugin-video-api.md` in the NoveLA repository.
 
 ---
 
