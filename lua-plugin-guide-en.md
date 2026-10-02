@@ -115,6 +115,24 @@ cf_options  = {               -- Cloudflare/WAF bypass settings (optional)
 
 If `cf_options` is not specified, the engine bypasses CF automatically based on response headers.
 
+**`referer`** — a custom Referer for images (optional). Covers on CDNs with hotlink protection require the original site in the Referer, not the host of the image itself. Declared as a global at the root of the script — before all functions:
+
+```
+referer = "https://site.com/"
+
+baseUrl = "https://site.com"
+name = "Example Source"
+
+function getCatalogList(index) ... end
+```
+
+How it works:
+
+- **Priority:** the plugin's `referer` → the host of the page URL (catalog/book) → the host of the image itself (previous behavior when nothing is set).
+- The value is sent to the header as-is (only surrounding whitespace is trimmed) — you can even include a path: `referer = "https://site.com/manga/"`.
+- **Where it applies:** covers in the source's catalog, on the book/manga page, offline cover downloads (library/backup), chapter images on EPUB export.
+- Does not affect the plugin's own HTTP requests (`http_get`/`http_post`) — those still use their own `config.headers`.
+
 ---
 
 ## Required Functions
@@ -446,6 +464,18 @@ end
 -- r.headers — response headers table (works the same for both text and binary mode)
 ```
 
+`config` parameters in addition to `headers` / `charset` / `binary`:
+
+- `timeout` — request budget in **milliseconds** (integer `> 0`). When set, the whole call (DNS, connection, redirects, body read) is bounded by this time and runs as a **single attempt** instead of the client's long retry series (3+3+3+3+15 s). For 5xx responses short retries may happen inside the budget, so the actual time can slightly exceed the stated value. Not set or `<= 0` → previous client behavior. Exists **only** in `http_get` (not in `http_post` and not in `http_get_batch`).
+- `method = "HEAD"` — sends HEAD instead of GET (case does not matter): same headers, empty response body (`r.body == ""`), the `http_get` cache is neither read nor written, and `Cache-Control: no-cache` is added to the request. Serves as a cheap link liveness probe — the server is checked by HTTP code, the body is not downloaded. Any other method value → error `allowed: GET, HEAD`. Exists only in `http_get`.
+- `followRedirects = false` — do not follow 3xx: `r.code` stays `3xx` and `r.headers.location` shows the target (gate/hoster sites where the redirect is the answer). Defaults to `true`.
+
+```
+-- link liveness probe: 3 s budget, no body download
+local r = http_get(url, { timeout = 3000, method = "HEAD" })
+local alive = r.success and r.code >= 200 and r.code < 400
+```
+
 ### http_post(url, body [, config])
 
 ```
@@ -512,6 +542,17 @@ end
 > - Binary responses are **not cached** (TTL cache works only for text)
 > - `resp.code`, `resp.headers`, `resp.success` work the same for both modes
 > - Use `#resp.body` to get the size in bytes
+
+`config` parameters:
+
+- `binary = true` — each entry's body as a byte table (see above).
+- `headers` — a headers table applied **to every request of the batch** (overrides the default `Accept-Language`/`Referer` computed from the URL). Per-URL headers are not supported; `timeout` and `method` are absent in the batch.
+
+```
+local results = http_get_batch(urls, {
+    headers = { ["Referer"] = "https://ref.example/" },
+})
+```
 
 ### Working with cookies
 
@@ -1354,6 +1395,7 @@ function getVideoList(episodeUrl)
         {
             url     = data.stream,   -- m3u8 или прямой mp4
             quality = "1080p",       -- подпись для UI (опционально)
+            mime    = "hls",         -- опционально: тип контента, см. ниже
             headers = {              -- опционально
                 ["Referer"] = episodeUrl,
             },
@@ -1371,9 +1413,22 @@ Rules:
 - `return nil` or `return {}` → the app shows "No sources found" (not an error). `error("text")` → the error text is shown on screen.
 - `headers` are applied **identically to every request of the stream**: the playlist, HLS segments, subtitles, and offline download. The usual set is `Referer` (the episode page) and `User-Agent`; the source's cookies come from the app's shared jar. The contract has no separate headers "for the playlist only". The set is defined per stream variant — quality variants may carry their own headers.
 - `subtitles`: fields `url` (HTTP), `label` — track caption in the player, `lang` — language code; the mime type is derived from the URL extension (`.srt`, `.vtt`).
-- `quality`, `headers`, `subtitles` are optional; entries without `url` are skipped — that's not an error.
+- `quality`, `headers`, `subtitles`, `mime` are optional; entries without `url` are skipped — that's not an error.
+- `mime` — a content-type hint for the player: `hls`/`m3u8` (→ HLS), `mp4`, `mpd` (→ DASH); a ready-made `application/…`/`video/…` value is also accepted (case does not matter). It is needed **only** for URLs **without a media extension** (e.g. `https://cdn…/?token=…`): without it media3 looks at the last path segment, sees "/", and opens the stream with a progressive source → `UnrecognizedInputFormatException` on HLS. A `.m3u8`/`.mp4` extension in the URL already determines the type — then the field is not required. An unknown value or its absence is ignored and the player falls back to inferring the type from the URL. `mime` also travels into the offline download (media3 picks `HlsDownloader` by it).
 
-The rest of the contract (catalog, search, book card, chapters, filters, settings) is the same as for regular plugins. Full minimal sample: `docs/lua-plugin-video-api.md` in the NoveLA repository.
+### Standard getVideoList: speed and filtering out dead hosts
+
+A pattern for all video plugins (a documented, user-proven solution): a series of dozens of embed hosts must not hang on dead links.
+
+1. **SKIP_HOSTS — before any network request.** Check hosts against a list/regex **before** any HTTP. Even with `timeout` in `http_get`, the only cheapest "hard timeout" is to not go to known-dead / JS-only hosts at all: SKIP_HOSTS saves both time and network. The list must carry a reason (a comment or a `reason` field) — why the host is skipped: measured "0 bytes of response", a redirect loop, "no direct link", and so on. Without a reason the list cannot be reviewed.
+
+2. **One `http_get_batch` instead of sequential `http_get` per embed.** Collect all candidate links → one batch (the engine runs it in parallel via `async(Dispatchers.IO)` in the app) → parse the responses → deduplicate by URL → output.
+
+3. **Why this is critical (the measurements the standard grew from).** Sequential traversal with "black holes" (TCP comes up, 0 bytes → the whole timeout is spent; without `timeout` NetworkClient retries 3+3+3+3+15 s) took **17.9–19.9 s** per series; after the fix — **1.2–2.7 s** with no loss of sources. Probing every link for "liveness" with the old API (without `timeout`/`HEAD`) cost **26–30 s** per series; in the current API it is covered by one line — see item 4.
+
+4. **What the API has now.** `http_get` supports `timeout` (budget in ms, single attempt) and `method = "HEAD"` (empty body, cache untouched) — together a cheap liveness probe: `http_get(url, { timeout = 3000, method = "HEAD" })`, check the HTTP code (see "Working with HTTP" → `http_get`). `http_get_batch` takes `binary` and `headers` (**headers for all requests of the batch**); per-URL headers and Range are not supported, and the batch has no `timeout`/`method` — requests carry the default `Accept-Language` and `Referer` computed from the URL itself (`HttpGetBatchFunction` in `LuaSourceLoader.kt`).
+
+5. **New video plugin checklist:** a skip list with reasons → one batch for all embeds → dedupe → `Referer` from the source link in `headers` of every variant (required for mp4upload and the like) → output.
 
 ---
 
@@ -1740,9 +1795,9 @@ end
 
 | Function                           | Description                                          |
 | ------------------------------------ | ------------------------------------------------------ |
-| `http_get(url [, config])`         | GET request → `{success, body, code}` (body is string or byte table with `binary = true`) |
-| `http_post(url, body [, config])`  | POST request → `{success, body, code}`               |
-| `http_get_batch(urls [, config])`  | Parallel GET → array of `{success, body, code}` (supports `binary = true`) |
+| `http_get(url [, config])`         | GET/HEAD request → `{success, body, code}` (body is a string or byte table with `binary = true`). config: `headers`, `charset`, `binary`, `followRedirects`, `timeout` (ms), `method` (`"GET"`/`"HEAD"`) |
+| `http_post(url, body [, config])`  | POST request → `{success, body, code}`; config: `headers`, `charset` |
+| `http_get_batch(urls [, config])`  | Parallel GET → array of `{success, body, code}`; config: `binary`, `headers` (for all requests of the batch) |
 | `get_cookies(url)`                 | Get cookies for a domain → table                     |
 | `set_cookies(url, table)`          | Set cookies                                           |
 
