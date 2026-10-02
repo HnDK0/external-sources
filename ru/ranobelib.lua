@@ -1,7 +1,7 @@
 -- ── Метаданные ────────────────────────────────────────────────────────────────
 id       = "ranobelib"
 name     = "RanobeLib"
-version  = "1.0.9"
+version  = "1.0.10"
 baseUrl  = "https://ranobelib.me/"
 language = "ru"
 icon     = "https://raw.githubusercontent.com/HnDK0/external-sources/main/icons/ranobelib.png"
@@ -69,11 +69,6 @@ end
 -- (DDoS-Guard), а движок при загрузке картинок Referer не шлёт (Coil).
 -- Проксируем через images.weserv.nl: URL без схемы weserv понимает и сам
 -- добавляет https. Проверено на живых обложках (thumb и default).
-local function proxyCover(raw)
-  if not raw or raw == "" then return "" end
-  local url = normalizeCover(raw)
-  return "https://images.weserv.nl/?url=" .. url:gsub("^https?://", "")
-end
 
 local function applyStandardContentTransforms(text)
   if not text or text == "" then return "" end
@@ -149,7 +144,7 @@ function getCatalogList(index)
       local item = {
         title = string_clean(title),
         url   = baseUrl .. "ru/" .. slug,
-        cover = proxyCover(cover)
+        cover = (cover)
       }
       local avg = getPath(novel, "rating.average")
       item.rating = formatRating(avg)
@@ -184,7 +179,7 @@ function getCatalogSearch(index, query)
       local item = {
         title = string_clean(title),
         url   = baseUrl .. "ru/" .. slug,
-        cover = proxyCover(cover)
+        cover = (cover)
       }
       local avg = getPath(novel, "rating.average")
       item.rating = formatRating(avg)
@@ -225,7 +220,7 @@ function getBookCoverImageUrl(bookUrl)
   local data = fetchBookJson(bookUrl)
   if not data then return nil end
   local cover = getPath(data, "cover.default") or ""
-  return cover ~= "" and proxyCover(cover) or nil
+  return cover ~= "" and (cover) or nil
 end
 
 function getBookDescription(bookUrl)
@@ -785,7 +780,7 @@ function getCatalogFiltered(index, filters)
       local item = {
         title = string_clean(title),
         url   = baseUrl .. "ru/" .. slug,
-        cover = proxyCover(cover)
+        cover = (cover)
       }
       local avg = getPath(novel, "rating.average")
       item.rating = formatRating(avg)

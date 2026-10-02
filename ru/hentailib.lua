@@ -1,7 +1,7 @@
 -- ── Метаданные ────────────────────────────────────────────────────────────────
 id       = "hentailib"
 name     = "HentaiLib"
-version  = "1.0.0"
+version  = "1.0.1"
 baseUrl  = "https://hentailib.me/"
 language = "ru"
 icon     = "https://raw.githubusercontent.com/HnDK0/external-sources/main/icons/hentailib.png"
@@ -66,12 +66,6 @@ local function normalizeCover(raw)
   if string_starts_with(raw, "//")   then return "https:" .. raw end
   if string_starts_with(raw, "http") then return raw end
   return "https://" .. raw
-end
-
-local function proxyCover(raw)
-  if not raw or raw == "" then return "" end
-  local url = normalizeCover(raw)
-  return "https://images.weserv.nl/?url=" .. url:gsub("^https?://", "")
 end
 
 local function applyStandardContentTransforms(text)
@@ -141,7 +135,7 @@ function getCatalogList(index)
       local item = {
         title = string_clean(title),
         url   = baseUrl .. "ru/" .. slug,
-        cover = proxyCover(cover)
+        cover = (cover)
       }
       local avg = getPath(manga, "rating.average")
       item.rating = formatRating(avg)
@@ -176,7 +170,7 @@ function getCatalogSearch(index, query)
       local item = {
         title = string_clean(title),
         url   = baseUrl .. "ru/" .. slug,
-        cover = proxyCover(cover)
+        cover = (cover)
       }
       local avg = getPath(manga, "rating.average")
       item.rating = formatRating(avg)
@@ -226,7 +220,7 @@ function getBookCoverImageUrl(bookUrl)
   local data = fetchBookJson(bookUrl)
   if not data then return nil end
   local cover = getPath(data, "cover.default") or ""
-  return cover ~= "" and proxyCover(cover) or nil
+  return cover ~= "" and (cover) or nil
 end
 
 local function extractTextFromTipTap(node)
@@ -835,7 +829,7 @@ function getCatalogFiltered(index, filters)
       local item = {
         title = string_clean(title),
         url   = baseUrl .. "ru/" .. slug,
-        cover = proxyCover(cover)
+        cover = (cover)
       }
       local avg = getPath(manga, "rating.average")
       item.rating = formatRating(avg)
