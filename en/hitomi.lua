@@ -9,7 +9,7 @@
 -- ── Метаданные ──
 id           = "hitomi"
 name         = "Hitomi"
-version  = "1.14.2"
+version  = "1.14.3"
 baseUrl      = "https://hitomi.la/"
 language     = "en"
 content_type = "manga"
@@ -445,11 +445,27 @@ end
 -- Кэш термов на сессию: повторный запрос того же .nozomi не нужен.
 local _termCache = {}
 
+-- TTL session-кэшей (10 мин, как HTTP max-age). Раньше _termCache/_nodeCache/
+-- _galleriesVersion жили до полного перезапуска приложения — каталог и поиск
+-- не освежались. По образцу _gg: при недоступном os_time не чистим.
+local SESSION_CACHE_TTL_MS = 600000
+local _sessionCachedAt = 0
+
+local function expireSessionCaches()
+	local now = (pcall(os_time) and os_time()) or 0
+	if now == 0 or now - _sessionCachedAt < SESSION_CACHE_TTL_MS then return end
+	_sessionCachedAt = now
+	_termCache = {}
+	_nodeCache = {}
+	_galleriesVersion = nil
+end
+
 -- Список ID галерей для одного терма (с кэшем; при ошибке — пустой список).
 -- Стратегия (как в JS get_galleryids_for_query):
 --   * терм с ':' (тег типа female:harem) → nozomi;
 --   * bare-слово (galcos, harem) → B-tree (galleriesindex), fallback на nozomi.
 local function termIds(term)
+	expireSessionCaches()
 	if _termCache[term] then return _termCache[term] end
 	local ids = {}
 
