@@ -3,7 +3,7 @@
 -- ── Metadata ───────────────────────────────────────────────────────────────
 id = "wtrlab"
 name = "WTR-LAB"
-version = "1.1.9"
+version = "1.1.10"
 baseUrl = "https://wtr-lab.com/"
 language = "MTL"
 icon = "https://raw.githubusercontent.com/HnDK0/external-sources/main/icons/wtr-lab.png"
@@ -1692,16 +1692,29 @@ local function fetchChapterJson(novelId, chapterNo, chapterUrl, translateParam)
         force_retry = false
     })
 
+    local headers = {
+        ["Content-Type"] = "application/json",
+        ["Referer"] = chapterUrl,
+        ["Origin"] = regex_replace(baseUrl, "/$", "")
+    }
+    -- some engines/jar: attach session cookie so logged-in chapters (>10) work
+    local cookies = get_cookies(baseUrl)
+    if type(cookies) == "table" then
+        local parts = {}
+        for name, value in pairs(cookies) do
+            if type(name) == "string" and type(value) == "string" and name ~= "" and value ~= "" then
+                parts[#parts + 1] = name .. "=" .. value
+            end
+        end
+        if #parts > 0 then headers["Cookie"] = table.concat(parts, "; ") end
+    end
+
     local MAX_ATTEMPTS = 3
     local lastTurnstileCount = nil
 
     for attempt = 1, MAX_ATTEMPTS do
         local r = http_post(baseUrl .. "api/reader/get", requestBody, {
-            headers = {
-                ["Content-Type"] = "application/json",
-                ["Referer"] = chapterUrl,
-                ["Origin"] = regex_replace(baseUrl, "/$", "")
-            }
+            headers = headers
         })
 
         if not r.success then
@@ -1729,8 +1742,22 @@ local function fetchChapterJson(novelId, chapterNo, chapterUrl, translateParam)
         elseif json.success == false then
             local errCode = json.code or "?"
             local errMsg = json.message or json.error or "Unknown API error"
+            if tostring(errCode) == "1401" then
+                errMsg = errMsg .. " (guest preview limit — log in via the built-in browser and retry)"
+            end
             error("[" .. tostring(errCode) .. "] " .. errMsg)
         else
+            -- The API stopped inlining the body: a successful reply carries content_url
+            -- instead of `data` (frontend hydrateReaderContent does the same GET).
+            if json.data == nil and type(json.content_url) == "string" and json.content_url ~= "" then
+                local cr = http_get(absUrl(json.content_url))
+                local cj = cr.success and json_parse(cr.body) or nil
+                if cj and cj.data then
+                    json.data = cj.data
+                else
+                    error("WTR-Lab content fetch failed (code " .. tostring(cr.code) .. ")")
+                end
+            end
             return json
         end
     end
