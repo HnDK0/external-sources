@@ -7,7 +7,7 @@
 content_type = "video"
 id          = "yummyanime"
 name        = "YummyAnime"
-version     = "1.0.0"
+version     = "1.0.1"
 baseUrl     = "https://ru.yummyani.me"
 language    = "ru"
 icon        = "https://raw.githubusercontent.com/HnDK0/external-sources/refs/heads/main/icons/yummyanime.png"
@@ -522,15 +522,16 @@ local function kodikDecode(src)
     return url
 end
 
-local function resolveKodik(iframeUrl, dubbing)
-    local url = iframeUrl
-    if url:sub(1, 2) == "//" then url = "https:" .. url end
-    local r = http_get(url)
-    if not r.success then
-        log_error("YummyAnime: Kodik iframe " .. tostring(r.code))
+-- page — ответ общего http_get_batch по этому iframe (см. getVideoList):
+-- эмбеды Kodik/Alloha грузятся одним батчем, без своих заголовков.
+local function resolveKodik(iframeUrl, dubbing, page)
+    if type(page) ~= "table" or not page.success then
+        log_error("YummyAnime: Kodik iframe " .. tostring(page and page.code))
         return nil
     end
-    local html = r.body
+    local url = iframeUrl
+    if url:sub(1, 2) == "//" then url = "https:" .. url end
+    local html = page.body
     -- urlParams — JSON с подписями d_sign/pd_sign/ref_sign, без них /ftor отдаёт 500
     local raw = html:match("urlParams%s*=%s*'([^']+)'")
         or html:match('urlParams%s*=%s*"([^"]+)"')
@@ -740,13 +741,13 @@ end
 
 local ALLOHA_ORIGIN = "https://alloha.yani.tv"
 
-local function resolveAlloha(iframeUrl, dubbing)
-    local r = http_get(iframeUrl)
-    if not r.success then
-        log_error("YummyAnime: Alloha iframe " .. tostring(r.code))
+-- page — ответ общего http_get_batch по этому iframe (см. getVideoList).
+local function resolveAlloha(iframeUrl, dubbing, page)
+    if type(page) ~= "table" or not page.success then
+        log_error("YummyAnime: Alloha iframe " .. tostring(page and page.code))
         return nil
     end
-    local html = r.body
+    local html = page.body
     local viewporti = html:match('<meta name="viewporti" content="([^"]+)"')
     local token     = html:match("token:%s*'([0-9a-f]+)'")
     local activeId  = html:match('"active"%s*:%s*{%s*"id"%s*:%s*(%d+)')
@@ -884,14 +885,21 @@ local function recordDubbing(rec)
     return "Озвучка"
 end
 
-local function resolveRecord(rec, sources, seen)
+-- iframe_url бывает протокол-относительным ("//alloha.yani.tv/...").
+local function embedUrl(iframe)
+    if iframe:sub(1, 2) == "//" then return "https:" .. iframe end
+    return iframe
+end
+
+-- pages — iframe → ответ общего http_get_batch (для aksor/sibnet там nil:
+-- у них свои настройки http_get, в batch их передать нельзя).
+local function resolveRecord(rec, sources, seen, pages)
     local kind = playerKind(rec)
     local iframe = type(rec.iframe_url) == "string" and rec.iframe_url or nil
     local run = kind and RESOLVERS[kind] or nil
     if not run or not iframe or iframe == "" then return end
-    -- iframe_url бывает протокол-относительным ("//alloha.yani.tv/...")
-    if iframe:sub(1, 2) == "//" then iframe = "https:" .. iframe end
-    local ok, result = pcall(run, iframe, recordDubbing(rec))
+    iframe = embedUrl(iframe)
+    local ok, result = pcall(run, iframe, recordDubbing(rec), pages[iframe])
     if not ok then
         log_error("YummyAnime: " .. kind .. ": " .. tostring(result))
         return
@@ -988,10 +996,32 @@ function getVideoList(episodeUrl)
     if not videos then return nil end
 
     local sources, seen = {}, {}
+    -- Стандарт getVideoList (см. guide): iframe'ы этой серии грузим одним
+    -- http_get_batch. В batch идут только kodik/alloha (им нужен page);
+    -- aksor/sibnet ходят своим http_get — у них свои настройки, которых
+    -- в batch передать нельзя, им page не нужен (3-й аргумент игнорируют).
+    local recs, urls, urlSeen = {}, {}, {}
     for _, rec in ipairs(videos) do
         if type(rec) == "table" and rec.number == number then
-            resolveRecord(rec, sources, seen)
+            recs[#recs + 1] = rec
+            local kind = playerKind(rec)
+            local iframe = type(rec.iframe_url) == "string" and rec.iframe_url or nil
+            if iframe and iframe ~= "" and (kind == "kodik" or kind == "alloha") then
+                local u = embedUrl(iframe)
+                if not urlSeen[u] then
+                    urlSeen[u] = true
+                    urls[#urls + 1] = u
+                end
+            end
         end
+    end
+    local pages = {}
+    if #urls > 0 then
+        local rs = http_get_batch(urls, {})
+        for i, u in ipairs(urls) do pages[u] = rs[i] end
+    end
+    for _, rec in ipairs(recs) do
+        resolveRecord(rec, sources, seen, pages)
     end
     appendCvhSources(episodeUrl, number, sources, seen)
     if #sources == 0 then return nil end
