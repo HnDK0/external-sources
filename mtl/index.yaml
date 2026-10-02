@@ -1,6 +1,12 @@
 language: "Mtl"
 name: "Mtl"
 sources:
+  - id: "ranovel"
+    name: "Ranovel"
+    version: "1.0.0"
+    url: "https://raw.githubusercontent.com/HnDK0/external-sources/refs/heads/main/mtl/ranovel.lua"
+    icon: "https://raw.githubusercontent.com/HnDK0/external-sources/refs/heads/main/icons/ranovel.png"
+    language: "Mtl"
   - id: "sonicmtl"
     name: "Sonic MTL"
     version: "1.8.1"
