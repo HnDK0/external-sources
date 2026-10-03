@@ -466,8 +466,8 @@ end
 
 `config` parameters in addition to `headers` / `charset` / `binary`:
 
-- `timeout` — request budget in **milliseconds** (integer `> 0`). When set, the whole call (DNS, connection, redirects, body read) is bounded by this time and runs as a **single attempt** instead of the client's long retry series (3+3+3+3+15 s). For 5xx responses short retries may happen inside the budget, so the actual time can slightly exceed the stated value. Not set or `<= 0` → previous client behavior. Exists **only** in `http_get` (not in `http_post` and not in `http_get_batch`).
-- `method = "HEAD"` — sends HEAD instead of GET (case does not matter): same headers, empty response body (`r.body == ""`), the `http_get` cache is neither read nor written, and `Cache-Control: no-cache` is added to the request. Serves as a cheap link liveness probe — the server is checked by HTTP code, the body is not downloaded. Any other method value → error `allowed: GET, HEAD`. Exists only in `http_get`.
+- `timeout` — request budget in **milliseconds** (integer `> 0`). When set, the whole call (DNS, connection, redirects, body read) is bounded by this time and runs as a **single attempt** instead of the client's long retry series (3+3+3+3+15 s). For 5xx responses short retries may happen inside the budget, so the actual time can slightly exceed the stated value. Not set or `<= 0` → previous client behavior. Exists in `http_get` and in `http_get_batch` (there — globally in `config` and per-URL in the element); not in `http_post`.
+- `method = "HEAD"` — sends HEAD instead of GET (case does not matter): same headers, empty response body (`r.body == ""`), the `http_get` cache is neither read nor written, and `Cache-Control: no-cache` is added to the request. Serves as a cheap link liveness probe — the server is checked by HTTP code, the body is not downloaded. Any other method value → error `allowed: GET, HEAD`. Exists in `http_get` and in `http_get_batch` (there — globally in `config` and per-URL in the element); not in `http_post`.
 - `followRedirects = false` — do not follow 3xx: `r.code` stays `3xx` and `r.headers.location` shows the target (gate/hoster sites where the redirect is the answer). Defaults to `true`.
 
 ```
@@ -503,9 +503,15 @@ local r = http_post(
 )
 ```
 
-### http_get_batch(urls_table [, config])
+### http_get_batch(items [, config])
 
-Parallel loading of multiple URLs. The response order matches the request order.
+Parallel loading of multiple URLs in one call. Returns an array of **the same length and in the same order**, each element being a `{ success, body, code, headers }` table.
+
+Each element of `items` is either a **URL string** (settings come from `config`) or a **table** `{ url = ..., headers = {...}, charset = ..., binary = ..., timeout = ..., followRedirects = ..., method = ... }` — then the per-URL keys override the values from `config`. The `url` key is required in a table.
+
+`success` is honest: in text mode it is a successful HTTP response code, with `binary = true` — `code` in the range 200..299. A failure of a single URL (network, SSRF block) yields `{ success = false, code = -1, body = <error text>, headers = {} }` **for that element only** — the neighbouring requests of the batch stay successful.
+
+Requests run in parallel; page cache, `method = "HEAD"`, `timeout`, `followRedirects`, `charset` follow the same rules as `http_get`. Validation errors (an element that is neither a string nor a table, a table without `url`, an unsupported `method`) raise an exception **before** any request goes out to the network.
 
 ```
 -- Text mode (default)
@@ -543,16 +549,44 @@ end
 > - `resp.code`, `resp.headers`, `resp.success` work the same for both modes
 > - Use `#resp.body` to get the size in bytes
 
-`config` parameters:
+`config` parameters (defaults for the whole batch) and element keys:
 
+- `headers` — a headers table applied **to every request of the batch**. The engine's default headers (`Referer` from the URL, `Accept-Language`) are added to each request of the batch automatically, then `config.headers` go on top of them, then the element's `headers` on top of those: each next level overrides the previous one. A specific element's `headers` are **merged over** the global ones: listed keys are replaced, the remaining global ones survive.
 - `binary = true` — each entry's body as a byte table (see above).
-- `headers` — a headers table applied **to every request of the batch** (overrides the default `Accept-Language`/`Referer` computed from the URL). Per-URL headers are not supported; `timeout` and `method` are absent in the batch.
+- `charset` — encoding of text responses (default `UTF-8`).
+- `timeout` — budget in ms per request (see `http_get`): a single attempt instead of the client's retry series.
+- `followRedirects = false` — do not follow 3xx, as in `http_get`.
+- `method = "HEAD"` — as in `http_get`: empty body, cache neither read nor written.
+
+Each of these keys can be set both in `config` (for the whole batch) and in the element (for that URL only) — the per-URL value overrides the global one.
 
 ```
 local results = http_get_batch(urls, {
     headers = { ["Referer"] = "https://ref.example/" },
 })
 ```
+
+Resolving several hosters with a single batch instead of sequential `http_get` calls:
+
+```lua
+function getVideoList(episodeUrl)
+    local id = episodeUrl:match("([%w%-]+)$")
+    local items = {
+        { url = "https://hoster-one.example/e/" .. id,   headers = { Referer = episodeUrl }, timeout = 8000 },
+        { url = "https://hoster-two.example/e/" .. id,   headers = { Referer = episodeUrl }, followRedirects = false },
+        { url = "https://hoster-three.example/e/" .. id, timeout = 5000 },
+        "https://hoster-four.example/e/" .. id,          -- string: settings come from config
+    }
+    local results = http_get_batch(items, { timeout = 8000, headers = { Referer = episodeUrl } })
+    for _, res in ipairs(results) do
+        if res.success then
+            -- parse res.body and extract the stream link
+        end
+    end
+end
+```
+
+> **`timeout` is mandatory for potentially dead links.** Without `timeout` every element goes through the client's full retry ladder (3+3+3+3+15 s) and the batch waits for its slowest element — a single "black hole" (TCP comes up, 0 bytes of response) slows down the whole resolve. With `timeout` each request fits into its own budget with one attempt.
 
 ### Working with cookies
 
@@ -1426,7 +1460,7 @@ A pattern for all video plugins (a documented, user-proven solution): a series o
 
 3. **Why this is critical (the measurements the standard grew from).** Sequential traversal with "black holes" (TCP comes up, 0 bytes → the whole timeout is spent; without `timeout` NetworkClient retries 3+3+3+3+15 s) took **17.9–19.9 s** per series; after the fix — **1.2–2.7 s** with no loss of sources. Probing every link for "liveness" with the old API (without `timeout`/`HEAD`) cost **26–30 s** per series; in the current API it is covered by one line — see item 4.
 
-4. **What the API has now.** `http_get` supports `timeout` (budget in ms, single attempt) and `method = "HEAD"` (empty body, cache untouched) — together a cheap liveness probe: `http_get(url, { timeout = 3000, method = "HEAD" })`, check the HTTP code (see "Working with HTTP" → `http_get`). `http_get_batch` takes `binary` and `headers` (**headers for all requests of the batch**); per-URL headers and Range are not supported, and the batch has no `timeout`/`method` — requests carry the default `Accept-Language` and `Referer` computed from the URL itself (`HttpGetBatchFunction` in `LuaSourceLoader.kt`).
+4. **What the API has now.** `http_get` supports `timeout` (budget in ms, single attempt) and `method = "HEAD"` (empty body, cache untouched) — together a cheap liveness probe: `http_get(url, { timeout = 3000, method = "HEAD" })`, check the HTTP code (see "Working with HTTP" → `http_get`). `http_get_batch` takes the same keys — `headers`, `charset`, `binary`, `timeout`, `followRedirects`, `method` — globally in `config` for the whole batch and per-URL in the element table (the element itself can also be a URL string). Per-URL `headers` are merged over the global ones; Range is not supported in the batch; requests also carry the engine's default `Accept-Language` and `Referer` computed from the URL itself (`HttpGetBatchFunction` in `LuaSourceLoader.kt`). Details — "Working with HTTP" → `http_get_batch`.
 
 5. **New video plugin checklist:** a skip list with reasons → one batch for all embeds → dedupe → `Referer` from the source link in `headers` of every variant (required for mp4upload and the like) → output.
 
@@ -1797,7 +1831,7 @@ end
 | ------------------------------------ | ------------------------------------------------------ |
 | `http_get(url [, config])`         | GET/HEAD request → `{success, body, code}` (body is a string or byte table with `binary = true`). config: `headers`, `charset`, `binary`, `followRedirects`, `timeout` (ms), `method` (`"GET"`/`"HEAD"`) |
 | `http_post(url, body [, config])`  | POST request → `{success, body, code}`; config: `headers`, `charset` |
-| `http_get_batch(urls [, config])`  | Parallel GET → array of `{success, body, code}`; config: `binary`, `headers` (for all requests of the batch) |
+| `http_get_batch(items [, config])` | Parallel GET → array of the same length, element `{success, body, code, headers}`; element is a URL string or a table `{url, headers, charset, binary, timeout, followRedirects, method}`; config: `headers`, `charset`, `binary`, `followRedirects`, `timeout`, `method` (defaults, per-URL overrides). Failure of a single URL → `{success=false, code=-1}` for it only |
 | `get_cookies(url)`                 | Get cookies for a domain → table                     |
 | `set_cookies(url, table)`          | Set cookies                                           |
 
