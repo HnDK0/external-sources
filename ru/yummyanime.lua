@@ -7,7 +7,7 @@
 content_type = "video"
 id          = "yummyanime"
 name        = "YummyAnime"
-version     = "1.0.1"
+version     = "1.0.2"
 baseUrl     = "https://ru.yummyani.me"
 language    = "ru"
 icon        = "https://raw.githubusercontent.com/HnDK0/external-sources/refs/heads/main/icons/yummyanime.png"
@@ -21,6 +21,12 @@ local CVH_API  = "https://plapi.cdnvideohub.com/api/v1/player/sv"
 local REFERER  = "https://ru.yummyani.me/"
 local CVH_HDR  = { ["Referer"] = REFERER, ["Origin"] = REFERER }
 local PAGE_SIZE = 24
+
+-- Таймауты http_get_batch (мс): бюджет одной попытки вместо лестницы ретраев
+-- клиента (3+3+3+3+15 с) — один мёртвый URL не тормозит весь батч.
+local BATCH_TIMEOUT = 8000  -- дефолт батча: iframe kodik/alloha, shell.php sibnet
+local AKSOR_TIMEOUT = 6000  -- aksor: маленький JSON-запрос
+local CVH_TIMEOUT   = 6000  -- CVH: маленький JSON-запрос
 
 -- Кэш сеанса: detail-ответы api.yani.tv, CVH-плейлисты (по shikimori_id)
 -- и списки плееров эпизодов (по slug, ?need_videos=true).
@@ -522,7 +528,7 @@ local function kodikDecode(src)
     return url
 end
 
--- page — ответ общего http_get_batch по этому iframe (см. getVideoList):
+-- page — ответ общего http_get_batch по этому iframe (см. batchPlayers):
 -- эмбеды Kodik/Alloha грузятся одним батчем, без своих заголовков.
 local function resolveKodik(iframeUrl, dubbing, page)
     if type(page) ~= "table" or not page.success then
@@ -741,7 +747,7 @@ end
 
 local ALLOHA_ORIGIN = "https://alloha.yani.tv"
 
--- page — ответ общего http_get_batch по этому iframe (см. getVideoList).
+-- page — ответ общего http_get_batch по этому iframe (см. batchPlayers).
 local function resolveAlloha(iframeUrl, dubbing, page)
     if type(page) ~= "table" or not page.success then
         log_error("YummyAnime: Alloha iframe " .. tostring(page and page.code))
@@ -803,17 +809,22 @@ local AKSOR_QUALITIES = {
     { key = "q480",  label = "480" },
 }
 
-local function resolveAksor(iframeUrl, dubbing)
+local function aksorApiUrl(iframeUrl)
     local md5 = iframeUrl:gsub("[?#].*$", ""):match("([^/]+)$")
     if not md5 or md5 == "" then return nil end
-    local r = http_get("https://player.aksor.tv/api/video/" .. md5, {
-        headers = { ["Accept"] = "application/json" },
-    })
-    if not r.success then
-        log_error("YummyAnime: Aksor api " .. tostring(r.code))
+    return "https://player.aksor.tv/api/video/" .. md5
+end
+
+-- page — ответ общего http_get_batch по api/video/<md5> (см. batchPlayers):
+-- в pages ответ лежит под ключом iframe, запросом идёт API-URL.
+-- Пустой md5 в iframe → тихий пропуск, как и раньше (запрос не делался).
+local function resolveAksor(iframeUrl, dubbing, page)
+    if not aksorApiUrl(iframeUrl) then return nil end
+    if type(page) ~= "table" or not page.success then
+        log_error("YummyAnime: Aksor api " .. tostring(page and page.code))
         return nil
     end
-    local data = json_parse(r.body)
+    local data = json_parse(page.body)
     local quals = type(data) == "table" and data.qualities or nil
     if type(quals) ~= "table" then return nil end
     local out = {}
@@ -832,16 +843,17 @@ local function resolveAksor(iframeUrl, dubbing)
     return out
 end
 
-local function resolveSibnet(iframeUrl, dubbing)
+-- page — ответ общего http_get_batch по этому iframe (charset берётся из
+-- SIBNET_OPTS в batchPlayers).
+local function resolveSibnet(iframeUrl, dubbing, page)
     -- shell.php отдаёт windows-1251; шаблон режет ~35-45 запросов за 2-3 минуты
     -- (403 rate-limit) — тогда этот плеер просто пропускаем
-    local r = http_get(iframeUrl, { charset = "windows-1251" })
-    if not r.success then
-        log_error("YummyAnime: Sibnet " .. tostring(r.code))
+    if type(page) ~= "table" or not page.success then
+        log_error("YummyAnime: Sibnet " .. tostring(page and page.code))
         return nil
     end
-    local src = r.body:match('player%.src%(%[%s*{%s*src:%s*"([^"]+)"')
-        or r.body:match('src:%s*"(/v/[^"]+)"')
+    local src = page.body:match('player%.src%(%[%s*{%s*src:%s*"([^"]+)"')
+        or page.body:match('src:%s*"(/v/[^"]+)"')
     if not src then return nil end
     if src:sub(1, 1) == "/" then src = "https://video.sibnet.ru" .. src end
     return {
@@ -891,8 +903,8 @@ local function embedUrl(iframe)
     return iframe
 end
 
--- pages — iframe → ответ общего http_get_batch (для aksor/sibnet там nil:
--- у них свои настройки http_get, в batch их передать нельзя).
+-- pages — ключ → ответ общего http_get_batch (см. batchPlayers): для
+-- kodik/alloha/sibnet сам iframe, для aksor iframe → ответ api/video/<md5>.
 local function resolveRecord(rec, sources, seen, pages)
     local kind = playerKind(rec)
     local iframe = type(rec.iframe_url) == "string" and rec.iframe_url or nil
@@ -908,41 +920,132 @@ local function resolveRecord(rec, sources, seen, pages)
     for _, s in ipairs(result) do pushSource(sources, seen, s) end
 end
 
-local function cvhSource(item)
-    local r = http_get(CVH_API .. "/video/" .. item.vkId, { headers = CVH_HDR })
-    if not r.success then return nil end
+-- nil vkId (плейлист без идентификатора) → nil: batchAdd пропустит запрос,
+-- а pages[nil] вернёт nil и резолвер тихо не выдаст источник.
+local function cvhVideoUrl(vkId)
+    if vkId == nil then return nil end
+    return CVH_API .. "/video/" .. vkId
+end
+
+-- Ответ видео CVH → источник. Заголовки потока НЕ задаём: подписанные сегменты
+-- okcdn (путь .../sig/<подпись>/...) отвечают 400, если в запросе есть Referer
+-- или Origin. Проверено: без них сегмент 200, с ними 400 при любом User-Agent.
+-- Referer/Origin нужны только для API-запросов плагина, см. CVH_HDR выше.
+local function cvhSourceFrom(item, r)
+    if type(r) ~= "table" or not r.success then return nil end
     local data = json_parse(r.body)
     local hls = data and data.sources and data.sources.hlsUrl
     if type(hls) ~= "string" or hls == "" then return nil end
-    -- Заголовки потока НЕ задаём: подписанные сегменты okcdn (путь .../sig/<подпись>/...)
-    -- отвечают 400, если в запросе есть Referer или Origin. Проверено: без них
-    -- сегмент 200, с ними 400 при любом User-Agent. Referer/Origin нужны только
-    -- для API-запросов плагина, см. CVH_HDR выше.
     return { url = hls, quality = voiceLabel(item) }
 end
 
--- Варианты CVH (запасной источник) — в конец списка, после плееров сайта.
-local function appendCvhSources(episodeUrl, number, sources, seen)
+-- CVH-плейлист тайтла по URL серии: detail → shikimori_id → плейлист.
+-- Оба ответа кэшируются на сеанс, поэтому серия за серией не ходит в сеть.
+local function cvhPlaylist(episodeUrl)
     local id = shikimoriId(fetchDetail(episodeUrl))
-    if not id then return end
-    local items = fetchPlaylist(id)
-    if not items then return end
+    if not id then return nil end
+    return fetchPlaylist(id)
+end
+
+-- Варианты CVH (запасной источник) этой серии, отсортированные по озвучке.
+-- nil — если CVH для серии недоступен.
+local function collectCvhItems(episodeUrl, number)
+    local items = cvhPlaylist(episodeUrl)
+    if not items then return nil end
     -- "57-58"/"119+120" → ведущее число серии
     local ep = tonumber(number) or tonumber(number:match("^%d+"))
-    if not ep then return end
+    if not ep then return nil end
     local matched = {}
     for _, it in ipairs(items) do
         if it.episode == ep then matched[#matched + 1] = it end
     end
-    if #matched == 0 then return end
+    if #matched == 0 then return nil end
     table.sort(matched, compareVoices)
+    return matched
+end
+
+-- Варианты CVH — в конец списка, после плееров сайта.
+local function appendCvhSources(matched, pages, sources, seen)
     for _, it in ipairs(matched) do
-        local ok, src = pcall(cvhSource, it)
+        local ok, src = pcall(cvhSourceFrom, it, pages[cvhVideoUrl(it.vkId)])
         if ok then
             pushSource(sources, seen, src)
         else
             log_error("YummyAnime: CVH " .. tostring(src))
         end
+    end
+end
+
+-- ============ Потоки: один http_get_batch на всю серию ============
+-- Батч умеет только GET/HEAD, поэтому в него собираем всё, что можно:
+-- страницы kodik/alloha, api/video aksor, shell.php sibnet и видео CVH.
+-- Остаются последовательными только POST (/ftor, /bnsi) внутри резолверов —
+-- их в батч передать нельзя; кэшируемые detail/playlist CVH идут перед батчем.
+
+local AKSOR_OPTS = {
+    headers = { ["Accept"] = "application/json" },
+    timeout = AKSOR_TIMEOUT,
+}
+local SIBNET_OPTS = { charset = "windows-1251" }
+local CVH_OPTS = { headers = CVH_HDR, timeout = CVH_TIMEOUT }
+
+local function newBatch()
+    return { items = {}, byKey = {}, seen = {} }
+end
+
+-- url — что реально запросить, key — ключ ответа в pages (для aksor url =
+-- api/video/<md5>, а key = iframe, т.к. resolveRecord ищет страницу по iframe).
+local function batchAdd(b, url, key, opts)
+    if type(url) ~= "string" or url == "" then return end
+    b.byKey[key] = url
+    if not b.seen[url] then
+        b.seen[url] = true
+        b.items[#b.items + 1] = { url = url, opts = opts }
+    end
+end
+
+local function batchRun(b)
+    if #b.items == 0 then return {} end
+    local reqs = {}
+    for i, it in ipairs(b.items) do
+        local e = { url = it.url }
+        local o = it.opts
+        if o then
+            e.headers = o.headers
+            e.charset = o.charset
+            e.timeout = o.timeout
+        end
+        reqs[i] = e
+    end
+    local rs = http_get_batch(reqs, { timeout = BATCH_TIMEOUT })
+    local pages = {}
+    for i, it in ipairs(b.items) do pages[it.url] = rs[i] end
+    local out = {}
+    for key, url in pairs(b.byKey) do out[key] = pages[url] end
+    return out
+end
+
+local function batchPlayers(b, recs)
+    for _, rec in ipairs(recs) do
+        local kind = playerKind(rec)
+        local iframe = type(rec.iframe_url) == "string" and rec.iframe_url or nil
+        if kind and iframe and iframe ~= "" then
+            iframe = embedUrl(iframe)
+            if kind == "kodik" or kind == "alloha" then
+                batchAdd(b, iframe, iframe, nil)
+            elseif kind == "aksor" then
+                batchAdd(b, aksorApiUrl(iframe), iframe, AKSOR_OPTS)
+            elseif kind == "sibnet" then
+                batchAdd(b, iframe, iframe, SIBNET_OPTS)
+            end
+        end
+    end
+end
+
+local function batchCvh(b, items)
+    for _, it in ipairs(items) do
+        local url = cvhVideoUrl(it.vkId)
+        batchAdd(b, url, url, CVH_OPTS)
     end
 end
 
@@ -955,9 +1058,7 @@ local function legacyVideoList(episodeUrl)
         error("YummyAnime: не удалось разобрать URL эпизода")
     end
 
-    local id = shikimoriId(fetchDetail(API .. "/anime/" .. slug))
-    if not id then return nil end
-    local items = fetchPlaylist(id)
+    local items = cvhPlaylist(API .. "/anime/" .. slug)
     if not items then return nil end
 
     local matched = {}
@@ -969,15 +1070,13 @@ local function legacyVideoList(episodeUrl)
     if #matched == 0 then return nil end
     table.sort(matched, compareVoices)
 
+    -- Все видео этой серии — одним батчем вместо последовательных http_get.
+    local b = newBatch()
+    batchCvh(b, matched)
+    local pages = batchRun(b)
+
     local sources, seen = {}, {}
-    for _, it in ipairs(matched) do
-        local ok, src = pcall(cvhSource, it)
-        if ok then
-            pushSource(sources, seen, src)
-        else
-            log_error("YummyAnime: CVH " .. tostring(src))
-        end
-    end
+    appendCvhSources(matched, pages, sources, seen)
     if #sources == 0 then return nil end
     return sources
 end
@@ -995,35 +1094,27 @@ function getVideoList(episodeUrl)
     local videos = _videosCache[slug] or fetchVideos(slug)
     if not videos then return nil end
 
-    local sources, seen = {}, {}
-    -- Стандарт getVideoList (см. guide): iframe'ы этой серии грузим одним
-    -- http_get_batch. В batch идут только kodik/alloha (им нужен page);
-    -- aksor/sibnet ходят своим http_get — у них свои настройки, которых
-    -- в batch передать нельзя, им page не нужен (3-й аргумент игнорируют).
-    local recs, urls, urlSeen = {}, {}, {}
+    local recs = {}
     for _, rec in ipairs(videos) do
-        if type(rec) == "table" and rec.number == number then
-            recs[#recs + 1] = rec
-            local kind = playerKind(rec)
-            local iframe = type(rec.iframe_url) == "string" and rec.iframe_url or nil
-            if iframe and iframe ~= "" and (kind == "kodik" or kind == "alloha") then
-                local u = embedUrl(iframe)
-                if not urlSeen[u] then
-                    urlSeen[u] = true
-                    urls[#urls + 1] = u
-                end
-            end
-        end
+        if type(rec) == "table" and rec.number == number then recs[#recs + 1] = rec end
     end
-    local pages = {}
-    if #urls > 0 then
-        local rs = http_get_batch(urls, {})
-        for i, u in ipairs(urls) do pages[u] = rs[i] end
-    end
+
+    -- Стандарт getVideoList (см. guide): все GET-запросы этой серии — одним
+    -- http_get_batch: страницы kodik/alloha, api/video aksor, shell.php sibnet
+    -- и видео CVH. Деталь и плейлист CVH кэшируются на сеанс и идут перед
+    -- батчем (URL видео из плейлиста зависит от их ответов). Состав, порядок
+    -- и dedup источников не меняются: плееры сайта первыми, CVH — в конец.
+    local b = newBatch()
+    batchPlayers(b, recs)
+    local matched = collectCvhItems(episodeUrl, number)
+    if matched then batchCvh(b, matched) end
+    local pages = batchRun(b)
+
+    local sources, seen = {}, {}
     for _, rec in ipairs(recs) do
         resolveRecord(rec, sources, seen, pages)
     end
-    appendCvhSources(episodeUrl, number, sources, seen)
+    if matched then appendCvhSources(matched, pages, sources, seen) end
     if #sources == 0 then return nil end
     return sources
 end
