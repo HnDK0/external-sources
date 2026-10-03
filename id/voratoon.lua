@@ -1,7 +1,7 @@
 id       = "voratoon"
 name     = "VoraToon"
-version  = "1.0.1"
-baseUrl  = "https://v2.voratoon.com/"
+version  = "1.0.2"
+baseUrl  = "https://v5.voratoon.com/"
 language = "id"
 icon     = "https://raw.githubusercontent.com/HnDK0/external-sources/main/icons/voratoon.webp"
 content_type = "manga"
@@ -24,7 +24,7 @@ local function apiGet(path, params)
     end
     -- Cloudflare на api.voratoon.com блокирует запросы без Referer с основного сайта
     local r = http_get(url, {
-        headers = { ["Referer"] = "https://v2.voratoon.com/" },
+        headers = { ["Referer"] = "https://v5.voratoon.com/" },
     })
     if not r.success then return nil, nil end
     local ok, resp = pcall(json_parse, r.body)
