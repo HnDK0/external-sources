@@ -3,7 +3,7 @@
 -- ── Metadata ───────────────────────────────────────────────────────────────
 id = "wtrlab"
 name = "WTR-LAB"
-version = "1.1.10"
+version = "1.1.11"
 baseUrl = "https://wtr-lab.com/"
 language = "MTL"
 icon = "https://raw.githubusercontent.com/HnDK0/external-sources/main/icons/wtr-lab.png"
@@ -13,9 +13,9 @@ description = "Machine-translated novels (wtr-lab.com). AI, raw (web), and Web+ 
 local PREF_MODE = "wtrlab_mode"           -- "ai" | "raw" | "webplus"  (key kept from 1.x so existing settings survive)
 local PREF_DELAY = "wtrlab_chapter_delay" -- ms pause before each chapter fetch
 
--- ── Caches (live until app restart) ────────────────────────────────────────
+-- ── Caches (page cache: 60s TTL; others live until app restart) ────────────
 local termCache = {}    -- [novelId] = { termByOriginal }
-local _pageCache = {}   -- book page HTML
+local _pageCache = {}   -- book page HTML, entries { body, at } with a 60s TTL
 local _buildIdCache = nil
 
 local function getMode()
@@ -57,13 +57,22 @@ local function resolveTokens(text)
     return text
 end
 
+-- Cache TTL: 60s. os_time may be missing in a sandbox — then the cache is
+-- simply skipped (always a fresh http_get) instead of failing.
+local PAGE_TTL_MS = 60000
+
 local function fetchPage(url)
-    if _pageCache[url] then
-        return _pageCache[url]
+    local now = (type(os_time) == "function") and os_time() or nil
+    local entry = _pageCache[url]
+    if entry then
+        if now ~= nil and (now - entry.at) <= PAGE_TTL_MS then
+            return entry.body
+        end
+        _pageCache[url] = nil
     end
     local r = http_get(url)
-    if r.success then
-        _pageCache[url] = r.body
+    if r.success and now ~= nil then
+        _pageCache[url] = { body = r.body, at = now }
     end
     return r.success and r.body or nil
 end
