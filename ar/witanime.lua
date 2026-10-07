@@ -4,7 +4,7 @@
 content_type = "video"
 id           = "witanime"
 name         = "WitAnime"
-version      = "1.0.0"
+version      = "1.0.1"
 baseUrl      = "https://witanime.site"
 language     = "ar"
 icon         = "https://raw.githubusercontent.com/HnDK0/external-sources/refs/heads/main/icons/witanime.png"
@@ -1127,17 +1127,16 @@ end
 
 -- ============ Резолверы ============
 
--- Хосты, где чистый HTTP не даёт прямую ссылку (проверено живьём 2026-10-01).
+-- Хосты, где чистый HTTP не даёт прямую ссылку (перемерено 2026-10-05).
+-- drive.google, mail.ru, hgcloud и dood/playmogo из списка убраны: для них
+-- есть резолверы ниже (usercontent-ссылка Drive, embed → metadataUrl → mp4 у
+-- Mail.ru, ручной разбор packed-конфига hgcloud, /pass_md5-схема dood).
 local SKIP_HOSTS = {
-    { sub = "mega.nz",      reason = "нужен JS-SDK Mega" },
-    { sub = "drive.google", reason = "JS-превью Google Drive" },
-    { sub = "docs.google",  reason = "JS-превью Google Docs" },
-    { sub = "mail.ru",      reason = "JS-плеер Mail.ru" },
-    { sub = "hgcloud",      reason = "сервер недоступен (HTTP 522)" },
-    -- DoodStream: в embed нет /pass_md5 (Turnstile) → референс DoodExtractor
-    -- возвращает null; тот же замер живьём 2026-10-02 на Anime4Up.
-    { sub = "dood",         reason = "Turnstile: в embed нет /pass_md5 — референс DoodExtractor даёт null (живьём 2026-10-02)" },
-    { sub = "dsvplay",      reason = "текущий домен DoodStream: TLS-хендшейк не проходит, в embed нет /pass_md5 (живьём 2026-10-02)" },
+    { sub = "mega.nz",      reason = "поток зашифрован AES-CTR и отдаётся чанками с Range — в движке нет крипто и частичных запросов" },
+    { sub = "docs.google",  reason = "Google Docs: превью на JS" },
+    -- dsvplay — зеркало DoodStream: dood/playmogo раскрыты resolveDood ниже
+    -- (CF обходит движок), но у этого домена не поднимается TLS.
+    { sub = "dsvplay",      reason = "TLS-хендшейк не проходит (curl rc=35) — проверено и с браузерным UA (живьём 2026-10-07)" },
 }
 
 -- Причина пропуска хоста либо nil. Общая для resolveEntry и для
@@ -1173,6 +1172,54 @@ end
 
 local function sourceOf(episodeUrl, url, quality, referer)
     return { url = url, quality = quality, headers = { ["Referer"] = referer or episodeUrl } }
+end
+
+-- ---- dood / playmogo: embed → /pass_md5 → префикс + 10 random + token/expiry ----
+-- Схема (референс DoodExtractor; код docs/hoster-implementations.md): в embed
+-- есть путь /pass_md5/<...>, его тело — начало финального URL; к нему
+-- дописываются 10 случайных символов и "?token=<последний сегмент>&expiry=".
+-- expiry = Date.now() в МИЛЛИСЕКУНДАХ — проверено по inline-коду плеера
+-- playmogo.com/e/yx3yl4w4y9br (живьём 2026-10-07), os_time() в NoveLA тоже
+-- возвращает миллисекунды. Финал — mp4 на cloudatacdn.com; Referer финального
+-- потока = origin embed (без него CDN отвечает 302). Капча-вариант embed
+-- отдаёт без /pass_md5 — тогда ветка отдаёт отказ.
+local RANDOM_CHARS = "abcdefghijklmnopqrstuvwxyzABCDEFGHIJKLMNOPQRSTUVWXYZ0123456789"
+
+local function resolveDood(episodeUrl, link, entry)
+    local page = http_get(link, {
+        headers = { ["Referer"] = episodeUrl }, timeout = 8000,
+    })
+    if not page.success or type(page.body) ~= "string" then
+        log_error("WitAnime: " .. entry.label .. " — dood: embed HTTP " .. tostring(page.code))
+        return nil
+    end
+    local md5 = page.body:match("(/pass_md5/[^'\"]+)")
+    local origin = link:match("^(https?://[^/]+)")
+    if not md5 or not origin then
+        log_error("WitAnime: " .. entry.label .. " — dood: в embed нет /pass_md5")
+        return nil
+    end
+    local token = md5:match("([^/]+)$")
+    local r = http_get(origin .. md5, {
+        headers = { ["Referer"] = link }, timeout = 8000,
+    })
+    local start = r.success and type(r.body) == "string"
+        and r.body:match("^%s*(https?://.-)%s*$") or nil
+    if not start then
+        local b = type(r.body) == "string" and r.body or ""
+        log_error("WitAnime: " .. entry.label .. " — dood: /pass_md5 — "
+            .. (b:find("RELOAD", 1, true) and "RELOAD"
+                or ("HTTP " .. tostring(r.code))))
+        return nil
+    end
+    local rnd = {}
+    for i = 1, 10 do
+        local k = math.random(1, #RANDOM_CHARS)
+        rnd[i] = RANDOM_CHARS:sub(k, k)
+    end
+    local url = start .. table.concat(rnd)
+        .. "?token=" .. token .. "&expiry=" .. tostring(os_time())
+    return { sourceOf(episodeUrl, url, qualityOf(entry), origin .. "/") }
 end
 
 local function resolveGeneric(episodeUrl, link, entry)
@@ -1758,6 +1805,75 @@ local function resolveDailymotion(link)
     return out
 end
 
+-- ---- drive.google: usercontent/download (порт из ar/animephoenix.lua) ----
+-- Живьём 2026-10-03: usercontent с confirm=t отдаёт 206 без единого заголовка,
+-- для файлов >100 МБ хватает confirm=t. Раньше хост был в skip-листе как
+-- «JS-превью», хотя прямую ссылку движок отдаёт без JS.
+-- ponytail: playback-API-фоллбэк для «download disabled» (403 + UA-биндинг)
+-- не делаем — ставим, если на сайте реально встретятся залоченные ссылки.
+local function driveDirectUrl(link)
+    local host = (link:match("^https?://([^/]+)") or ""):lower()
+    host = host:gsub("^www%.", "")
+    if host ~= "drive.google.com" and host ~= "drive.usercontent.google.com" then
+        return nil
+    end
+    local id = link:match("/file/d/([%w_-]+)") or link:match("[?&]id=([%w_-]+)")
+    if not id then return nil end
+    local u = "https://drive.usercontent.google.com/download?id=" .. id
+        .. "&export=download&confirm=t"
+    local rk = link:match("[?&]resourcekey=([%w_-]+)")
+    if rk then u = u .. "&resourcekey=" .. rk end
+    return u
+end
+
+-- ---- mail.ru: embed → metadataUrl → /+/video/meta/<id> → mp4 ----
+-- Живьём 2026-10-05: embed отдаёт "metadataUrl":"//my.mail.ru/+/video/meta/<id>",
+-- meta-JSON — videos[].url, mp4 отвечает 206 на Range с Referer'ом эмбеда
+-- (cookie video_key из ответа meta для воспроизведения не требуется).
+local function resolveMailRu(episodeUrl, link, entry)
+    local r = http_get(link, {
+        headers = { ["Referer"] = "https://my.mail.ru/" },
+        timeout = 10000,
+    })
+    if not r.success then
+        log_error("WitAnime: " .. entry.label .. " — mail.ru: HTTP " .. tostring(r.code))
+        return nil
+    end
+    local metaUrl = r.body:match('metadataUrl":"([^"]+)')
+    if not metaUrl then
+        log_error("WitAnime: " .. entry.label .. " — mail.ru: в embed нет metadataUrl")
+        return nil
+    end
+    local mr = http_get((metaUrl:gsub("^//", "https://")), {
+        headers = {
+            ["Referer"] = link,
+            ["X-Requested-With"] = "XMLHttpRequest",
+        },
+        timeout = 10000,
+    })
+    if not mr.success then
+        log_error("WitAnime: " .. entry.label .. " — mail.ru: meta HTTP " .. tostring(mr.code))
+        return nil
+    end
+    local data = json_parse(mr.body)
+    local videos = type(data) == "table" and data.videos or nil
+    if type(videos) ~= "table" then
+        log_error("WitAnime: " .. entry.label .. " — mail.ru: в meta нет videos[]")
+        return nil
+    end
+    local out = {}
+    for _, v in ipairs(videos) do
+        local u = type(v) == "table" and v.url or nil
+        local key = type(v) == "table" and type(v.key) == "string" and v.key or nil
+        if type(u) == "string" and u ~= "" then
+            local quality = key and ("Mail.ru · " .. key) or qualityOf(entry)
+            out[#out + 1] = sourceOf(episodeUrl, u:gsub("^//", "https://"), quality, link)
+        end
+    end
+    if #out == 0 then log_error("WitAnime: " .. entry.label .. " — mail.ru: в videos[] нет ссылок") end
+    return #out > 0 and out or nil
+end
+
 -- ============ Список потоков серии ============
 
 local function pushSource(list, seen, src)
@@ -1786,6 +1902,134 @@ local function gateUrl(token, episodeUrl)
     -- Location не пришёл — в теле 302 иногда остаётся строка url='...'
     local body = type(r.body) == "table" and bytesToString(r.body) or r.body
     return (type(body) == "string" and body:match("url='([^']+)'")) or nil
+end
+
+-- ---- packed-JS: eval(function(p,a,c,k,e,d){…}('…',62,N,'a|b|c'.split('|'))) ----
+-- Словарь символов разворачивается обратно в строку payload. Порт unpack.py
+-- из mediaflow-proxy; те же функции в anime4up (проверено живьём 2026-10-05).
+
+local function baseN(tok, radix)
+    local v = 0
+    for i = 1, #tok do
+        local c = tok:byte(i)
+        local d
+        if c >= 48 and c <= 57 then d = c - 48
+        elseif c >= 97 and c <= 122 then d = c - 87
+        elseif c >= 65 and c <= 90 then d = c - 29
+        else return nil end
+        if d >= radix then return nil end
+        v = v * radix + d
+    end
+    return v
+end
+
+local function unpackPacked(body)
+    if not body:find("p,a,c,k,e,d", 1, true) then return "" end
+    local payload, radix, _, syms = body:match("}%('(.-)',(%d+),(%d+),'([^']*)'%.split%('|'%)")
+    if not payload then
+        payload, radix, _, syms = body:match("%('(.-)',(%d+),(%d+),'([^']*)'%.split%('|'%)")
+    end
+    if not payload then return "" end
+    local b = tonumber(radix)
+    if not b or b < 2 then return "" end
+    local dict, i = {}, 1
+    for tok in (syms .. "|"):gmatch("(.-)|") do
+        dict[i] = tok
+        i = i + 1
+    end
+    return (payload:gsub("%w+", function(tok)
+        local v = baseN(tok, b)
+        local s = v and dict[v + 1] or nil
+        if type(s) == "string" and s ~= "" then return s end
+        return tok
+    end))
+end
+
+-- Есть ли медиа-расширение в пути URL (до "?" / "#"): без него media3 гадает
+-- по последнему сегменту и ломается на HLS-плейлисте без расширения (.txt).
+local function hasMediaExt(u)
+    local base = u:match("^[^%?#]*") or u
+    return base:match("%.m3u8$") ~= nil or base:match("%.mp4$") ~= nil
+end
+
+-- ---- hgcloud: страница /e/<id> → зеркало с packed-конфигом ----
+-- Живьём 2026-10-06: HTTP-редиректа на зеркало НЕТ — hgcloud.to/e/<id>
+-- отдаёт 452 байта заглушки с <script src="/main.js?v=1.1.9">, и переход на
+-- случайное зеркало делает клиентский main.js (домен собирается в рантайме,
+-- статически не извлекается) → зеркала перебираем сами, путь эмбеда берём
+-- из gate-ссылки. На зеркале лежит packed-конфиг: ссылки в links =
+-- {hls2:…, hls3:…}, setup берёт file: links.hls4||links.hls3||links.hls2 —
+-- голый file:"…" не матчит, поэтому свой сбор URL.
+-- Зеркала ротатора hgcloud.to (main.js, наблюдение 2026-10-06); если
+-- перестанут отдавать конфиг — обновить по main.js ротатора.
+local HGCLOUD_MIRRORS = { "hanerix.com", "vibuxer.com", "audinifer.com" }
+
+local function hgcloudMediaUrls(body)
+    local text = body
+    local un = unpackPacked(body)
+    if un ~= "" then text = un .. "\n" .. body end
+    local out, seen = {}, {}
+    local function add(u)
+        if seen[u] then return end
+        seen[u] = true
+        out[#out + 1] = u:gsub("\\/", "/"):gsub("&amp;", "&")
+    end
+    -- Порядок = приоритет: первый кандидат — master.txt (hls3 из hls4||hls3).
+    for u in text:gmatch([[https?://[^"'%s<>\\]+master%.txt[^"'%s<>\\]*]]) do add(u) end
+    for u in text:gmatch([[https?://[^"'%s<>\\]+master%.m3u8[^"'%s<>\\]*]]) do add(u) end
+    for u in text:gmatch([[https?://[^"'%s<>\\]+%.m3u8[^"'%s<>\\]*]]) do add(u) end
+    return out
+end
+
+local function resolveHgcloud(episodeUrl, link, entry)
+    -- Тело, медиа-ссылки из него и код ответа. Таймаут 8 с: запрос идёт
+    -- по очереди, максимум оригинал + 3 зеркала.
+    local function attempt(url, referer)
+        local r = http_get(url, {
+            headers = { ["Referer"] = referer },
+            timeout = 8000,
+        })
+        local code = (r and r.code) or -1
+        local body = (r and type(r.body) == "string") and r.body or ""
+        return hgcloudMediaUrls(body), code, body
+    end
+
+    local tried = {}
+    local finalRef = link
+    local urls, code, body = attempt(link, episodeUrl)
+    tried[#tried + 1] = tostring(code) .. " " .. link
+    if #urls == 0 then
+        -- Вход — заглушка: main.js редиректит на случайное зеркало. Путь
+        -- эмбеда (/e/<id>) сохраняем из gate-ссылки, не выдумываем.
+        local path = body:find("/main.js", 1, true)
+            and link:match("^https?://[^/]+(/[^?#]*)") or nil
+        for i = 1, #HGCLOUD_MIRRORS do
+            if not path then break end
+            local mirror = HGCLOUD_MIRRORS[i]
+            local ref = "https://" .. mirror .. "/"
+            local murl = "https://" .. mirror .. path
+            local mu, mc = attempt(murl, ref)
+            tried[#tried + 1] = tostring(mc) .. " " .. murl
+            if #mu > 0 then
+                urls, finalRef = mu, ref
+                break
+            end
+        end
+    end
+    if #urls == 0 then
+        log_error("WitAnime: " .. entry.label .. " — hgcloud: нет packed-конфига; ответы: "
+            .. table.concat(tried, ", "))
+        return nil
+    end
+    -- finalRef = страница, с которой взят конфиг: без неё master.txt и
+    -- сегменты отдают 404 (живьём 2026-10-06).
+    local out, seen = {}, {}
+    for _, u in ipairs(urls) do
+        local src = sourceOf(episodeUrl, u, qualityOf(entry), finalRef)
+        if not hasMediaExt(u) then src.mime = "hls" end
+        pushSource(out, seen, src)
+    end
+    return out
 end
 
 -- Диспетчер по хосту — единая точка для gate-ссылки и для расшифрованного
@@ -1831,6 +2075,29 @@ resolveHostedLink = function(episodeUrl, link, entry)
     end
     if low:find("dailymotion", 1, true) then
         return resolveDailymotion(link)
+    end
+    -- Google Drive: прямая ссылка собирается из id в URL, сеть не нужна.
+    if low:find("drive.google", 1, true) then
+        local drive = driveDirectUrl(link)
+        if not drive then
+            log_error("WitAnime: " .. entry.label .. " — drive.google: не найден id файла")
+            return nil
+        end
+        return { sourceOf(episodeUrl, drive, qualityOf(entry), "https://drive.google.com/") }
+    end
+    if low:find("mail.ru", 1, true) then
+        return resolveMailRu(episodeUrl, link, entry)
+    end
+    -- hgcloud: страница /e/<id> сама по себе не поток (452-заглушка или
+    -- packed-конфиг зеркала) — свой разбор, generic в нём не поможет.
+    if low:find("hgcloud", 1, true) then
+        return resolveHgcloud(episodeUrl, link, entry)
+    end
+    -- dood/playmogo: /e/<id> сам по себе не поток — свой разбор pass_md5,
+    -- generic в нём бесполезен (в капча-варианте ссылок в HTML нет).
+    if low:find("dood", 1, true) or low:find("playmogo", 1, true)
+        or low:find("dsvplay", 1, true) then
+        return resolveDood(episodeUrl, link, entry)
     end
     -- VIDBOM_REGEX референса ("//v[aie]d[bp][aoe]?m") — в Lua-паттернах
     -- пишется тем же текстом.
