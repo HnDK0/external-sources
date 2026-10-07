@@ -13,11 +13,11 @@
 
 id           = "latanime"
 name         = "Latanime"
-version      = "2.2.0"
+version      = "2.2.1"
 baseUrl      = "https://latanime.org"
 language     = "es"
 content_type = "video"
-icon         = "https://latanime.org/public/favicon.ico"
+icon         = "https://raw.githubusercontent.com/HnDK0/external-sources/main/icons/latanime.png"
 
 -- =====================================================================
 -- FUNCIONES DE AYUDA (HELPERS)
@@ -267,12 +267,14 @@ end
 
 local function unpackAll(body)
     local out = {}
-    for payload, radix, _, dict in body:gmatch("}%('(.-)',(%d+),(%d+),'(.-)'%.split%('|'%)") do
-        radix = tonumber(radix)
+    -- p/r en vez de payload/radix: las variables de un for genérico son const
+    -- en Lua 5.4+, y aquí se reasignan (el validador compila con luac 5.4).
+    for p, r, _, dict in body:gmatch("}%('(.-)',(%d+),(%d+),'(.-)'%.split%('|'%)") do
+        local radix = tonumber(r)
         if radix and radix >= 2 and radix <= 62 then
             local keys = {}
             for k in (dict .. "|"):gmatch("(.-)|") do keys[#keys + 1] = k end
-            payload = payload:gsub("\\'", "'"):gsub("\\\\", "\\")
+            local payload = p:gsub("\\'", "'"):gsub("\\\\", "\\")
             local text = payload:gsub("[%w_]+", function(w)
                 local n = parseBase(w, radix)
                 if n then
@@ -478,7 +480,31 @@ end
 
 -- ── Lista de servidores del episodio ────────────────────────────────────────
 
-local UNSUPPORTED_HOSTS = { "mega.nz", "mega.io", "mediafire", "gofile", "drive.google" }
+-- Servidores sin stream directo por HTTP simple:
+--   mega.nz / mega.io — stream cifrado AES-CTR servido por trozos con Range
+--                        (el motor no tiene cripto ni peticiones parciales)
+--   mediafire          — el enlace pasa por una página de descarga con JS
+--   gofile             — token de sesión que emite el JS de la página
+-- drive.google YA NO está en la lista: su enlace directo se arma con el id
+-- del archivo (drive.usercontent.google.com/download?id=…&export=download&
+-- confirm=t, verificado en vivo 2026-10-03 con 206 Partial Content), sin
+-- pasar por la vista previa de JS.
+local UNSUPPORTED_HOSTS = { "mega.nz", "mega.io", "mediafire", "gofile" }
+
+-- Google Drive → enlace directo (puerto desde ar/animephoenix.lua).
+local function driveDirectUrl(link)
+    local host = hostOf(link):gsub("^www%.", "")
+    if host ~= "drive.google.com" and host ~= "drive.usercontent.google.com" then
+        return nil
+    end
+    local id = link:match("/file/d/([%w_-]+)") or link:match("[?&]id=([%w_-]+)")
+    if not id then return nil end
+    local u = "https://drive.usercontent.google.com/download?id=" .. id
+        .. "&export=download&confirm=t"
+    local rk = link:match("[?&]resourcekey=([%w_-]+)")
+    if rk then u = u .. "&resourcekey=" .. rk end
+    return u
+end
 
 local function decodePlayerValue(v)
     if not v or v == "" then return nil end
@@ -547,13 +573,34 @@ function getVideoList(episodeUrl)
         return {}
     end
 
-    local urls = {}
-    for _, emb in ipairs(embeds) do table.insert(urls, emb.url) end
-    local results = http_get_batch(urls)
-
     local sources, seen = {}, {}
 
-    for i, emb in ipairs(embeds) do
+    -- Google Drive se resuelve SIN red (el id va en la propia URL), así que
+    -- estos servidores no entran al http_get_batch: pedir la vista previa de JS
+    -- sería un gasto inútil y, además, no devuelve la URL directa.
+    local embedList = {}
+    for _, emb in ipairs(embeds) do
+        local drive = driveDirectUrl(emb.url)
+        if drive then
+            if not seen[drive] then
+                seen[drive] = true
+                table.insert(sources, {
+                    url     = drive,
+                    quality = emb.name,
+                    headers = { ["Referer"] = "https://drive.google.com/" },
+                })
+                log_info("Latanime: OK " .. emb.name .. " (drive directo)")
+            end
+        else
+            table.insert(embedList, emb)
+        end
+    end
+
+    local urls = {}
+    for _, emb in ipairs(embedList) do table.insert(urls, emb.url) end
+    local results = #urls > 0 and http_get_batch(urls) or {}
+
+    for i, emb in ipairs(embedList) do
         local res = results and results[i]
         local pageBody = (res and res.success and res.body) or ""
         local u, mime, ref
