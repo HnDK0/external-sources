@@ -4,7 +4,7 @@ name     = "NovelHi"
 version  = "1.0.9"
 baseUrl  = "https://novelhi.com"
 language = "en"
-icon     = "https://t3.gstatic.com/faviconV2?client=SOCIAL&type=FAVICON&fallback_opts=TYPE,SIZE,URL&url=https://novelhi.com&size=256"
+icon     = "https://raw.githubusercontent.com/HnDK0/external-sources/main/icons/novelhi.png"
 
 -- ── Helpers ───────────────────────────────────────────────────────────────────
 

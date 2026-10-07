@@ -4,7 +4,7 @@ name     = "Chikari"
 version  = "1.0.9"
 baseUrl  = "https://chikari.moe/"
 language = "en"
-icon     = "https://chikari.moe/icon-192.png"
+icon     = "https://raw.githubusercontent.com/HnDK0/external-sources/main/icons/chikari.png"
 
 -- Chikari — текстовые новеллы. Движок сайта отличается от раздела картинок
 -- (/api/series, где контент — массив изображений); текстовые новеллы живут в

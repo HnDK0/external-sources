@@ -19,7 +19,7 @@ baseUrl  = "https://hmanga.asia"
 language = "es"
 content_type = "manga"
 referer  = "https://hmanga.asia/"
-icon     = "https://hmanga.asia/favicon.ico"
+icon     = "https://raw.githubusercontent.com/HnDK0/external-sources/main/icons/hmanga_asia.png"
 
 -- ── Helpers ──────────────────────────────────────────────────────────────
 

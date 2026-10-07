@@ -7,7 +7,7 @@ name     = "Novel Phoenix"
 version  = "1.0.8"
 baseUrl  = "https://novelphoenix.com"
 language = "en"
-icon     = "https://novelphoenix.com/logo.png"
+icon     = "https://raw.githubusercontent.com/HnDK0/external-sources/main/icons/novelphoenix.png"
 
 -- ── Helpers ──────────────────────────────────────────────────────────────
 
