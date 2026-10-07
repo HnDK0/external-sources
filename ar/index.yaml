@@ -17,7 +17,7 @@ sources:
     content_type: "video"
   - id: "animephoenix"
     name: "Anime Phoenix"
-    version: "1.0.0"
+    version: "1.0.1"
     url: "https://raw.githubusercontent.com/HnDK0/external-sources/refs/heads/main/ar/animephoenix.lua"
     icon: "https://raw.githubusercontent.com/HnDK0/external-sources/refs/heads/main/icons/animephoenix.png"
     language: "ar"

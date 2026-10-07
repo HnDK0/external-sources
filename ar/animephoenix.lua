@@ -4,7 +4,7 @@
 content_type = "video"
 id           = "animephoenix"
 name         = "Anime Phoenix"
-version      = "1.0.0"
+version      = "1.0.1"
 baseUrl      = "https://anime-phoenix.com"
 language     = "ar"
 icon         = "https://raw.githubusercontent.com/HnDK0/external-sources/refs/heads/main/icons/animephoenix.png"
@@ -748,15 +748,16 @@ end
 
 -- Хосты, которые никогда не дают прямую ссылку чистым HTTP (JS-превью) —
 -- пропускаются до похода в сеть, включая причину (гайд «Стандарт getVideoList»).
+-- Замеры обновлены 2026-10-05; uqload из списка убран — его embed
+-- распаковывается (см. resolveUqload ниже).
 local SKIP_HOSTS = {
     { pattern = "docs%.google",  reason = "Google Docs: превью на JS" },
-    { pattern = "mega%.nz",      reason = "mega.nz: работает только через JS-API" },
+    { pattern = "mega%.nz",      reason = "поток зашифрован AES-CTR и отдаётся чанками с Range — в движке нет крипто и частичных запросов" },
     -- Ниже — хосты, embed которых не отдаёт плеер (замерено живьём):
-    { pattern = "vidbem",        reason = "домен припаркован (parklogic): embed отдаёт страницу редиректа, а не плеер (живьём 2026-10-03)" },
-    { pattern = "fembed",        reason = "домен припаркован (parklogic): embed отдаёт страницу редиректа, а не плеер (живьём 2026-10-03)" },
-    { pattern = "vup",           reason = "домен припаркован (parklogic): embed отдаёт страницу редиректа, а не плеер (живьём 2026-10-03)" },
-    { pattern = "uqload",        reason = "embed — только POST-форма /dl, sources/packed нет — референс UqloadExtractor даёт пусто (живьём 2026-10-02)" },
-    { pattern = "uptostream",    reason = "хост лежит: Cloudflare 522 (origin down), затем нет соединения (curl 000) — embed недоступен" },
+    { pattern = "vidbem",        reason = "домен припаркован (parklogic): embed отдаёт страницу редиректа router.parklogic.com, а не плеер (живьём 2026-10-05)" },
+    { pattern = "fembed",        reason = "домен припаркован (parklogic): embed отдаёт страницу редиректа router.parklogic.com, а не плеер (живьём 2026-10-05)" },
+    { pattern = "vup",           reason = "домен припаркован (parklogic): embed отдаёт страницу редиректа router.parklogic.com, а не плеер (живьём 2026-10-05)" },
+    { pattern = "uptostream",    reason = "DNS/TLS жив, HTTP не отвечает (живьём 2026-10-05)" },
 }
 
 -- Таймаут батча эмбедов (мс): бюджет одной попытки вместо лестницы ретраев
@@ -905,6 +906,80 @@ local function resolveShared(body, link)
     return { src }
 end
 
+-- ---- uqload: embed (301 → uqload.vc) → packed-JS → jwplayer sources ----
+-- Живьём 2026-10-05: /embed-<id>.html отдаёт распакованный
+-- jwplayer("vplayer").setup({sources:[{file:"…/master.m3u8?…"}]}).
+-- Раньше хост был в skip-листе («только POST-форма /dl, sources/packed нет») —
+-- распаковка Packed-JS снимает этот отказ.
+-- Порт unpackPacked из ar/anime4up.lua (там же — источник алгоритма).
+local function baseN(tok, radix)
+    local v = 0
+    for i = 1, #tok do
+        local c = tok:byte(i)
+        local d
+        if c >= 48 and c <= 57 then d = c - 48
+        elseif c >= 97 and c <= 122 then d = c - 87
+        elseif c >= 65 and c <= 90 then d = c - 29
+        else return nil end
+        if d >= radix then return nil end
+        v = v * radix + d
+    end
+    return v
+end
+
+-- eval(function(p,a,c,k,e,d){…}('…',36,N,'a|b|c'.split('|'))): словарь символов
+-- разворачивается обратно в строку payload.
+local function unpackPacked(body)
+    if not body:find("p,a,c,k,e,d", 1, true) then return "" end
+    local payload, radix, _, syms = body:match("}%('(.-)',(%d+),(%d+),'([^']*)'%.split%('|'%)")
+    if not payload then
+        payload, radix, _, syms = body:match("%('(.-)',(%d+),(%d+),'([^']*)'%.split%('|'%)")
+    end
+    if not payload then return "" end
+    local b = tonumber(radix)
+    if not b or b < 2 then return "" end
+    local dict, i = {}, 1
+    for tok in (syms .. "|"):gmatch("(.-)|") do
+        dict[i] = tok
+        i = i + 1
+    end
+    return (payload:gsub("%w+", function(tok)
+        local v = baseN(tok, b)
+        local s = v and dict[v + 1] or nil
+        if type(s) == "string" and s ~= "" then return s end
+        return tok
+    end))
+end
+
+-- Конфиг jwplayer лежит в распакованном виде, поэтому голый sources:-паттерн
+-- по телу не матчит. В file:"…" лежат и сабы/логотипы — берём только поток.
+local function packedMediaUrls(body)
+    local text = body
+    local un = unpackPacked(body)
+    if un ~= "" then text = un .. "\n" .. body end
+    local out, seen = {}, {}
+    local function add(u)
+        if seen[u] or not string_starts_with(u, "http") then return end
+        if not hasMediaExt(u) then return end
+        seen[u] = true
+        out[#out + 1] = u:gsub("\\/", "/"):gsub("&amp;", "&")
+    end
+    for u in text:gmatch('file:%s*"([^"]+)"') do add(u) end
+    for u in text:gmatch("file:%s*'([^']+)'") do add(u) end
+    for u in text:gmatch('"file"%s*:%s*"([^"]+)"') do add(u) end
+    for u in text:gmatch([[https?://[^"'%s<>\\]+%.m3u8[^"'%s<>\\]*]]) do add(u) end
+    for u in text:gmatch([[https?://[^"'%s<>\\]+%.mp4[^"'%s<>\\]*]]) do add(u) end
+    return out
+end
+
+local function resolveUqload(body, link)
+    local urls = packedMediaUrls(body)
+    if #urls == 0 then
+        log_error("AnimePhoenix: uqload — нет источников в packed-JS (" .. link .. ")")
+    end
+    return urls
+end
+
 -- type == "iframe": link содержит HTML <iframe …> — вытаскиваем src.
 local function iframeSrc(html)
     local el = html_select_first(html, "iframe")
@@ -981,12 +1056,15 @@ function getVideoList(episodeUrl)
                 log_error("AnimePhoenix: " .. e.name .. " — embed-страница недоступна")
             else
                 -- Диспетчер по хосту: ok.ru и 4shared разбираются по своему
-                -- формату, directLinks остаётся общим сканом-фоллбэком.
+                -- формату, uqload — распаковкой Packed-JS; directLinks
+                -- остаётся общим сканом-фоллбэком.
                 local urls, low = nil, e.link:lower()
                 if low:find("ok%.ru") then
                     urls = resolveOkRu(body, e.link)
                 elseif low:find("4shared") then
                     urls = resolveShared(body, e.link)
+                elseif low:find("uqload") then
+                    urls = resolveUqload(body, e.link)
                 end
                 if not urls or #urls == 0 then
                     urls = directLinks(body)
