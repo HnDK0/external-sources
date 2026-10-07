@@ -11,6 +11,10 @@ sync_index.py — генерация index.yaml из .lua плагинов.
 refs/heads/<branch> (текущая ветка) вместо main — обходит кэш raw.githubusercontent.com,
 файлы отдаются сразу без задержек. На main ссылки ведут на main.
 
+SYNC_BASE_URL — переопределяет базовый URL целиком (без шаблона repo/branch).
+Нужно для зеркала: тем же прогоном переписывается всё — url плагинов,
+иконки, корневой индекс и README.
+
 Плагины с полем status = "dead" в метаданных остаются в репозитории
 (как рабочий пример / история), но не попадают в index.yaml.
 """
@@ -172,7 +176,9 @@ def rewrite_readme(raw_base: str):
 def sync(root: Path):
     repo     = get_repo()
     branch   = get_branch()
-    raw_base = RAW_BASE.format(repo=repo, branch=branch)
+    # SYNC_BASE_URL задаёт базу целиком — так генерится индекс для зеркала
+    override = os.environ.get("SYNC_BASE_URL", "").strip()
+    raw_base = override or RAW_BASE.format(repo=repo, branch=branch)
     print(f"Репозиторий : {repo}")
     print(f"Raw base    : {raw_base}\n")
 

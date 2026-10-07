@@ -1,0 +1,73 @@
+name: Mirror to Codeberg
+
+# Держит зеркало репозитория на Codeberg в актуальном состоянии.
+# Отличие от обычного push: индекс переписывается на базу зеркала
+# (SYNC_BASE_URL), иначе index.yaml на зеркале продолжит вести на
+# raw.githubusercontent.com, недоступный у части пользователей.
+# Переписываются index.yaml, */index.yaml, README.md и строки icon =
+# в .lua (иначе иконки в скачиваемых плагинах ведут на raw.githubusercontent).
+
+
+on:
+  push:
+    branches:
+      - main
+  workflow_dispatch: # ручной повтор, если push на зеркало сорвался
+
+permissions:
+  contents: read
+
+jobs:
+  mirror:
+    # в форках секрета CODEBERG_SSH нет — не падаем впустую
+    if: github.repository == 'HnDK0/external-sources'
+    runs-on: ubuntu-latest
+    timeout-minutes: 10
+
+    steps:
+      - name: Checkout
+        uses: actions/checkout@v4
+        with:
+          fetch-depth: 0
+
+      - name: Set up Python
+        uses: actions/setup-python@v5
+        with:
+          python-version: "3.11"
+
+      - name: Rewrite index to mirror base
+        env:
+          SYNC_BASE_URL: https://codeberg.org/HnDK0/external-sources/raw/branch/main
+        run: python scripts/sync_index.py .
+
+      - name: Rewrite plugin icon URLs to mirror base
+        run: |
+          git ls-files -z '*.lua' | xargs -0 perl -i -pe \
+            's|https://raw\.githubusercontent\.com/[^/]+/[^/]+/(refs/heads/)?[^/"]+|https://codeberg.org/HnDK0/external-sources/raw/branch/main|g'
+
+      - name: Commit rewritten index
+        run: |
+          git add "index.yaml" "*/index.yaml" "README.md" "*.lua"
+          if ! git diff --cached --quiet; then
+            git config user.name  "${{ github.actor }}"
+            git config user.email "${{ github.actor_id }}+${{ github.actor }}@users.noreply.github.com"
+            git commit -m "chore: mirror index base [skip ci]"
+          fi
+
+      - name: Push to Codeberg
+        env:
+          SSH_KEY: ${{ secrets.CODEBERG_SSH }}
+        run: |
+          if [ -z "$SSH_KEY" ]; then
+            echo "::error::Секрет CODEBERG_SSH не задан — зеркало не обновлено"
+            exit 1
+          fi
+          mkdir -p ~/.ssh
+          printf '%s\n' "$SSH_KEY" > ~/.ssh/mirror_key
+          chmod 600 ~/.ssh/mirror_key
+          ssh-keyscan codeberg.org >> ~/.ssh/known_hosts
+          git remote add mirror git@codeberg.org:HnDK0/external-sources.git
+          # --force: зеркало — реплика, история намеренно разойдётся
+          # из-за коммита с переписанным индексом
+          GIT_SSH_COMMAND="ssh -i $HOME/.ssh/mirror_key -o IdentitiesOnly=yes" \
+            git push --force mirror HEAD:main

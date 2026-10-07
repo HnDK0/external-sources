@@ -1,0 +1,60 @@
+name: jsDelivr index branch
+
+# Ветка jsdelivr: полная копия main, но все ссылки в index.yaml, */index.yaml
+# и README переписаны на cdn.jsdelivr.net. Пользователи, у которых заблокирован
+# raw.githubusercontent.com, берут индекс отсюда:
+#   https://cdn.jsdelivr.net/gh/HnDK0/external-sources@jsdelivr/index.yaml
+# Ветка self-contained: ссылки ведут на @jsdelivr, поэтому там лежат и .lua,
+# и иконки. В самих .lua строки icon = тоже переписаны на cdn.jsdelivr.net.
+# Обновляется на каждый push в main.
+
+on:
+  push:
+    branches:
+      - main
+  workflow_dispatch:
+
+permissions:
+  contents: write
+
+jobs:
+  jsdelivr:
+    # в форках нет прав на пуш в эту ветку — не падаем впустую
+    if: github.repository == 'HnDK0/external-sources'
+    runs-on: ubuntu-latest
+    timeout-minutes: 10
+
+    steps:
+      - name: Checkout
+        uses: actions/checkout@v4
+        with:
+          fetch-depth: 0
+
+      - name: Set up Python
+        uses: actions/setup-python@v5
+        with:
+          python-version: "3.11"
+
+      - name: Rewrite index to jsDelivr base
+        env:
+          SYNC_BASE_URL: https://cdn.jsdelivr.net/gh/HnDK0/external-sources@jsdelivr
+        run: python scripts/sync_index.py .
+
+      - name: Rewrite plugin icon URLs to jsDelivr base
+        run: |
+          git ls-files -z '*.lua' | xargs -0 perl -i -pe \
+            's|https://raw\.githubusercontent\.com/[^/]+/[^/]+/(refs/heads/)?[^/"]+|https://cdn.jsdelivr.net/gh/HnDK0/external-sources\@jsdelivr|g'
+
+      - name: Commit rewritten index
+        run: |
+          git add "index*.yaml" "*/index*.yaml" "README.md" "*.lua"
+          if ! git diff --cached --quiet; then
+            git config user.name  "${{ github.actor }}"
+            git config user.email "${{ github.actor_id }}+${{ github.actor }}@users.noreply.github.com"
+            git commit -m "chore: jsDelivr index base [skip ci]"
+          fi
+
+      - name: Push branch
+        # --force: ветка — рабочая копия индексов, её история намеренно
+        # разойдётся с main из-за коммита с переписанными ссылками
+        run: git push --force origin HEAD:jsdelivr
