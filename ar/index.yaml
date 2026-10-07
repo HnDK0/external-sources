@@ -10,7 +10,7 @@ sources:
     content_type: "video"
   - id: "anime4up"
     name: "Anime4Up"
-    version: "1.0.0"
+    version: "1.0.1"
     url: "https://raw.githubusercontent.com/HnDK0/external-sources/refs/heads/main/ar/anime4up.lua"
     icon: "https://raw.githubusercontent.com/HnDK0/external-sources/refs/heads/main/icons/anime4up.png"
     language: "ar"
