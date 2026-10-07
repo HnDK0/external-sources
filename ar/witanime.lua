@@ -4,7 +4,7 @@
 content_type = "video"
 id           = "witanime"
 name         = "WitAnime"
-version      = "1.0.1"
+version      = "1.0.2"
 baseUrl      = "https://witanime.site"
 language     = "ar"
 icon         = "https://raw.githubusercontent.com/HnDK0/external-sources/refs/heads/main/icons/witanime.png"
@@ -1887,10 +1887,18 @@ end
 local function gateUrl(token, episodeUrl)
     -- followRedirects=false: гейт отвечает 302 + Location; движок по умолчанию
     -- переходит по редиректу, и хостер-страница приходит вместо Location.
+    -- Сайт (Livewire v3) отдаёт на stream-gate 302 только навигационным
+    -- запросам БЕЗ Referer (iframe плеера висит на referrerpolicy=no-referrer)
+    -- и с Sec-Fetch-Mode: navigate; с Referer и в fetch-режиме — 404.
     local r = http_get(baseUrl .. "/watch/stream-gate/" .. token, {
         binary          = true,
         followRedirects = false,
-        headers         = { ["Referer"] = episodeUrl },
+        headers         = {
+            ["Accept"]         = "text/html,application/xhtml+xml,application/xml;q=0.9,*/*;q=0.8",
+            ["Sec-Fetch-Mode"] = "navigate",
+            ["Sec-Fetch-Dest"] = "iframe",
+            ["Sec-Fetch-Site"] = "same-origin",
+        },
     })
     -- 302 — это успех: у binary-ответа success считается по 2xx, не глядим на него
     if r.code >= 400 then
