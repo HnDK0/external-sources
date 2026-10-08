@@ -3,7 +3,7 @@
 content_type = "video"
 id           = "anime4up"
 name         = "Anime4Up"
-version      = "1.0.1"
+version      = "1.0.2"
 baseUrl      = "https://w1.anime4up.rest"
 language     = "ar"
 icon         = "https://raw.githubusercontent.com/HnDK0/external-sources/refs/heads/main/icons/anime4up.png"
@@ -1097,11 +1097,20 @@ local function resolveShare4max(body, entry, candidates, followups)
     return added
 end
 
--- ---- vkvideo: video_ext.php → files.mp4_* (живьём 2026-10-05) ----
+-- ---- vkvideo: video_ext.php → files.mp4_* (живьём 2026-10-05, 2026-10-07) ----
 -- Схема: id из ссылки (video-<oid>_<id> / clip-<oid>_<id> / ?oid=&id=) →
 -- https://vk.com/video_ext.php?oid=&id=[&hash=] → JSON-подобный блок "files"
--- с mp4_144…mp4_1080. mp4 без User-Agent/CDN отдаёт 400, но плеер шлёт
--- десктопный Chrome — с ним okcdn отвечает 200 (проверено живьём).
+-- с mp4_144…mp4_1080.
+-- Живьём 2026-10-07 (серия One Piece 1180 → vkvideo.ru/video_ext.php):
+-- * сами ссылки files — okcdn БЕЗ медиа-расширения (https://vkvd559.okcdn.ru/
+--   ?expires=…), тело — mp4-байты (206 по Range, magic ftypisom);
+--   pushCandidate поставил бы mime = "hls" (нет расширения) и media3 падал
+--   ParserException'ом «Input does not start with the #EXTM3U header» →
+--   поэтому здесь mime = "mp4" задаётся явно (см. resolveDood: тот же случай);
+-- * подпись srcAg в URL берётся из UA запроса video_ext: движок шлёт Chrome
+--   Android, и okcdn отвечает 206 на UA плеера (ExoPlayer/Android/curl)
+--   независимо от Referer; URL, подписанный десктопным Chrome, принимает
+--   только десктопный Chrome — поэтому UA в video_ext не перебиваем.
 -- vkvideo.ru сам в редирект-цикле на login.vk.ru, поэтому ходим на vk.com.
 local function resolveVkVideo(entry, candidates)
     local oid, vid = entry.link:match("/video_(-?%d+)_(-?%d+)")
@@ -1138,9 +1147,15 @@ local function resolveVkVideo(entry, candidates)
     table.sort(variants, function(a, b) return a.q > b.q end)
     local added = 0
     for _, v in ipairs(variants) do
-        if pushCandidate(candidates, v.u, "VK · " .. v.q .. "p", "https://vk.com/") then
-            added = added + 1
-        end
+        -- Прямая вставка вместо pushCandidate: URL без расширения, но тело —
+        -- mp4, mime "hls" сломало бы воспроизведение (см. заголовок ветки).
+        candidates[#candidates + 1] = {
+            url     = v.u,
+            quality = "VK · " .. v.q .. "p",
+            referer = "https://vk.com/",
+            mime    = "mp4",
+        }
+        added = added + 1
     end
     if added == 0 then log_error("Anime4Up: " .. entry.quality .. " — vkvideo: в files нет mp4") end
     return added
