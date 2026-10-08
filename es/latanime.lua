@@ -13,11 +13,15 @@
 
 id           = "latanime"
 name         = "Latanime"
-version      = "2.2.1"
+version      = "2.2.2"
 baseUrl      = "https://latanime.org"
 language     = "es"
 content_type = "video"
 icon         = "https://raw.githubusercontent.com/HnDK0/external-sources/main/icons/latanime.png"
+
+-- Таймауты: страницы сайта и эмбеды (сеть в эмуляторе без таймаута зависала).
+local PAGE_TIMEOUT   = 15000
+local EMBED_TIMEOUT  = 12000
 
 -- =====================================================================
 -- FUNCIONES DE AYUDA (HELPERS)
@@ -79,7 +83,7 @@ end
 local _pageCache = {}
 local function fetchPage(url)
     if _pageCache[url] then return _pageCache[url] end
-    local r = http_get(url)
+    local r = http_get(url, { timeout = PAGE_TIMEOUT })
     if r.success then
         _pageCache[url] = r.body
         return r.body
@@ -117,7 +121,7 @@ end
 function getCatalogList(index)
     local page = index + 1
     local url = baseUrl .. "/animes?p=" .. page
-    local r = http_get(url)
+    local r = http_get(url, { timeout = PAGE_TIMEOUT })
     if not r.success then return { items = {}, hasNext = false } end
 
     local items = parseCards(r.body)
@@ -129,7 +133,7 @@ end
 function getCatalogSearch(index, query)
     if index > 0 or not query or query == "" then return { items = {}, hasNext = false } end
     local url = baseUrl .. "/buscar?q=" .. url_encode(query)
-    local r = http_get(url)
+    local r = http_get(url, { timeout = PAGE_TIMEOUT })
     if not r.success then return { items = {}, hasNext = false } end
     return { items = parseCards(r.body), hasNext = false }
 end
@@ -346,7 +350,7 @@ local function extractDood(embedUrl, body)
     local o = origin(embedUrl)
     if not o then return nil end
     local token = md5:match("([^/]+)$")
-    local r = http_get(o:sub(1, -2) .. md5, { headers = { ["Referer"] = embedUrl } })
+    local r = http_get(o:sub(1, -2) .. md5, { timeout = EMBED_TIMEOUT, headers = { ["Referer"] = embedUrl } })
     if not r.success then return nil end
     local start = r.body:gsub("%s+$", ""):gsub("^%s+", "")
     if not start:find("^https?://") then return nil end
@@ -403,7 +407,7 @@ local function extractVoe(embedUrl, body)
     if not body:find("application/json", 1, true) and not body:find("hls", 1, true) then
         local hop = body:match("window%.location%.href%s*=%s*'(https?://[^']+)'")
         if hop then
-            local r = http_get(hop, { headers = { ["Referer"] = embedUrl } })
+            local r = http_get(hop, { timeout = EMBED_TIMEOUT, headers = { ["Referer"] = embedUrl } })
             if r.success then
                 body = r.body
                 embedUrl = hop
@@ -598,7 +602,7 @@ function getVideoList(episodeUrl)
 
     local urls = {}
     for _, emb in ipairs(embedList) do table.insert(urls, emb.url) end
-    local results = #urls > 0 and http_get_batch(urls) or {}
+    local results = #urls > 0 and http_get_batch(urls, { timeout = EMBED_TIMEOUT }) or {}
 
     for i, emb in ipairs(embedList) do
         local res = results and results[i]
@@ -613,7 +617,7 @@ function getVideoList(episodeUrl)
 
         -- Reintento con Referer de Latanime (algunos embeds lo exigen)
         if not u then
-            local rr = http_get(emb.url, { headers = { ["Referer"] = baseUrl .. "/" } })
+            local rr = http_get(emb.url, { timeout = EMBED_TIMEOUT, headers = { ["Referer"] = baseUrl .. "/" } })
             if rr.success and rr.body and rr.body ~= "" then
                 local ok, a, b, c = pcall(extractFromEmbed, emb, rr.body)
                 if ok then u, mime, ref = a, b, c end
@@ -682,7 +686,7 @@ function getCatalogFiltered(index, filters)
 
     local page = index + 1
     local url = baseUrl .. "/animes" .. query .. "&p=" .. page
-    local r = http_get(url)
+    local r = http_get(url, { timeout = PAGE_TIMEOUT })
     if not r.success then return { items = {}, hasNext = false } end
 
     local items = parseCards(r.body)

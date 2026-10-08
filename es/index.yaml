@@ -24,7 +24,7 @@ sources:
     content_type: "manga"
   - id: "latanime"
     name: "Latanime"
-    version: "2.2.1"
+    version: "2.2.2"
     url: "https://raw.githubusercontent.com/HnDK0/external-sources/refs/heads/main/es/latanime.lua"
     icon: "https://raw.githubusercontent.com/HnDK0/external-sources/refs/heads/main/icons/latanime.png"
     language: "es"
