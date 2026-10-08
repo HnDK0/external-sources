@@ -8,7 +8,7 @@ name        = "AniLiberty"
 version     = "1.0.0"
 baseUrl     = "https://aniliberty.top"
 language    = "ru"
-icon        = "https://raw.githubusercontent.com/HnDK0/external-sources/refs/heads/main/icons/aniliberty.png"
+icon        = "https://cdn.jsdelivr.net/gh/HnDK0/external-sources@jsdelivr/icons/aniliberty.png"
 
 local API = baseUrl .. "/api/v1"
 -- Максимум, который принимает каталог (100 → HTTP 422)

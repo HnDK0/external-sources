@@ -5,7 +5,7 @@ name     = "BacaKomik"
 version  = "1.0.0"
 baseUrl  = "https://bacakomik.my/"
 language = "id"
-icon     = "https://raw.githubusercontent.com/HnDK0/external-sources/main/icons/bacakomik.png"
+icon     = "https://cdn.jsdelivr.net/gh/HnDK0/external-sources@jsdelivr/icons/bacakomik.png"
 content_type = "manga"
 
 -- ── Хелперы ──

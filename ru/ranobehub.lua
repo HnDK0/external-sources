@@ -4,7 +4,7 @@ name     = "Ranobehub"
 version  = "1.1.4"
 baseUrl  = "https://ranobehub.org/"
 language = "ru"
-icon     = "https://raw.githubusercontent.com/HnDK0/external-sources/main/icons/ranobehub.png"
+icon     = "https://cdn.jsdelivr.net/gh/HnDK0/external-sources@jsdelivr/icons/ranobehub.png"
 
 -- ── Хелперы ───────────────────────────────────────────────────────────────────
 

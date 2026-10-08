@@ -189,7 +189,7 @@ name     = "Novel543"
 version  = "1.0.4"
 baseUrl  = "https://www.novel543.com/"
 language = "zh"
-icon     = "https://raw.githubusercontent.com/HnDK0/external-sources/main/icons/novel543.png"
+icon     = "https://cdn.jsdelivr.net/gh/HnDK0/external-sources@jsdelivr/icons/novel543.png"
 
 -- ── Settings preference keys ─────────────────────────────────────────────────
 local PREF_MODE    = "novel543_mode"     -- "raw" | "translate"

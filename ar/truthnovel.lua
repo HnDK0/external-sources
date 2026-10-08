@@ -3,7 +3,7 @@ name     = "Truth Novel"
 version  = "1.1.1"
 baseUrl  = "https://truthnovel.top"
 language = "ar"
-icon     = "https://raw.githubusercontent.com/HnDK0/external-sources/main/icons/truthnovel.png"
+icon     = "https://cdn.jsdelivr.net/gh/HnDK0/external-sources@jsdelivr/icons/truthnovel.png"
 
 local _cover = baseUrl .. "/wp-content/uploads/2024/12/نسخة-الفصل-الف-الصغيرة-للموقع-العربي.jpg"
 local _pageCache = {}

@@ -4,7 +4,7 @@ name     = "Novel Arrow"
 version  = "1.0.5"
 baseUrl  = "https://novelarrow.com/"
 language = "en"
-icon     = "https://raw.githubusercontent.com/HnDK0/external-sources/main/icons/novelarrow.png"
+icon     = "https://cdn.jsdelivr.net/gh/HnDK0/external-sources@jsdelivr/icons/novelarrow.png"
 
 -- ── Константы ─────────────────────────────────────────────────────────────────
 

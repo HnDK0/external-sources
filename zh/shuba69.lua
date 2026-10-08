@@ -4,7 +4,7 @@ name     = "69shuba"
 version  = "1.0.3"
 baseUrl  = "https://www.69shuba.com/"
 language = "zh"
-icon     = "https://raw.githubusercontent.com/HnDK0/external-sources/main/icons/69shuba.png"
+icon     = "https://cdn.jsdelivr.net/gh/HnDK0/external-sources@jsdelivr/icons/69shuba.png"
 charset  = "GBK"
 
 -- ── Вспомогательные функции ─────────────────────────────────────────────────

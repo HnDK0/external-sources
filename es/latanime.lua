@@ -17,7 +17,7 @@ version      = "2.2.2"
 baseUrl      = "https://latanime.org"
 language     = "es"
 content_type = "video"
-icon         = "https://raw.githubusercontent.com/HnDK0/external-sources/main/icons/latanime.png"
+icon         = "https://cdn.jsdelivr.net/gh/HnDK0/external-sources@jsdelivr/icons/latanime.png"
 
 -- Таймауты: страницы сайта и эмбеды (сеть в эмуляторе без таймаута зависала).
 local PAGE_TIMEOUT   = 15000

@@ -4,6 +4,6 @@ sources:
   - id: "novelfrance"
     name: "NovelFrance"
     version: "1.0.9"
-    url: "https://raw.githubusercontent.com/HnDK0/external-sources/refs/heads/main/fr/novelfrance.lua"
-    icon: "https://raw.githubusercontent.com/HnDK0/external-sources/refs/heads/main/icons/novelfrance.png"
+    url: "https://cdn.jsdelivr.net/gh/HnDK0/external-sources@jsdelivr/fr/novelfrance.lua"
+    icon: "https://cdn.jsdelivr.net/gh/HnDK0/external-sources@jsdelivr/icons/novelfrance.png"
     language: "fr"

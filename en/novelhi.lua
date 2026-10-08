@@ -4,7 +4,7 @@ name     = "NovelHi"
 version  = "1.0.9"
 baseUrl  = "https://novelhi.com"
 language = "en"
-icon     = "https://raw.githubusercontent.com/HnDK0/external-sources/main/icons/novelhi.png"
+icon     = "https://cdn.jsdelivr.net/gh/HnDK0/external-sources@jsdelivr/icons/novelhi.png"
 
 -- ── Helpers ───────────────────────────────────────────────────────────────────
 

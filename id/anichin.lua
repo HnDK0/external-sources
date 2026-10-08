@@ -15,7 +15,7 @@ language     = "id"
 content_type = "video"
 -- Иконка — favicon сайта (проверен 200): она квадратная (150x150),
 -- в отличие от логотипа 270x50.
-icon        = "https://raw.githubusercontent.com/HnDK0/external-sources/main/icons/anichin.png"
+icon        = "https://cdn.jsdelivr.net/gh/HnDK0/external-sources@jsdelivr/icons/anichin.png"
 
 local CATALOG = baseUrl .. "/anime/"
 local SEARCH  = baseUrl .. "/?s="

@@ -8,7 +8,7 @@ version  = "1.0.0"
 baseUrl  = "https://m440.in"
 language = "es"
 content_type = "manga"
-icon = "https://raw.githubusercontent.com/HnDK0/external-sources/main/icons/m440in.png"
+icon = "https://cdn.jsdelivr.net/gh/HnDK0/external-sources@jsdelivr/icons/m440in.png"
 
 -- ── Хелперы ──
 

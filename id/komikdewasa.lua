@@ -5,7 +5,7 @@ name     = "Komik Dewasa"
 version  = "1.0.0"
 baseUrl  = "https://komikdewasa.art/"
 language = "id"
-icon     = "https://raw.githubusercontent.com/HnDK0/external-sources/main/icons/komikdewasa.png"
+icon     = "https://cdn.jsdelivr.net/gh/HnDK0/external-sources@jsdelivr/icons/komikdewasa.png"
 content_type = "manga"
 
 -- ── Хелперы ──

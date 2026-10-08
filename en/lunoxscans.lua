@@ -9,7 +9,7 @@ name     = "Lunox Novels"
 version  = "1.0.0"
 baseUrl  = "https://lunoxscans.com"
 language = "en"
-icon     = "https://raw.githubusercontent.com/HnDK0/external-sources/main/icons/lunoxscans.png"
+icon     = "https://cdn.jsdelivr.net/gh/HnDK0/external-sources@jsdelivr/icons/lunoxscans.png"
 
 -- ── Hélpers ───────────────────────────────────────────────────────────────────
 

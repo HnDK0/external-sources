@@ -4,7 +4,7 @@ name     = "NovelBuddy"
 version  = "3.0.3"
 baseUrl  = "https://novelbuddy.me"
 language = "en"
-icon     = "https://raw.githubusercontent.com/HnDK0/external-sources/main/icons/novelbuddy.png"
+icon     = "https://cdn.jsdelivr.net/gh/HnDK0/external-sources@jsdelivr/icons/novelbuddy.png"
 
 -- Отключаем детект turnstile — сайт его использует в обычном контенте
 cf_options = {

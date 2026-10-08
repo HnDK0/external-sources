@@ -4,7 +4,7 @@ name     = "iFreedom"
 version  = "1.1.6"
 baseUrl  = "https://ifreedom.su/"
 language = "ru"
-icon     = "https://raw.githubusercontent.com/HnDK0/external-sources/main/icons/ifreedom.png"
+icon     = "https://cdn.jsdelivr.net/gh/HnDK0/external-sources@jsdelivr/icons/ifreedom.png"
 
 -- ── Хелперы ───────────────────────────────────────────────────────────────────
 

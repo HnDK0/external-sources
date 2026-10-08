@@ -3,7 +3,7 @@ name     = "Read From Net"
 version  = "1.5.1"
 baseUrl  = "https://readfrom.net/"
 language = "en"
-icon     = "https://raw.githubusercontent.com/HnDK0/external-sources/main/icons/readfrom.png"
+icon     = "https://cdn.jsdelivr.net/gh/HnDK0/external-sources@jsdelivr/icons/readfrom.png"
 
 function getUserAgentPreset()
   return "Safari Mobile"

@@ -4,7 +4,7 @@ name     = "NoBadNovel"
 version  = "1.0.1"
 baseUrl  = "https://www.nobadnovel.com/"
 language = "en"
-icon     = "https://raw.githubusercontent.com/HnDK0/external-sources/main/icons/nobadnovel.png"
+icon     = "https://cdn.jsdelivr.net/gh/HnDK0/external-sources@jsdelivr/icons/nobadnovel.png"
 
 -- ── Хелперы ───────────────────────────────────────────────────────────────────
 

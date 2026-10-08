@@ -4,7 +4,7 @@ name     = "Indowebnovel"
 version  = "1.1.1"
 baseUrl  = "https://indowebnovel.id/"
 language = "id"
-icon     = "https://raw.githubusercontent.com/HnDK0/external-sources/main/icons/indowebnovel.png"
+icon     = "https://cdn.jsdelivr.net/gh/HnDK0/external-sources@jsdelivr/icons/indowebnovel.png"
 
 -- ── Хелперы ───────────────────────────────────────────────────────────────────
 

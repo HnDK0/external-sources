@@ -8,7 +8,7 @@ version      = "1.0.0"
 baseUrl      = "https://hianimes.se"
 language     = "en"
 content_type = "video"
-icon         = "https://raw.githubusercontent.com/HnDK0/external-sources/main/icons/hianimes.png"
+icon         = "https://cdn.jsdelivr.net/gh/HnDK0/external-sources@jsdelivr/icons/hianimes.png"
 
 local API = "https://animehot.cc/api"
 -- Player config key: window.__P = base64(xor(json)) with this key.

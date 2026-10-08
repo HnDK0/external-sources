@@ -4,7 +4,7 @@ name     = "HentaiLib"
 version  = "1.0.1"
 baseUrl  = "https://hentailib.me/"
 language = "ru"
-icon     = "https://raw.githubusercontent.com/HnDK0/external-sources/main/icons/hentailib.png"
+icon     = "https://cdn.jsdelivr.net/gh/HnDK0/external-sources@jsdelivr/icons/hentailib.png"
 content_type = "manga"
 
 -- HentaiLib — 18+ манга на русском (LibGroup, api.cdnlibs.org).

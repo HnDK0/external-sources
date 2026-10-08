@@ -3,7 +3,7 @@ name     = "NovelHall"
 version  = "1.0.3"
 baseUrl  = "https://www.novelhall.com"
 language = "en"
-icon     = "https://raw.githubusercontent.com/HnDK0/external-sources/main/icons/novelhall.png"
+icon     = "https://cdn.jsdelivr.net/gh/HnDK0/external-sources@jsdelivr/icons/novelhall.png"
 
 -- ── Хелперы ───────────────────────────────────────────────────────────────────
 

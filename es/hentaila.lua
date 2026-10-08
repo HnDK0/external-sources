@@ -8,7 +8,7 @@ version      = "1.0.0"
 baseUrl      = "https://hentaila.com"
 language     = "es"
 content_type = "video"
-icon         = "https://raw.githubusercontent.com/HnDK0/external-sources/main/icons/hentaila.png"
+icon         = "https://cdn.jsdelivr.net/gh/HnDK0/external-sources@jsdelivr/icons/hentaila.png"
 local CATALOG = baseUrl .. "/catalogo"
 -- Same selector as the Kotlin source; "\\/" is the escaped slash in "group/item".
 local CARD_SEL = "div.grid.grid-cols-2 article.group\\/item"

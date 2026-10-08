@@ -4,7 +4,7 @@ name     = "Syosetu"
 version  = "1.1.0"
 baseUrl  = "https://ncode.syosetu.com/"
 language = "ja"
-icon     = "https://raw.githubusercontent.com/HnDK0/external-sources/main/icons/narou.png"
+icon     = "https://cdn.jsdelivr.net/gh/HnDK0/external-sources@jsdelivr/icons/narou.png"
 
 local HEADERS = {
     ["User-Agent"] = "Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/120.0.0.0 Safari/537.36"

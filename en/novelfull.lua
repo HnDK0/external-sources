@@ -3,7 +3,7 @@ name     = "NovelFull"
 version  = "1.2.0"
 baseUrl  = "https://novelfull.net/"
 language = "en"
-icon     = "https://raw.githubusercontent.com/HnDK0/external-sources/main/icons/novelfull.png"
+icon     = "https://cdn.jsdelivr.net/gh/HnDK0/external-sources@jsdelivr/icons/novelfull.png"
 
 -- ── Хелперы ───────────────────────────────────────────────────────────────────
 

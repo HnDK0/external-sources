@@ -4,7 +4,7 @@ name     = "MangaLib"
 version  = "1.0.1"
 baseUrl  = "https://mangalib.me/"
 language = "ru"
-icon     = "https://raw.githubusercontent.com/HnDK0/external-sources/main/icons/mangalib.png"
+icon     = "https://cdn.jsdelivr.net/gh/HnDK0/external-sources@jsdelivr/icons/mangalib.png"
 content_type = "manga"
 
 -- MangaLib — манга на русском (LibGroup, api.cdnlibs.org).

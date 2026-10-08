@@ -3,7 +3,7 @@ name     = "Senkognito"
 version  = "1.0.3"
 baseUrl  = "https://senkognito.com/"
 language = "ru"
-icon     = "https://raw.githubusercontent.com/HnDK0/external-sources/main/icons/senkognito.png"
+icon     = "https://cdn.jsdelivr.net/gh/HnDK0/external-sources@jsdelivr/icons/senkognito.png"
 content_type = "manga"
 
 local GRAPHQL = "https://api.senkognito.com/graphql"

@@ -4,7 +4,7 @@ name         = "MangaKakalot"
 version      = "1.0.1"
 baseUrl      = "https://www.mangakakalot.gg"
 language     = "en"
-icon         = "https://raw.githubusercontent.com/HnDK0/external-sources/refs/heads/main/icons/mangakakalot.png"
+icon         = "https://cdn.jsdelivr.net/gh/HnDK0/external-sources@jsdelivr/icons/mangakakalot.png"
 content_type = "manga"
 
 -- ── Хелперы ───────────────────────────────────────────────────────────────────

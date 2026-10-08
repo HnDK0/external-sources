@@ -3,7 +3,7 @@ name     = "Desu"
 version  = "1.1.3"
 baseUrl  = "https://desu.uno/"
 language = "ru"
-icon     = "https://raw.githubusercontent.com/HnDK0/external-sources/main/icons/desu.png"
+icon     = "https://cdn.jsdelivr.net/gh/HnDK0/external-sources@jsdelivr/icons/desu.png"
 content_type = "manga"
 
 -- Источник манги/манхвы на русском (JSON API /api/manga/). Главы — это

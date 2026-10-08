@@ -4,7 +4,7 @@ name     = "Baca Lightnovel"
 version  = "1.1.1"
 baseUrl  = "https://bacalightnovel.co/"
 language = "id"
-icon     = "https://raw.githubusercontent.com/HnDK0/external-sources/main/icons/bacalightnovel.png"
+icon     = "https://cdn.jsdelivr.net/gh/HnDK0/external-sources@jsdelivr/icons/bacalightnovel.png"
 
 -- ── Хелперы ───────────────────────────────────────────────────────────────────
 

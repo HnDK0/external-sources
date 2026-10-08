@@ -4,7 +4,7 @@ name      = "Novel Bin"
 version   = "1.1.1"
 baseUrl   = "https://novelbin.com/"
 language  = "en"
-icon      = "https://raw.githubusercontent.com/HnDK0/external-sources/main/icons/novelbin.png"
+icon      = "https://cdn.jsdelivr.net/gh/HnDK0/external-sources@jsdelivr/icons/novelbin.png"
 status    = "dead"
 
 -- ── Кэш страниц (1 запрос вместо 4–5) ────────────────────────────────────────

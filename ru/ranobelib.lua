@@ -4,7 +4,7 @@ name     = "RanobeLib"
 version  = "1.0.10"
 baseUrl  = "https://ranobelib.me/"
 language = "ru"
-icon     = "https://raw.githubusercontent.com/HnDK0/external-sources/main/icons/ranobelib.png"
+icon     = "https://cdn.jsdelivr.net/gh/HnDK0/external-sources@jsdelivr/icons/ranobelib.png"
 
 -- ── Константы ─────────────────────────────────────────────────────────────────
 

@@ -4,7 +4,7 @@ name     = "Fiction Zone"
 version  = "1.1.0"
 baseUrl  = "https://fictionzone.net/"
 language = "en"
-icon     = "https://raw.githubusercontent.com/HnDK0/external-sources/main/icons/fictionzone.png"
+icon     = "https://cdn.jsdelivr.net/gh/HnDK0/external-sources@jsdelivr/icons/fictionzone.png"
 
 -- ── Хелперы ──
 

@@ -3,7 +3,7 @@ name     = "Rewayat Club"
 version  = "1.0.0"
 baseUrl  = "https://api.rewayat.club/"
 language = "ar"
-icon     = "https://raw.githubusercontent.com/HnDK0/external-sources/main/icons/rewayatclub.png"
+icon     = "https://cdn.jsdelivr.net/gh/HnDK0/external-sources@jsdelivr/icons/rewayatclub.png"
 
 -- Сайт работает через отдельный DRF JSON API (https://api.rewayat.club).
 -- HTML-страницы — Nuxt-приложение с клиентским рендерингом, поэтому весь

@@ -4,7 +4,7 @@ name     = "Sto9"
 version = "1.0.6"
 baseUrl  = "https://sto9.com/"
 language = "zh"
-icon     = "https://raw.githubusercontent.com/HnDK0/external-sources/main/icons/sto9.png"
+icon     = "https://cdn.jsdelivr.net/gh/HnDK0/external-sources@jsdelivr/icons/sto9.png"
 
 -- ── Хелперы ───────────────────────────────────────────────────────────────────
 

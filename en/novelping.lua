@@ -4,7 +4,7 @@ name      = "Novel Ping"
 version   = "1.0.1"
 baseUrl   = "https://novelping.com/"
 language  = "en"
-icon      = "https://raw.githubusercontent.com/HnDK0/external-sources/main/icons/novelping.png"
+icon      = "https://cdn.jsdelivr.net/gh/HnDK0/external-sources@jsdelivr/icons/novelping.png"
 
 -- ── Кэш страниц (1 запрос вместо 4–5) ────────────────────────────────────────
 

@@ -10,7 +10,7 @@ name     = "カクヨム (Kakuyomu)"
 version  = "1.0.0"
 baseUrl  = "https://kakuyomu.jp/"
 language = "ja"
-icon     = "https://raw.githubusercontent.com/HnDK0/external-sources/main/icons/kakuyomu.png"
+icon     = "https://cdn.jsdelivr.net/gh/HnDK0/external-sources@jsdelivr/icons/kakuyomu.png"
 
 local SITE = "https://kakuyomu.jp"
 local PAGE_SIZE = 20

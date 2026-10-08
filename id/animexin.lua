@@ -9,7 +9,7 @@ version      = "1.0.0"
 baseUrl      = "https://animexin.dev"
 language     = "id"
 content_type = "video"
-icon         = "https://raw.githubusercontent.com/HnDK0/external-sources/main/icons/animexin.png"
+icon         = "https://cdn.jsdelivr.net/gh/HnDK0/external-sources@jsdelivr/icons/animexin.png"
 
 local CATALOG = baseUrl .. "/anime/"
 local SEARCH  = baseUrl .. "/?s="

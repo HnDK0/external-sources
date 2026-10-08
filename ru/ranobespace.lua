@@ -4,7 +4,7 @@ name     = "Ranobe.space"
 version  = "1.1.3"
 baseUrl  = "https://ranobe.space/"
 language = "ru"
-icon     = "https://raw.githubusercontent.com/HnDK0/external-sources/main/icons/ranobespace.png"
+icon     = "https://cdn.jsdelivr.net/gh/HnDK0/external-sources@jsdelivr/icons/ranobespace.png"
 
 -- ── Хелперы ───────────────────────────────────────────────────────────────────
 

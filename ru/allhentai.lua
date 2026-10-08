@@ -3,7 +3,7 @@ name     = "AllHentai"
 version  = "1.0.0"
 baseUrl  = "https://20.allhen.online"
 language = "ru"
-icon     = "https://raw.githubusercontent.com/HnDK0/external-sources/main/icons/allhentai.png"
+icon     = "https://cdn.jsdelivr.net/gh/HnDK0/external-sources@jsdelivr/icons/allhentai.png"
 content_type = "manga"
 
 -- ══════════════════════════════════════════════════════

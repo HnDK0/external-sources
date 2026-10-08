@@ -8,7 +8,7 @@ name = "TomatoMTL"
 version = "1.0.0"
 baseUrl = "https://tomatomtl.com"
 language = "MTL"
-icon = "https://raw.githubusercontent.com/HnDK0/external-sources/main/icons/tomatomtl.png"
+icon = "https://cdn.jsdelivr.net/gh/HnDK0/external-sources@jsdelivr/icons/tomatomtl.png"
 
 -- ── Settings keys ──────────────────────────────────────────────────────────
 local PREF_MODE = "tomatomtl_mode" -- "raw" | "google" | "cina"

@@ -13,7 +13,7 @@ version  = "1.14.3"
 baseUrl      = "https://hitomi.la/"
 language     = "en"
 content_type = "manga"
-icon         = "https://raw.githubusercontent.com/HnDK0/external-sources/main/icons/hitomi.png"
+icon         = "https://cdn.jsdelivr.net/gh/HnDK0/external-sources@jsdelivr/icons/hitomi.png"
 
 -- CDN-база: на ней живут .nozomi-индексы, карточки галерей и служебные JS.
 local CDN = "https://ltn.gold-usergeneratedcontent.net"

@@ -18,7 +18,7 @@ version      = "5.1.0"
 baseUrl      = "https://tmohentai.app"
 language     = "es"
 content_type = "manga"
-icon         = "https://raw.githubusercontent.com/HnDK0/external-sources/main/icons/tmohentai.png"
+icon         = "https://cdn.jsdelivr.net/gh/HnDK0/external-sources@jsdelivr/icons/tmohentai.png"
 referer      = "https://tmohentai.app/"
 
 -- =====================================================================

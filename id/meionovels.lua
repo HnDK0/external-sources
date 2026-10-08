@@ -3,7 +3,7 @@ name     = "MeioNovels"
 version  = "1.1.0"
 baseUrl  = "https://meionovels.com"
 language = "id"
-icon     = "https://raw.githubusercontent.com/HnDK0/external-sources/main/icons/meionovels.png"
+icon     = "https://cdn.jsdelivr.net/gh/HnDK0/external-sources@jsdelivr/icons/meionovels.png"
 
 -- ── Хелперы ───────────────────────────────────────────────────────────────────
 

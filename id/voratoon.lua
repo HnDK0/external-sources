@@ -3,7 +3,7 @@ name     = "VoraToon"
 version  = "1.0.2"
 baseUrl  = "https://v5.voratoon.com/"
 language = "id"
-icon     = "https://raw.githubusercontent.com/HnDK0/external-sources/main/icons/voratoon.webp"
+icon     = "https://cdn.jsdelivr.net/gh/HnDK0/external-sources@jsdelivr/icons/voratoon.webp"
 content_type = "manga"
 
 -- ── Хелперы ───────────────────────────────────────────────────────────────────

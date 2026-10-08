@@ -4,7 +4,7 @@ name     = "ReadNovelFull"
 version  = "1.1.1"
 baseUrl  = "https://readnovelfull.com/"
 language = "en"
-icon     = "https://raw.githubusercontent.com/HnDK0/external-sources/main/icons/readnovelfull.png"
+icon     = "https://cdn.jsdelivr.net/gh/HnDK0/external-sources@jsdelivr/icons/readnovelfull.png"
 
 -- ── Хелперы ───────────────────────────────────────────────────────────────────
 

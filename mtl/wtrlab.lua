@@ -6,7 +6,7 @@ name = "WTR-LAB"
 version = "1.1.11"
 baseUrl = "https://wtr-lab.com/"
 language = "MTL"
-icon = "https://raw.githubusercontent.com/HnDK0/external-sources/main/icons/wtr-lab.png"
+icon = "https://cdn.jsdelivr.net/gh/HnDK0/external-sources@jsdelivr/icons/wtr-lab.png"
 description = "Machine-translated novels (wtr-lab.com). AI, raw (web), and Web+ translation modes, full novel-finder filters. If a 'Security Check' error appears, open any chapter of the book in the integrated browser, complete the verification, then retry."
 
 -- ── Settings keys ──────────────────────────────────────────────────────────

@@ -4,7 +4,7 @@ name     = "iXdzs8"
 version  = "1.0.2"
 baseUrl  = "https://www.ixdzs8.com/"
 language = "zh"
-icon     = "https://raw.githubusercontent.com/HnDK0/external-sources/main/icons/ixdzs8.png"
+icon     = "https://cdn.jsdelivr.net/gh/HnDK0/external-sources@jsdelivr/icons/ixdzs8.png"
 
 -- ── Changelog (1.0.0 → 1.0.1) ───────────────────────────────────────────────
 -- FIX: Chapter list now uses the POST /novel/clist/ API instead of

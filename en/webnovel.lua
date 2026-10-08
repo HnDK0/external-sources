@@ -4,7 +4,7 @@ name     = "WebNovel"
 version  = "2.0.0"
 baseUrl  = "https://www.webnovel.com/"
 language = "en"
-icon     = "https://raw.githubusercontent.com/HnDK0/external-sources/main/icons/webnovel.png"
+icon     = "https://cdn.jsdelivr.net/gh/HnDK0/external-sources@jsdelivr/icons/webnovel.png"
 
 function getUserAgentPreset()
   return "Chrome Desktop"

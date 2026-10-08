@@ -8,7 +8,7 @@ version    = "1.0.0"
 baseUrl    = "https://doujin.desu.xxx"
 language   = "id"
 content_type = "manga"
-icon       = "https://raw.githubusercontent.com/HnDK0/external-sources/refs/heads/main/icons/doujindesu.png"
+icon       = "https://cdn.jsdelivr.net/gh/HnDK0/external-sources@jsdelivr/icons/doujindesu.png"
 referer    = "https://doujin.desu.xxx/"
 
 local LIMIT = 24

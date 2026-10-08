@@ -13,7 +13,7 @@ name         = "Anime3rb"
 version      = "1.0.0"
 baseUrl      = "https://anime3rb.com"
 language     = "ar"
-icon         = "https://raw.githubusercontent.com/HnDK0/external-sources/refs/heads/main/icons/anime3rb.png"
+icon         = "https://cdn.jsdelivr.net/gh/HnDK0/external-sources@jsdelivr/icons/anime3rb.png"
 
 -- ============ Каталог ============
 

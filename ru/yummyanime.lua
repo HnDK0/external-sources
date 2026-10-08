@@ -10,7 +10,7 @@ name        = "YummyAnime"
 version     = "1.0.2"
 baseUrl     = "https://ru.yummyani.me"
 language    = "ru"
-icon        = "https://raw.githubusercontent.com/HnDK0/external-sources/refs/heads/main/icons/yummyanime.png"
+icon        = "https://cdn.jsdelivr.net/gh/HnDK0/external-sources@jsdelivr/icons/yummyanime.png"
 
 local API     = "https://api.yani.tv"
 -- Lang — заголовок, которым сайт (ru.yummyani.me) выбирает язык ответа api.yani.tv:

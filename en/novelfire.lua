@@ -3,7 +3,7 @@ name     = "NovelFire"
 version  = "1.0.8"
 baseUrl  = "https://novelfire.net"
 language = "en"
-icon     = "https://raw.githubusercontent.com/HnDK0/external-sources/main/icons/novelfire.png"
+icon     = "https://cdn.jsdelivr.net/gh/HnDK0/external-sources@jsdelivr/icons/novelfire.png"
 
 -- ── Хелперы ───────────────────────────────────────────────────────────────────
 

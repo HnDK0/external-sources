@@ -6,7 +6,7 @@ name         = "Anime4Up"
 version      = "1.0.2"
 baseUrl      = "https://w1.anime4up.rest"
 language     = "ar"
-icon         = "https://raw.githubusercontent.com/HnDK0/external-sources/refs/heads/main/icons/anime4up.png"
+icon         = "https://cdn.jsdelivr.net/gh/HnDK0/external-sources@jsdelivr/icons/anime4up.png"
 -- Обход Cloudflare включён для всех запросов к базовому домену:
 -- движок решает челлендж в скрытом WebView и печёт cf_clearance.
 cf_options   = { whitelist = false }

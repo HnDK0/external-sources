@@ -3,7 +3,7 @@ name     = "NovelNice"
 version  = "1.4.4"
 baseUrl  = "https://novelnice.com/"
 language = "en"
-icon     = "https://raw.githubusercontent.com/HnDK0/external-sources/main/icons/novelnice.png"
+icon     = "https://cdn.jsdelivr.net/gh/HnDK0/external-sources@jsdelivr/icons/novelnice.png"
 
 -- ── Хелперы ───────────────────────────────────────────────────────────────────
 

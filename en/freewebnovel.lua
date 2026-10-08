@@ -3,7 +3,7 @@ name     = "FreeWebNovel"
 version  = "1.1.0"
 baseUrl  = "https://freewebnovel.com"
 language = "en"
-icon     = "https://raw.githubusercontent.com/HnDK0/external-sources/main/icons/freewebnovel.png"
+icon     = "https://cdn.jsdelivr.net/gh/HnDK0/external-sources@jsdelivr/icons/freewebnovel.png"
 
 local _pageCache = {}
 

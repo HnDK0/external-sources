@@ -3,7 +3,7 @@ name     = "SeiManga"
 version  = "1.0.0"
 baseUrl  = "https://1.seimanga.me"
 language = "ru"
-icon     = "https://raw.githubusercontent.com/HnDK0/external-sources/main/icons/readmanga.png"
+icon     = "https://cdn.jsdelivr.net/gh/HnDK0/external-sources@jsdelivr/icons/readmanga.png"
 content_type = "manga"
 
 -- ══════════════════════════════════════════════════════
