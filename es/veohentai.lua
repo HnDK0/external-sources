@@ -4,18 +4,23 @@
 -- Поиск: /buscar/?q=… — отдаёт карточки ЭПИЗОДОВ, приводим их к /serie/<slug>/.
 -- Страница сериала: h1 = название, обложка — <img alt="<название>">, жанры — /genero/*.
 --   Синопсиса на ней нет: он лежит в JSON-LD VideoObject первой страницы эпизода.
--- Поток (HentaiPlayer / NHPlayer, 5 шагов):
+-- Поток (HentaiPlayer / NHPlayer):
+--   Формат A (vid=, r2.1hanime.com) — 5 шагов:
 --   1. /ver/<slug>-episodio-N/ → <iframe src="https://<host>/v/<code>/">
 --   2. /v/<code>/            → <li data-id="/player.php?vid=..&s=..&i=..&type=">
 --   3. /player.php?<…>       → <script src="player-core-v2.php?t=…">
 --   4. /player-core-v2.php   → var _a='hex.hex' (sc), var _b='16 hex' (rid)
 --   5. /get-video-url-v2.php?vid=..&p1..p4=8hex&t=<unix>&sc=..&rid=..&fp=<b64>&df=&pow=
 --      (заголовок X-Requested-With обязателен, без него 403) → {"url":"…mp4?verify=…"}
+--   Формат B (u=, cdn.hentaiplayer.com) — прямой base64-URL, челлендж не нужен:
+--   /v/<code>/ → <li data-id="/player.php?u=<b64 mp4>&i=..&type=">; декодируем u=.
 --   Параметр s — base64 со ссылкой на испанский .srt (отдаётся без Referer).
+--   ВАЖНО (проверено живьём 2026-10-08): mp4 формата A живёт на
+--   r2.1hanime.com под Cloudflare-защитой по TLS-фингерпринту
 
 id           = "veohentai"
 name         = "Veohentai"
-version      = "1.0.0"
+version      = "1.0.1"
 baseUrl      = "https://veohentai.com"
 language     = "es"
 content_type = "video"
@@ -28,12 +33,6 @@ local EP_SEL    = 'a[href*="/ver/"]'
 -- (3+3+3+3+15 с) — иначе один мёртвый хост в цепочке плеера тянет полминуты.
 local PAGE_TIMEOUT   = 15000
 local PLAYER_TIMEOUT = 12000
-
--- Замерено: r2.1hanime.com отдаёт 403 на UA вида okhttp/4.x и на пустой UA,
--- но 206/200 video/mp4 на обычный браузерный UA. Хардкод тут не перебивает
--- пользовательские настройки, а закрывает реально замеренную CF-заглушку.
-local BROWSER_UA = "Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 " ..
-                   "(KHTML, like Gecko) Chrome/150.0.0.0 Safari/537.36"
 
 local _pageCache = {}
 
@@ -420,17 +419,72 @@ end
 
 -- Имена переменных в player-core-v2.js обфусцированы и меняются, но формат
 -- значений стабилен: sc = "hex.hex", rid = 16 hex.
+-- regex_match отдаёт таблицу ПОЛНЫХ совпадений (без групп), поэтому значение
+-- в кавычках достаётся Lua-паттерном из m[1]; полное совпадение содержит
+-- пробелы и кавычки и ломает SSRF-проверку URL (java.net.URI).
 local function playerChallenge(js)
-    local sc = regex_match(js, "var\\s+[\\w$]+='([0-9a-f]+\\.[0-9a-f]+)'")
-    local rid = regex_match(js, "var\\s+[\\w$]+='([0-9a-f]{16})'")
-    sc = type(sc) == "table" and sc[1] or nil
-    rid = type(rid) == "table" and rid[1] or nil
+    local m = regex_match(js, "var\\s+[\\w$]+='([0-9a-f]+\\.[0-9a-f]+)'")
+    local sc = type(m) == "table" and type(m[1]) == "string"
+        and m[1]:match("'([0-9a-f]+%.[0-9a-f]+)'") or nil
+    m = regex_match(js, "var\\s+[\\w$]+='([0-9a-f]{16})'")
+    local rid = type(m) == "table" and type(m[1]) == "string"
+        and m[1]:match("'([0-9a-f]+)'") or nil
     if type(sc) ~= "string" or type(rid) ~= "string" then return nil, nil end
     return sc, rid
 end
 
--- data-id → подписанная ссылка на mp4. Возвращает url и ссылку на субтитры.
+-- Части вызова из player.php: скрытых блока два — настоящий и приманка
+-- (фиксированные id tpl/tss/ch3, data-v/data-ts/data-challenge). Настоящий
+-- определяется по ts == префикс _pV.pid, id и имена data-* рандомизированы.
+-- Возвращает p1..p4 и ts (t в запросе обязан быть ts, иначе "Invalid proof").
+local function playerParts(ph)
+    local ts = ph:match('_pV=%{vid:".-",ct:".-",pid:"(%d+)_')
+    if not ts then return nil end
+    local anchor = '="' .. ts .. '"'
+    local i = ph:find(anchor, 1, true)
+    if not i then return nil end
+    -- Начало контейнера — последний <div style="display:none до ts.
+    local start, pos = nil, 1
+    while true do
+        local p = ph:find('<div style="display:none', pos, true)
+        if not p or p > i then break end
+        start, pos = p, p + 1
+    end
+    if not start then return nil end
+    local block = ph:sub(start, i + 64)
+    local p1 = block:match('<span[^>]*data%-[0-9a-f]+="([0-9a-f]+)"')
+    local p2 = block:match('<input type="hidden"[^>]*value="([0-9a-f]+)"')
+    local p3 = block:match('<div[^>]*data%-[0-9a-f]+="([0-9a-f]+)"')
+    local p4 = block:match('<template[^>]*><p>([0-9a-f]+)</p></template>')
+    if not (p1 and p2 and p3 and p4) then return nil end
+    return p1, p2, p3, p4, ts
+end
+
+-- data-id → ссылка на mp4. Возвращает url, субтитры и флаг http11 (формат A
+-- живёт на r2.1hanime.com под CF по TLS-фингерпринту — плееру нужен h1).
 local function resolveServer(host, dataId, label)
+    -- Параметр s (оба формата) — base64 со ссылкой на испанский .srt.
+    local subtitle
+    local raw = queryParam(dataId, "s")
+    if type(raw) == "string" and raw ~= "" then
+        local srt = base64_decode(raw)
+        if type(srt) == "string" and srt ~= "" then
+            subtitle = { url = srt, label = "Español", lang = "es" }
+        end
+    end
+
+    -- Формат B: параметр u= несёт прямой base64-URL на cdn.hentaiplayer.com,
+    -- челлендж не нужен (проверено живьём 2026-10-08: 206/200 без заголовков).
+    raw = queryParam(dataId, "u")
+    if type(raw) == "string" and raw ~= "" then
+        local direct = base64_decode(raw)
+        if type(direct) ~= "string" or direct == "" then
+            log_error("Veohentai: bad u= param in data-id")
+            return nil, nil
+        end
+        return direct, subtitle, false
+    end
+
     local r = httpGet(host .. dataId, 2)
     if not r then
         log_error("Veohentai: player.php unreachable: " .. tostring(dataId))
@@ -452,12 +506,20 @@ local function resolveServer(host, dataId, label)
         return nil, nil
     end
 
+    -- Части челленджа из player.php: p1..p4 и t (== префикс _pV.pid) обязаны
+    -- совпасть с блоком-приманкой, иначе сервер отвечает "Invalid challenge".
+    local p1, p2, p3, p4, ts = playerParts(r.body)
+    if not p1 then
+        log_error("Veohentai: no challenge parts in player.php")
+        return nil, nil
+    end
+
     -- Отпечаток: сервер проверяет только t >= 2000, детали устройства не важны.
     local fp = base64_encode('{"t":5000,"b":{"sw":1440,"sh":900}}')
     local url = host .. "/get-video-url-v2.php"
         .. "?vid=" .. url_encode(queryParam(dataId, "vid") or "")
-        .. "&p1=0f0f0f0f&p2=0f0f0f0f&p3=0f0f0f0f&p4=0f0f0f0f"
-        .. "&t=" .. tostring(math.floor(os_time() / 1000))
+        .. "&p1=" .. p1 .. "&p2=" .. p2 .. "&p3=" .. p3 .. "&p4=" .. p4
+        .. "&t=" .. ts
         .. "&sc=" .. sc .. "&rid=" .. rid
         .. "&fp=" .. url_encode(fp)
         .. "&df=&pow="
@@ -473,16 +535,8 @@ local function resolveServer(host, dataId, label)
     end
 
     -- Параметр s — base64 со ссылкой на .srt с испанскими субтитрами.
-    local subtitle
-    local raw = queryParam(dataId, "s")
-    if type(raw) == "string" and raw ~= "" then
-        local srt = base64_decode(raw)
-        if type(srt) == "string" and srt ~= "" then
-            subtitle = { url = srt, label = "Español", lang = "es" }
-        end
-    end
     if label == nil or label == "" then label = host end
-    return data.url, subtitle
+    return data.url, subtitle, true
 end
 
 function getVideoList(episodeUrl)
@@ -505,17 +559,19 @@ function getVideoList(episodeUrl)
                     local dataId = li:attr("data-id") or ""
                     if dataId:find("/player.php", 1, true) == 1 then
                         local label = string_trim(li.text)
-                        local url, subtitle = resolveServer(host, dataId, label)
+                        local url, subtitle, http11 = resolveServer(host, dataId, label)
                         if url and not seen[url] then
                             seen[url] = true
                             local source = {
                                 url = url,
                                 quality = label ~= "" and label or host,
                                 headers = {
-                                    ["User-Agent"] = BROWSER_UA,
                                     ["Referer"] = host .. "/",
                                 },
                             }
+                            -- Формат A (r2.1hanime.com): CF режет h2-предложение по
+                            -- TLS-фингерпринту → плеер ходит туда только h1.
+                            if http11 then source.http11 = true end
                             if subtitle and not seenSub[subtitle.url] then
                                 seenSub[subtitle.url] = true
                                 source.subtitles = { subtitle }
@@ -530,8 +586,8 @@ function getVideoList(episodeUrl)
     if #sources == 0 then
         log_error("Veohentai: no sources for " .. tostring(episodeUrl))
     end
-    -- UNVERIFIED: сам mp4 отдаётся только по HTTP/1.1 с браузерным UA —
-    -- по HTTP/2 Cloudflare на r2.1hanime.com отвечает 403. Управлять версией
-    -- протокола из плагина нельзя, поэтому в приложении плеер может не стартовать.
+    -- Формат A: mp4 живёт на r2.1hanime.com под CF-защитой по TLS-фингерпринту
+    -- (см. шапку). Приложение (OkHttp) получает 403, браузер — 206/200. Это
+    -- ограничение сайта, не плагина: заголовки UA/Referer/куки не влияют.
     return sources
 end
