@@ -9,7 +9,7 @@
 
 id           = "anichin"
 name         = "Anichin"
-version      = "1.0.0"
+version      = "1.0.1"
 baseUrl      = "https://anichin.moe"
 language     = "id"
 content_type = "video"
@@ -711,12 +711,21 @@ local function mirrorOptions(body)
             local label = string_clean(html_text(opt.html))
             local decoded = base64_decode(value)
             if type(decoded) == "string" and decoded ~= "" then
+                -- regex_match возвращает ПОЛНЫЕ совпадения (m.value), а не
+                -- группы: m[1] здесь = 'src="https://…"' с префиксом и кавычками.
+                -- Вырезаем сам URL; если движок вернёт чистую группу — оставим.
                 local m = regex_match(decoded, '(?i)src\\s*=\\s*"([^"]+)"')
                 local src = m and m[1] or nil
+                if src then src = src:match('^[^"]*"([^"]+)"') or src end
                 if not src then src = decoded:match('src=([^%s>]+)') end
                 if src then
                     src = src:gsub('^"', ""):gsub('"$', "")
-                    out[#out + 1] = { label = label, embed = absUrl(src) }
+                        :gsub("^'", ""):gsub("'$", "")
+                    -- Кавычка/пробел внутри src = битый embed: он упал бы в
+                    -- http_get_batch до сети (HTTP -1), поэтому не добавляем.
+                    if not src:find("[%s\"'<>]") then
+                        out[#out + 1] = { label = label, embed = absUrl(src) }
+                    end
                 end
             end
         end

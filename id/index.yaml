@@ -3,7 +3,7 @@ name: "Indonesian"
 sources:
   - id: "anichin"
     name: "Anichin"
-    version: "1.0.0"
+    version: "1.0.1"
     url: "https://raw.githubusercontent.com/HnDK0/external-sources/refs/heads/main/id/anichin.lua"
     icon: "https://raw.githubusercontent.com/HnDK0/external-sources/refs/heads/main/icons/anichin.png"
     language: "id"
