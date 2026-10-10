@@ -123,6 +123,24 @@ local function decryptPlayback(body)
     return plain
 end
 
+-- JSON-строка url приходит экранированной (\u0026 и т.п.). Regex выше
+-- берёт сырой текст — без разэкранирования CDN отдаёт 404 по битому
+-- query-стрингу (проверено на эмуляторе 2026-10-10: t=...\u0026s=...).
+local function jsonUnescape(s)
+    local map = { n = "\n", r = "\r", t = "\t", b = "\b", f = "\f" }
+    s = s:gsub("\\u(%x%x%x%x)", function(h)
+        local cp = tonumber(h, 16)
+        if cp < 0x80 then return string.char(cp) end
+        if cp < 0x800 then
+            return string.char(0xC0 + math.floor(cp / 0x40), 0x80 + cp % 0x40)
+        end
+        return string.char(0xE0 + math.floor(cp / 0x1000),
+            0x80 + math.floor(cp / 0x40) % 0x40, 0x80 + cp % 0x40)
+    end)
+    s = s:gsub('\\(["\\/bfnrt])', function(c) return map[c] or c end)
+    return s
+end
+
 -- Первый HLS-источник; остальное (mp4 и пр.) — фоллбэк.
 local function pickSource(plain)
     local sources = plain:match('"sources"%s*:%s*(%b[])')
@@ -135,6 +153,7 @@ local function pickSource(plain)
         local u = obj:match('"url"%s*:%s*"([^"]+)"')
         local mime = obj:match('"mime_type"%s*:%s*"([^"]+)"')
         if u and u ~= "" then
+            u = jsonUnescape(u)
             if u:find(".m3u8", 1, true)
                 or (mime and mime:find("mpegurl", 1, true)) then
                 return u, "hls"
