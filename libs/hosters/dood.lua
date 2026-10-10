@@ -2,7 +2,7 @@
 -- Lib: Doodstream y clones (dsvplay, dood.*)
 -- Loaded via require_lib("dood"); uses require_lib("urls").
 -- =====================================================================
-local version = "1.1.0"
+local version = "1.2.0"
 
 local urls = require_lib("urls")
 
@@ -26,6 +26,29 @@ end
 
 local RANDOM_CHARS = "abcdefghijklmnopqrstuvwxyzABCDEFGHIJKLMNOPQRSTUVWXYZ0123456789"
 
+local PASS_MD5_RE = "(/pass_md5/[^'\"]+)"
+
+-- Cloudflare Turnstile gate: the embed page serves the widget and no
+-- /pass_md5; only after the play click (level host JS, the Cloudflare
+-- iframe itself is untouched) does the reloaded DOM contain /pass_md5/.
+-- Fall back to a WebView click on the same URL when the host exposes
+-- webview_fetch; without it (JVM tester) the caller sees nil as before.
+local function passMd5AfterTurnstile(embedUrl, body)
+    if not body:find("turnstile", 1, true) then return nil end
+    if type(webview_fetch) ~= "function" then
+        log_error("dood: turnstile gate, webview_fetch unavailable")
+        return nil
+    end
+    local html = webview_fetch(embedUrl, { click = [[$(".captcha_l").click()]] })
+    if type(html) ~= "string" then
+        log_error("dood: turnstile click returned no html")
+        return nil
+    end
+    local md5 = html:match(PASS_MD5_RE)
+    if not md5 then log_error("dood: turnstile html has no pass_md5") end
+    return md5
+end
+
 -- Merged from the four inline copies of resolveDood (ar/anime4up.lua:1377,
 -- ar/witanime.lua:1188, id/anichin.lua:656, id/animexin.lua:642) and the
 -- former extractDood — the bodies were equivalent; fetching the embed page
@@ -36,7 +59,8 @@ local RANDOM_CHARS = "abcdefghijklmnopqrstuvwxyzABCDEFGHIJKLMNOPQRSTUVWXYZ012345
 -- failed.
 function M.resolveDood(embedUrl, body)
     if type(body) ~= "string" then return nil end
-    local md5 = body:match("(/pass_md5/[^'\"]+)")
+    local md5 = body:match(PASS_MD5_RE)
+    if not md5 then md5 = passMd5AfterTurnstile(embedUrl, body) end
     if not md5 then return nil end
     local origin = urls.origin(embedUrl)
     if not origin then return nil end
