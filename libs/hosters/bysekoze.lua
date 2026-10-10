@@ -10,6 +10,9 @@
 --   captcha 200 (pow_difficulty 16) -> verify 200 -> playback 200 ->
 --   decrypt -> master.m3u8 -> 200 application/vnd.apple.mpegurl.
 -- Все URL/тела/заголовки ниже — те же, что в этом прогоне.
+-- UA не хардкодим: заголовки подставляет движок (UserAgentInterceptor /
+-- дефолтный header тестера), а client.user_agent в attest подписываем
+-- значением get_user_agent() — тем же байт-в-байт.
 -- Телеметрию (view/heartbeat/timeslider/settings) не реализуем.
 -- =====================================================================
 local version = "1.0.0"
@@ -19,8 +22,6 @@ local M = {}
 -- Бюджет запросов: origin-iframe за CF, авто-обход ждёт до 15с.
 local EMBED_TIMEOUT = 22000
 local SITE = "https://bysekoze.com"
-local BROWSER_UA = "Mozilla/5.0 (Macintosh; Intel Mac OS X 10_15_7) "
-    .. "AppleWebKit/537.36 (KHTML, like Gecko) Chrome/131.0.0.0 Safari/537.36"
 
 -- ── JSON-тела вручную (движок отдаёт json_encode только как опцию; тела
 --    ниже — фиксированный набор полей, сериализация тривиальна). ──────────
@@ -170,7 +171,6 @@ function M.extractBysekoze(embedUrl)
     --    запрос — только из embed_frame_url, без хардкода.
     local d = http_get(SITE .. "/api/videos/" .. code .. "/embed/details", {
         timeout = EMBED_TIMEOUT,
-        headers = { ["User-Agent"] = BROWSER_UA },
     })
     if not d or not d.success or type(d.body) ~= "string" then
         log_error("bysekoze: details HTTP " .. tostring(d and d.code))
@@ -184,13 +184,13 @@ function M.extractBysekoze(embedUrl)
         return nil
     end
 
-    -- Все запросы origin-iframe — с X-Embed-Parent (как в браузере).
+    -- Все запросы origin-iframe — с X-Embed-Parent (как в браузере);
+    -- User-Agent не трогаем — его подставляет движок.
     local function post(path, body)
         return http_post(origin .. path, body, {
             timeout = EMBED_TIMEOUT,
             headers = {
                 ["Content-Type"] = "application/json",
-                ["User-Agent"] = BROWSER_UA,
                 ["X-Embed-Parent"] = parent,
             },
         })
@@ -218,14 +218,21 @@ function M.extractBysekoze(embedUrl)
         return nil
     end
     -- Минимальный client/storage (так же проходит живой прогон,
-    -- confidence 0.45..0.7 — для playback достаточно).
+    -- confidence 0.45..0.7 — для playback достаточно). client.user_agent —
+    -- эффективный UA движка (тот же, что в заголовках http_*); если
+    -- get_user_agent не зарегистрирован, поле client опускаем целиком.
+    local ua = type(get_user_agent) == "function" and get_user_agent() or nil
+    local clientJson = ""
+    if type(ua) == "string" and ua ~= "" then
+        clientJson = ',"client":{"user_agent":' .. jstr(ua) .. '}'
+    end
     local attestBody = '{"viewer_id":"","device_id":""'
         .. ',"challenge_id":' .. jstr(challengeId)
         .. ',"nonce":' .. jstr(nonce)
         .. ',"signature":' .. jstr(sig.signature)
         .. ',"public_key":{"kty":"EC","crv":"P-256","x":' .. jstr(sig.x)
         .. ',"y":' .. jstr(sig.y) .. '}'
-        .. ',"client":{"user_agent":' .. jstr(BROWSER_UA) .. '}'
+        .. clientJson
         .. ',"storage":{},"attributes":{"entropy":"low"}}'
     local a = post("/api/videos/access/attest", attestBody)
     if not a or not a.success or type(a.body) ~= "string" then
@@ -290,7 +297,6 @@ function M.extractBysekoze(embedUrl)
             timeout = EMBED_TIMEOUT,
             headers = {
                 ["Content-Type"] = "application/json",
-                ["User-Agent"] = BROWSER_UA,
                 ["X-Embed-Parent"] = parent,
                 ["X-Captcha-Token"] = captchaToken,
             },
