@@ -1,5 +1,5 @@
 ## 🧩 External Sources
-* **Plugin Index URL:** `https://raw.githubusercontent.com/HnDK0/external-sources/refs/heads/main/index.yaml`
+* **Plugin Index URL:** `https://raw.githubusercontent.com/HnDK0/external-sources/refs/heads/feat/shared-libs-kotlin/index.yaml`
 * **Mirror (Codeberg):** `https://codeberg.org/HnDK0/external-sources/raw/branch/main/index.yaml`
 * **Mirror (jsDelivr):** `https://cdn.jsdelivr.net/gh/HnDK0/external-sources@jsdelivr/index.yaml`
 
