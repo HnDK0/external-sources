@@ -50,7 +50,7 @@ libraries:
     sha256: "5880ce4e77e33f066e981fc9cf603f4307fa862c12c15b6da0c5a6bb746d1439"
   - id: "dood"
     url: "https://raw.githubusercontent.com/HnDK0/external-sources/refs/heads/feat/shared-libs-kotlin/libs/hosters/dood.lua"
-    sha256: "72c30ad498c1c031eb3e655569b4ecac7c381a355b5ece1fe167b6e187b2c1f1"
+    sha256: "0992b6d6d360f776c5c29f61ed1f259c9694d2e0f458de4792c6fb13f2607f3e"
   - id: "dotplay"
     url: "https://raw.githubusercontent.com/HnDK0/external-sources/refs/heads/feat/shared-libs-kotlin/libs/hosters/dotplay.lua"
     sha256: "572519a6a66b595b010fee0c8c0cf6e82b683715aa7b099c4c5e32089955d395"

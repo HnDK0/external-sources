@@ -2,7 +2,7 @@
 -- Lib: Doodstream y clones (dsvplay, dood.*)
 -- Loaded via require_lib("dood"); uses require_lib("urls").
 -- =====================================================================
-local version = "1.2.0"
+local version = "1.2.1"
 
 local urls = require_lib("urls")
 
@@ -39,7 +39,12 @@ local function passMd5AfterTurnstile(embedUrl, body)
         log_error("dood: turnstile gate, webview_fetch unavailable")
         return nil
     end
-    local html = webview_fetch(embedUrl, { click = [[$(".captcha_l").click()]] })
+    -- expect включает popup-страховку: если авто-флоу не дал pass_md5,
+    -- откроется видимый WebView для ручного прохода Turnstile.
+    local html = webview_fetch(embedUrl, {
+        click = [[$(".captcha_l").click()]],
+        expect = "/pass_md5/",
+    })
     if type(html) ~= "string" then
         log_error("dood: turnstile click returned no html")
         return nil
