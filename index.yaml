@@ -50,7 +50,7 @@ libraries:
     sha256: "5880ce4e77e33f066e981fc9cf603f4307fa862c12c15b6da0c5a6bb746d1439"
   - id: "dood"
     url: "https://raw.githubusercontent.com/HnDK0/external-sources/refs/heads/main/libs/hosters/dood.lua"
-    sha256: "596a3c88dd4844b7ebd8671e3ec2ca3f8ec68c7901e55f4bfbea841bb374169e"
+    sha256: "7c09c4d427e0e65e3d6c30cd05cdeb145f033d622667941ec72947fcce8b48f4"
   - id: "dotplay"
     url: "https://raw.githubusercontent.com/HnDK0/external-sources/refs/heads/main/libs/hosters/dotplay.lua"
     sha256: "572519a6a66b595b010fee0c8c0cf6e82b683715aa7b099c4c5e32089955d395"
