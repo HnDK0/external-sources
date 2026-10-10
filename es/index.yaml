@@ -24,7 +24,7 @@ sources:
     content_type: "manga"
   - id: "latanime"
     name: "Latanime"
-    version: "2.3.0"
+    version: "2.3.1"
     url: "https://raw.githubusercontent.com/HnDK0/external-sources/refs/heads/feat/shared-libs-kotlin/es/latanime.lua"
     icon: "https://raw.githubusercontent.com/HnDK0/external-sources/refs/heads/feat/shared-libs-kotlin/icons/latanime.png"
     language: "es"

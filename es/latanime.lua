@@ -26,7 +26,7 @@
 
 id           = "latanime"
 name         = "Latanime"
-version      = "2.3.0"
+version      = "2.3.1"
 baseUrl      = "https://latanime.org"
 language     = "es"
 content_type = "video"
@@ -34,8 +34,11 @@ libs         = { "urls", "embeds" }
 icon         = "https://raw.githubusercontent.com/HnDK0/external-sources/main/icons/latanime.png"
 
 -- Таймауты: страницы сайта и эмбеды (сеть в эмуляторе без таймаута зависала).
+-- EMBED_TIMEOUT: бюджет должен перекрывать авто-обход CF (15с) — иначе движок
+-- отменяет запрос (Canceled) и мы ловим «2 таймаута 12с» на mixdrop и других
+-- CF-хостерах.
 local PAGE_TIMEOUT   = 15000
-local EMBED_TIMEOUT  = 12000
+local EMBED_TIMEOUT  = 22000
 
 -- =====================================================================
 -- GUARD: старые сборки приложения без require_lib.

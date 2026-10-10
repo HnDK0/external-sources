@@ -86,7 +86,7 @@ libraries:
     sha256: "561798992e4bd4638f04099e70147e3e62ec8f3f790967cd028b2d7626955ff3"
   - id: "okru"
     url: "https://raw.githubusercontent.com/HnDK0/external-sources/refs/heads/feat/shared-libs-kotlin/libs/hosters/okru.lua"
-    sha256: "46d9a8690fd7dbe273dd8cda07be546374e55ad825f2e9566d029ae7672a8a4f"
+    sha256: "cc874c339b9614e35de90142c8bbee57258f5c5d10383117dea66400795ee133"
   - id: "otaku"
     url: "https://raw.githubusercontent.com/HnDK0/external-sources/refs/heads/feat/shared-libs-kotlin/libs/hosters/otaku.lua"
     sha256: "bf14e2e5a2ffd3895de9d1ff6f71c159a287053045d816ab6852982e784b5712"

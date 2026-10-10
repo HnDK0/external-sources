@@ -5,7 +5,7 @@
 -- ar/witanime.lua:1536, id/anichin.lua:471, id/animexin.lua:484.
 -- Loaded via require_lib("okru"). No dependencies on other libs.
 -- =====================================================================
-local version = "1.0.0"
+local version = "1.0.1"
 
 local M = {}
 
@@ -18,12 +18,24 @@ local OKRU_REFERER = "https://ok.ru/"
 -- was parsed. Logging is plugin-specific and stays with the caller.
 function M.resolveOkRu(body)
     if type(body) ~= "string" then return {} end
+    -- Stub instead of the player: video removed or geo-blocked. Not a
+    -- parser failure, so log it explicitly and bail out early.
+    if body:find("vp_video_stub", 1, true) then
+        log_error("ok.ru: video stub (removed or geo-blocked)")
+        return {}
+    end
+    -- Primary: double quotes; fallback: single quotes.
     local opts = body:match('data%-options="([^"]+)"')
-    if not opts then return {} end
+        or body:match("data%-options='([^']+)'")
+    if not opts then
+        log_error("ok.ru: no data-options, body len=" .. #body .. " head=" .. body:sub(1, 200))
+        return {}
+    end
     opts = opts:gsub("&quot;", '"'):gsub("&#39;", "'"):gsub("&lt;", "<")
         :gsub("&gt;", ">"):gsub("&amp;", "&")
     local ok, data = pcall(json_parse, opts)
     if not ok or type(data) ~= "table" or type(data.flashvars) ~= "table" then
+        log_error("ok.ru: data-options parse failed, body len=" .. #body .. " opts=" .. opts:sub(1, 200))
         return {}
     end
     local meta = data.flashvars.metadata
