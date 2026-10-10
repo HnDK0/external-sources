@@ -4,7 +4,7 @@
 -- cada embebedor (dood, mixdrop, mp4upload, voe) + urls/hls y usa el API
 -- del motor unpack_packed (devuelve "" cuando no hay empaquetador).
 -- =====================================================================
-local version = "1.1.0"
+local version = "1.2.0"
 
 local urls      = require_lib("urls")
 local hls       = require_lib("hls")
@@ -12,6 +12,7 @@ local dood      = require_lib("dood")
 local mixdrop   = require_lib("mixdrop")
 local mp4upload = require_lib("mp4upload")
 local voe       = require_lib("voe")
+local savefiles = require_lib("savefiles")
 
 local M = {}
 
@@ -47,6 +48,11 @@ function M.extractFromEmbed(emb, body)
 
     if host:find("voe") or name == "voe" then
         local u, mime, ref = voe.extractVoe(emb.url, body)
+        if u then return u, mime, ref end
+    end
+
+    if host:find("savefiles") or name:find("savefiles") then
+        local u, mime, ref = savefiles.extractSavefiles(emb.url)
         if u then return u, mime, ref end
     end
 
