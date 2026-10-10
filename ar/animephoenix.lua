@@ -4,12 +4,56 @@
 content_type = "video"
 id           = "animephoenix"
 name         = "Anime Phoenix"
-version      = "1.0.1"
+version      = "1.1.0"
 baseUrl      = "https://anime-phoenix.com"
 language     = "ar"
 icon         = "https://raw.githubusercontent.com/HnDK0/external-sources/refs/heads/main/icons/animephoenix.png"
 
 local floor = math.floor
+
+-- ============ Guard: engine-API + общие либы (новые сборки NoveLA) ============
+-- Top-level обязан загрузиться без require_lib (иначе плагин молча исчезает из
+-- списка источников) — pcall-tryLib-паттерн latanime (M9): ошибка сохраняется
+-- в libErr и докладывается в ensureEngine.
+local libErr = nil
+local HAS_LIBS = type(require_lib) == "function"
+
+local function tryLib(name)
+    if not HAS_LIBS then return nil end
+    local ok, res = pcall(require_lib, name)
+    if not ok then libErr = tostring(res) return nil end
+    return res
+end
+
+local URLS = tryLib("urls")
+local HLS = tryLib("hls")
+local OKRU = tryLib("okru")
+local SHARED = tryLib("shared")
+local UQLOAD = tryLib("uqload")
+
+-- Канон (гайд «Паттерн guard»): проверяем только реально используемые API.
+-- На старых сборках show_error + error рвут вызов и просят обновить приложение.
+local function ensureEngine()
+    local missing = {}
+    if rawget(_G, "hmac_sha256") == nil then missing[#missing + 1] = "hmac_sha256" end
+    if rawget(_G, "unpack_packed") == nil then missing[#missing + 1] = "unpack_packed" end
+    if #missing > 0 then
+        show_error("NoveLA update required",
+            "This plugin needs new functions (" .. table.concat(missing, ", ") ..
+            "). Update the app to the latest version.")
+        error("A newer version of the app is required: " .. table.concat(missing, ","), 0)
+    end
+    if not HAS_LIBS then
+        show_error("NoveLA update required",
+            "This plugin needs shared libraries (require_lib). Update the app to the latest version.")
+        error("A newer version of the app is required: require_lib", 0)
+    end
+    if not URLS or not HLS or not OKRU or not SHARED or not UQLOAD then
+        show_error("Libraries not loaded",
+            "Open the extensions screen and tap update, then restart the app. " .. (libErr or ""))
+        error("Shared libraries not loaded", 0)
+    end
+end
 
 -- ============ Утилиты ============
 
@@ -42,11 +86,11 @@ local function fetchPage(url)
 end
 
 -- Есть ли медиа-расширение в конце пути URL (до "?" / "#").
+-- Общая либа hls (union копий, включая .mkv из этого плагина).
+-- Обёртка, не алиас: top-level обращение к полю nil-либы упало бы до
+-- ensureEngine (плагин молча исчезает — инцидент фазы 1).
 local function hasMediaExt(u)
-    local base = u:match("^[^%?#]*") or u
-    return base:match("%.m3u8$") ~= nil
-        or base:match("%.mp4$") ~= nil
-        or base:match("%.mkv$") ~= nil
+    return HLS.hasMediaExt(u)
 end
 
 -- Percent-декод пути URL для разбора имени файла: часть зеркал отдаёт ссылку
@@ -87,147 +131,6 @@ local function sourceLabel(name, u)
         or s:match("%d+p%s*%-%s*([%a][%w]*)%s*%]")
     if lang and lang ~= q then parts[#parts + 1] = lang end
     return table.concat(parts, " · ")
-end
-
--- ============ Крипто: SHA-256 / HMAC (чистый Lua) ============
--- Подпись api/search.php — HMAC-SHA256. Кластер перенесён из ar/witanime.lua
--- (копия, не ссылка): LuaJ (семантика Lua 5.1), только math.floor, string.*, table.*.
-
--- 32-битные операции над беззнаковыми (0 .. 2^32-1), только арифметика ──
-
-local function xb(a, b)
-    local r, p = 0, 1
-    for _ = 1, 8 do
-        local x, y = a % 16, b % 16
-        local n, q = 0, 1
-        for _ = 1, 4 do
-            local xa, ya = x % 2, y % 2
-            if xa ~= ya then n = n + q end
-            x, y, q = (x - xa) / 2, (y - ya) / 2, q * 2
-        end
-        r = r + n * p
-        a, b, p = (a - a % 16) / 16, (b - b % 16) / 16, p * 16
-    end
-    return r
-end
-
-local function band(a, b)
-    local r, p = 0, 1
-    for _ = 1, 8 do
-        local x, y = a % 16, b % 16
-        local n, q = 0, 1
-        for _ = 1, 4 do
-            local xa, ya = x % 2, y % 2
-            if xa == 1 and ya == 1 then n = n + q end
-            x, y, q = (x - xa) / 2, (y - ya) / 2, q * 2
-        end
-        r = r + n * p
-        a, b, p = (a - a % 16) / 16, (b - b % 16) / 16, p * 16
-    end
-    return r
-end
-
-local MOD32 = 4294967296
-local MAX32 = 4294967295
-
-local function bnot(a) return MAX32 - a end
-local function rshift(a, n) return floor(a / 2 ^ n) end
-local function ror(a, n)
-    n = n % 32
-    if n == 0 then return a end
-    return floor(a / 2 ^ n) + (a % 2 ^ n) * 2 ^ (32 - n)
-end
-
--- SHA-256 (FIPS 180-4) ──
-
-local K256 = {
-    0x428a2f98, 0x71374491, 0xb5c0fbcf, 0xe9b5dba5, 0x3956c25b, 0x59f111f1,
-    0x923f82a4, 0xab1c5ed5, 0xd807aa98, 0x12835b01, 0x243185be, 0x550c7dc3,
-    0x72be5d74, 0x80deb1fe, 0x9bdc06a7, 0xc19bf174, 0xe49b69c1, 0xefbe4786,
-    0x0fc19dc6, 0x240ca1cc, 0x2de92c6f, 0x4a7484aa, 0x5cb0a9dc, 0x76f988da,
-    0x983e5152, 0xa831c66d, 0xb00327c8, 0xbf597fc7, 0xc6e00bf3, 0xd5a79147,
-    0x06ca6351, 0x14292967, 0x27b70a85, 0x2e1b2138, 0x4d2c6dfc, 0x53380d13,
-    0x650a7354, 0x766a0abb, 0x81c2c92e, 0x92722c85, 0xa2bfe8a1, 0xa81a664b,
-    0xc24b8b70, 0xc76c51a3, 0xd192e819, 0xd6990624, 0xf40e3585, 0x106aa070,
-    0x19a4c116, 0x1e376c08, 0x2748774c, 0x34b0bcb5, 0x391c0cb3, 0x4ed8aa4a,
-    0x5b9cca4f, 0x682e6ff3, 0x748f82ee, 0x78a5636f, 0x84c87814, 0x8cc70208,
-    0x90befffa, 0xa4506ceb, 0xbef9a3f7, 0xc67178f2,
-}
-
-local function u32be(v)
-    return string.char(floor(v / 16777216) % 256, floor(v / 65536) % 256,
-                       floor(v / 256) % 256, v % 256)
-end
-
-local function sha256(msg)
-    local ml = #msg
-    local bits = ml * 8
-    local padz = (55 - ml) % 64
-    local hi = floor(bits / MOD32)
-    local lo = bits % MOD32
-    local raw = msg .. "\128" .. string.rep("\0", padz) .. u32be(hi) .. u32be(lo)
-
-    local h0, h1, h2, h3 = 0x6a09e667, 0xbb67ae85, 0x3c6ef372, 0xa54ff53a
-    local h4, h5, h6, h7 = 0x510e527f, 0x9b05688c, 0x1f83d9ab, 0x5be0cd19
-
-    local w = {}
-    for off = 1, #raw, 64 do
-        for i = 0, 15 do
-            local p = off + i * 4
-            w[i + 1] = floor(raw:byte(p) * 16777216) + raw:byte(p + 1) * 65536
-                     + raw:byte(p + 2) * 256 + raw:byte(p + 3)
-        end
-        for i = 17, 64 do
-            local a15, a2 = w[i - 15], w[i - 2]
-            local s0 = xb(xb(ror(a15, 7), ror(a15, 18)), rshift(a15, 3))
-            local s1 = xb(xb(ror(a2, 17), ror(a2, 19)), rshift(a2, 10))
-            w[i] = (w[i - 16] + s0 + w[i - 7] + s1) % MOD32
-        end
-
-        local a, b, c, d, e, f, g, hh = h0, h1, h2, h3, h4, h5, h6, h7
-        for t = 1, 64 do
-            local S1 = xb(xb(ror(e, 6), ror(e, 11)), ror(e, 25))
-            local ch = xb(band(e, f), band(bnot(e), g))
-            local temp1 = (hh + S1 + ch + K256[t] + w[t]) % MOD32
-            local S0 = xb(xb(ror(a, 2), ror(a, 13)), ror(a, 22))
-            local maj = xb(xb(band(a, b), band(a, c)), band(b, c))
-            local temp2 = (S0 + maj) % MOD32
-            hh, g, f = g, f, e
-            e = (d + temp1) % MOD32
-            d, c, b = c, b, a
-            a = (temp1 + temp2) % MOD32
-        end
-        h0 = (h0 + a) % MOD32
-        h1 = (h1 + b) % MOD32
-        h2 = (h2 + c) % MOD32
-        h3 = (h3 + d) % MOD32
-        h4 = (h4 + e) % MOD32
-        h5 = (h5 + f) % MOD32
-        h6 = (h6 + g) % MOD32
-        h7 = (h7 + hh) % MOD32
-    end
-
-    return u32be(h0) .. u32be(h1) .. u32be(h2) .. u32be(h3)
-        .. u32be(h4) .. u32be(h5) .. u32be(h6) .. u32be(h7)
-end
-
--- HMAC-SHA256 (RFC 2104) + hex ──
-
-local function xorBytes(a, b)
-    local t = {}
-    for i = 1, #a do
-        t[i] = string.char(xb(string.byte(a, i), string.byte(b, i)))
-    end
-    return table.concat(t)
-end
-
-local function hmacSha256(key, msg)
-    if #key > 64 then key = sha256(key) end
-    if #key < 64 then key = key .. string.rep("\0", 64 - #key) end
-    -- \54 = 0x36, \92 = 0x5c (десятичные эскейпы: \xXX в Lua 5.1 не работает).
-    local kip = xorBytes(key, string.rep("\54", 64))
-    local kop = xorBytes(key, string.rep("\92", 64))
-    return sha256(kop .. sha256(kip .. msg))
 end
 
 -- Hex вручную: string.format на этом движке игнорирует спецификаторы (гайд).
@@ -285,7 +188,7 @@ local function apiCatalog(q, ctype, status, sort, page)
     local tsStr = intToStr(ts)
     local msg = table.concat(
         { tsStr, q, ctype, "", status, "", "", tostring(page), sort }, ":")
-    local sig = hexEncode(hmacSha256(PX_PUBLIC_KEY, msg))
+    local sig = hexEncode(hmac_sha256(PX_PUBLIC_KEY, msg))
 
     local url = baseUrl .. "/api/search.php"
         .. "?type=" .. url_encode(ctype)
@@ -346,6 +249,7 @@ local function apiCatalog(q, ctype, status, sort, page)
 end
 
 function getCatalogList(index)
+    ensureEngine()
     return apiCatalog("", "tvshow", "", "views", index + 1)
 end
 
@@ -357,6 +261,7 @@ end
 -- поэтому в фильтры не выносим.
 
 function getFilterList()
+    ensureEngine()
     return {
         {
             type         = "select",
@@ -405,6 +310,7 @@ local function filterValue(filters, key, allowed)
 end
 
 function getCatalogFiltered(index, filters)
+    ensureEngine()
     local ctype = filterValue(filters, "type", { tvshow = true, movie = true })
     local status = filterValue(filters, "status",
         { [""] = true, releasing = true, completed = true })
@@ -417,6 +323,7 @@ end
 -- type=all + sort=relevance (q=naruto → total=10, живая проверка 2026-10-03).
 
 function getCatalogSearch(index, query)
+    ensureEngine()
     if not query or query == "" then return emptyCatalog() end
     return apiCatalog(query, "all", "", "relevance", index + 1)
 end
@@ -445,6 +352,7 @@ local function jsonLdTitle(body)
 end
 
 function getBookTitle(bookUrl)
+    ensureEngine()
     local body = fetchPage(bookUrl)
     if not body then return nil end
     local el = html_select_first(body, "h1.FJ-Phoenix-Hero-Title")
@@ -465,6 +373,7 @@ function getBookTitle(bookUrl)
 end
 
 function getBookCoverImageUrl(bookUrl)
+    ensureEngine()
     local body = fetchPage(bookUrl)
     if not body then return nil end
     local src = html_attr(body, ".FJ-Phoenix-Hero-Poster > img", "src")
@@ -477,6 +386,7 @@ function getBookCoverImageUrl(bookUrl)
 end
 
 function getBookDescription(bookUrl)
+    ensureEngine()
     local body = fetchPage(bookUrl)
     if not body then return nil end
     local el = html_select_first(body, ".FJ-Phoenix-Desc-Full")
@@ -495,6 +405,7 @@ end
 -- футер на ЛЮБОЙ странице содержат такие же относительные ссылки, поэтому
 -- фильтруем поэлементно внутри контейнера. Порядок тегов непредсказуем.
 function getBookStatus(bookUrl)
+    ensureEngine()
     local body = fetchPage(bookUrl)
     if not body then return nil end
     for _, a in ipairs(html_select(body, "div.FJ-Phoenix-Hero-Tags a")) do
@@ -512,6 +423,7 @@ end
 -- Жанры: JSON-LD genre[] на всех типах страниц — чередование арабский/английский
 -- ['أكشن','Action',…] → плагин на ar берёт каждый второй с 1-го (арабские).
 function getBookGenres(bookUrl)
+    ensureEngine()
     local body = fetchPage(bookUrl)
     if not body then return {} end
 
@@ -542,6 +454,7 @@ end
 
 -- Рейтинг из JSON-LD aggregateRating (по шкале 10 → "Rating: N/10").
 function getBookRating(bookUrl)
+    ensureEngine()
     local body = fetchPage(bookUrl)
     if not body then return nil end
     local show = jsonLdTitle(body)
@@ -624,6 +537,7 @@ end
 -- НЕ разворачиваем. Раньше список генерировался из numberOfEpisodes JSON-LD и
 -- врал: у bleach его нет, у идущих тайтлов там запланированное число.
 function getChapterList(bookUrl)
+    ensureEngine()
     -- Прямой запрос, не fetchPage: список глав не читается из кэша (гайд).
     local r = http_get(bookUrl)
     if not r.success then return {} end
@@ -698,6 +612,7 @@ function getChapterList(bookUrl)
 end
 
 function getChapterListHash(bookUrl)
+    ensureEngine()
     -- Только прямой http_get: кэш сделал бы хэш неактуальным (гайд).
     local r = http_get(bookUrl)
     if not r.success then return nil end
@@ -783,20 +698,7 @@ end
 -- confirm=t (интерстишл с формой #download-form на практике не встречался).
 -- ponytail: playback-API-фоллбэк для «download disabled» (403 + UA-биндинг)
 -- не делаем — ставим, если на сайте реально встретятся залоченные ссылки.
-local function driveDirectUrl(link)
-    local host = (link:match("^https?://([^/]+)") or ""):lower()
-    host = host:gsub("^www%.", "")
-    if host ~= "drive.google.com" and host ~= "drive.usercontent.google.com" then
-        return nil
-    end
-    local id = link:match("/file/d/([%w_-]+)") or link:match("[?&]id=([%w_-]+)")
-    if not id then return nil end
-    local u = "https://drive.usercontent.google.com/download?id=" .. id
-        .. "&export=download&confirm=t"
-    local rk = link:match("[?&]resourcekey=([%w_-]+)")
-    if rk then u = u .. "&resourcekey=" .. rk end
-    return u
-end
+-- Сборка прямой ссылки — общая либа urls (driveDirectUrl).
 
 -- URL-декод содержимого data-server: percent-последовательности, «+» — пробел
 -- (форм-семантика, как у URLDecoder в референсе AnimePhoenixProvider).
@@ -845,63 +747,25 @@ local function directLinks(body)
 end
 
 -- ---- ok.ru: data-options → flashvars.metadata (порт из ar/witanime.lua) ----
--- Embed уже загружен батчем — тело берём отсюда, без второго http_get.
+-- Embed уже загружен батчем — разбор тела общей либой okru, без http_get.
 local function resolveOkRu(body, link)
-    local opts = body:match('data%-options="([^"]+)"')
-    if not opts then
-        log_error("AnimePhoenix: ok.ru — нет data-options (" .. link .. ")")
+    local list = OKRU.resolveOkRu(body)
+    if #list == 0 then
+        log_error("AnimePhoenix: ok.ru — нет источников (" .. link .. ")")
         return nil
     end
-    opts = opts:gsub("&quot;", '"'):gsub("&#39;", "'"):gsub("&lt;", "<")
-        :gsub("&gt;", ">"):gsub("&amp;", "&")
-    local ok, data = pcall(json_parse, opts)
-    if not ok or type(data) ~= "table" then
-        log_error("AnimePhoenix: ok.ru — data-options не разобрался (" .. link .. ")")
-        return nil
-    end
-    local meta = data.flashvars and data.flashvars.metadata
-    if type(meta) == "string" then
-        local mok, m = pcall(json_parse, meta)
-        meta = mok and m or nil
-    end
-    if type(meta) ~= "table" then
-        log_error("AnimePhoenix: ok.ru — нет metadata (" .. link .. ")")
-        return nil
-    end
-
     local out = {}
-    if type(meta.hlsManifestUrl) == "string" and meta.hlsManifestUrl ~= "" then
-        out[#out + 1] = meta.hlsManifestUrl
-    end
-    if type(meta.videos) == "table" then
-        for _, v in ipairs(meta.videos) do
-            local u = type(v) == "table" and v.url or nil
-            if type(u) == "string" and u ~= "" then out[#out + 1] = u end
-        end
-    end
-    if #out == 0 then
-        log_error("AnimePhoenix: ok.ru — пустая metadata (" .. link .. ")")
-        return nil
-    end
+    for _, s in ipairs(list) do out[#out + 1] = s.url end
     return out
 end
 
--- ---- 4shared (порт SharedExtractor.kt из ar/anime4up.lua) ----
+-- ---- 4shared (SharedExtractor.kt через libs/hosters/shared.lua) ----
 -- Embed уже загружен батчем: первый <source src> — и есть прямая ссылка.
 local function resolveShared(body, link)
-    local src = html_attr(body, "source", "src")
-    if type(src) ~= "string" or src == "" then
+    local src = SHARED.extract(body, link)
+    if not src then
         log_error("AnimePhoenix: 4shared — в embed нет <source> (" .. link .. ")")
         return nil
-    end
-    -- Референс отдаёт attr("src") как есть; абсолютным делаем только
-    -- protocol-relative/относительные значения — иначе плеер их не откроет.
-    if not string_starts_with(src, "http") then
-        if string_starts_with(src, "//") then
-            src = "https:" .. src
-        else
-            src = url_resolve(link, src)
-        end
     end
     return { src }
 end
@@ -911,73 +775,16 @@ end
 -- jwplayer("vplayer").setup({sources:[{file:"…/master.m3u8?…"}]}).
 -- Раньше хост был в skip-листе («только POST-форма /dl, sources/packed нет») —
 -- распаковка Packed-JS снимает этот отказ.
--- Порт unpackPacked из ar/anime4up.lua (там же — источник алгоритма).
-local function baseN(tok, radix)
-    local v = 0
-    for i = 1, #tok do
-        local c = tok:byte(i)
-        local d
-        if c >= 48 and c <= 57 then d = c - 48
-        elseif c >= 97 and c <= 122 then d = c - 87
-        elseif c >= 65 and c <= 90 then d = c - 29
-        else return nil end
-        if d >= radix then return nil end
-        v = v * radix + d
-    end
-    return v
-end
+-- Распаковка и сбор ссылок — общая либа uqload (packedMediaUrls, там же —
+-- комментарии про jwplayer/медиа-суффиксы); engine API unpack_packed
+-- проверяется в ensureEngine.
 
--- eval(function(p,a,c,k,e,d){…}('…',36,N,'a|b|c'.split('|'))): словарь символов
--- разворачивается обратно в строку payload.
-local function unpackPacked(body)
-    if not body:find("p,a,c,k,e,d", 1, true) then return "" end
-    local payload, radix, _, syms = body:match("}%('(.-)',(%d+),(%d+),'([^']*)'%.split%('|'%)")
-    if not payload then
-        payload, radix, _, syms = body:match("%('(.-)',(%d+),(%d+),'([^']*)'%.split%('|'%)")
+local function uqloadSources(body, link)
+    local urls, err = UQLOAD.packedMediaUrls(body)
+    if not urls or #urls == 0 then
+        log_error("AnimePhoenix: uqload — " .. (err or "нет источников в packed-JS") .. " (" .. link .. ")")
     end
-    if not payload then return "" end
-    local b = tonumber(radix)
-    if not b or b < 2 then return "" end
-    local dict, i = {}, 1
-    for tok in (syms .. "|"):gmatch("(.-)|") do
-        dict[i] = tok
-        i = i + 1
-    end
-    return (payload:gsub("%w+", function(tok)
-        local v = baseN(tok, b)
-        local s = v and dict[v + 1] or nil
-        if type(s) == "string" and s ~= "" then return s end
-        return tok
-    end))
-end
-
--- Конфиг jwplayer лежит в распакованном виде, поэтому голый sources:-паттерн
--- по телу не матчит. В file:"…" лежат и сабы/логотипы — берём только поток.
-local function packedMediaUrls(body)
-    local text = body
-    local un = unpackPacked(body)
-    if un ~= "" then text = un .. "\n" .. body end
-    local out, seen = {}, {}
-    local function add(u)
-        if seen[u] or not string_starts_with(u, "http") then return end
-        if not hasMediaExt(u) then return end
-        seen[u] = true
-        out[#out + 1] = u:gsub("\\/", "/"):gsub("&amp;", "&")
-    end
-    for u in text:gmatch('file:%s*"([^"]+)"') do add(u) end
-    for u in text:gmatch("file:%s*'([^']+)'") do add(u) end
-    for u in text:gmatch('"file"%s*:%s*"([^"]+)"') do add(u) end
-    for u in text:gmatch([[https?://[^"'%s<>\\]+%.m3u8[^"'%s<>\\]*]]) do add(u) end
-    for u in text:gmatch([[https?://[^"'%s<>\\]+%.mp4[^"'%s<>\\]*]]) do add(u) end
-    return out
-end
-
-local function resolveUqload(body, link)
-    local urls = packedMediaUrls(body)
-    if #urls == 0 then
-        log_error("AnimePhoenix: uqload — нет источников в packed-JS (" .. link .. ")")
-    end
-    return urls
+    return urls or {}
 end
 
 -- type == "iframe": link содержит HTML <iframe …> — вытаскиваем src.
@@ -990,6 +797,7 @@ local function iframeSrc(html)
 end
 
 function getVideoList(episodeUrl)
+    ensureEngine()
     local page = http_get(episodeUrl)
     if not page.success then
         log_error("AnimePhoenix: страница эпизода — HTTP " .. tostring(page.code))
@@ -1011,7 +819,7 @@ function getVideoList(episodeUrl)
                 local name = type(info.name) == "string" and info.name or ""
                 if name == "" then name = hostLabel(link) end
                 local reason = skipReason(link)
-                local drive = driveDirectUrl(link)
+                local drive = URLS.driveDirectUrl(link)
                 if reason then
                     log_error("AnimePhoenix: " .. name .. " — пропущен: " .. reason)
                 elseif drive then
@@ -1064,7 +872,7 @@ function getVideoList(episodeUrl)
                 elseif low:find("4shared") then
                     urls = resolveShared(body, e.link)
                 elseif low:find("uqload") then
-                    urls = resolveUqload(body, e.link)
+                    urls = uqloadSources(body, e.link)
                 end
                 if not urls or #urls == 0 then
                     urls = directLinks(body)

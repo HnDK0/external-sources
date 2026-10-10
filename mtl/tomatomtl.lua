@@ -5,10 +5,25 @@
 -- ── Metadata ───────────────────────────────────────────────────────────────
 id = "tomatomtl"
 name = "TomatoMTL"
-version = "1.0.0"
+version = "1.1.0"
 baseUrl = "https://tomatomtl.com"
 language = "MTL"
 icon = "https://raw.githubusercontent.com/HnDK0/external-sources/main/icons/tomatomtl.png"
+
+-- GUARD: old app builds without the engine APIs (base64_decode_bytes/aes_decrypt).
+-- Called from every public function; show_error is async in prod, hence the
+-- error(..., 0) after it (the adapter surfaces pending-show-error first).
+local function ensureEngine()
+    local missing = {}
+    if rawget(_G, "base64_decode_bytes") == nil then missing[#missing + 1] = "base64_decode_bytes" end
+    if rawget(_G, "aes_decrypt") == nil then missing[#missing + 1] = "aes_decrypt" end
+    if #missing > 0 then
+        show_error("Update NoveLA required",
+            "This plugin needs new functions (" .. table.concat(missing, ", ") ..
+            "). Please update the app to the latest version.")
+        error("A newer version of the app is required: " .. table.concat(missing, ","), 0)
+    end
+end
 
 -- ── Settings keys ──────────────────────────────────────────────────────────
 local PREF_MODE = "tomatomtl_mode" -- "raw" | "google" | "cina"
@@ -195,289 +210,10 @@ local function applyTitleTranslation(items)
     return items
 end
 
--- ═══════════════════════════════════════════════════════════════════════════
--- Pure-Lua AES-128-CBC decryption (адаптация криптостека es/m440in.lua,
--- который, в свою очередь, — из mtl/wtrlab.lua). Движковый base64_decode
--- ломает байты ≥0x80 (возвращает Java-строку UTF-8), поэтому всё —
--- на чистом Lua. Глобальные tc_-функции (для тестируемости через dofile;
--- движку лишние глобалы не мешают — у каждого плагина отдельный LuaState).
--- ═══════════════════════════════════════════════════════════════════════════
-
--- 32-битные битовые операции (bit32 если есть, иначе арифметический fallback)
-local B32 = {}
-do
-    if type(bit32) == "table" and type(bit32.band) == "function" then
-        B32.band, B32.bor, B32.bnot, B32.bxor, B32.lrot = bit32.band, bit32.bor, bit32.bnot, bit32.bxor, bit32.lrotate
-    else
-        local function band(a, b)
-            local r, p = 0, 1
-            for _ = 1, 32 do
-                if a % 2 == 1 and b % 2 == 1 then r = r + p end
-                a, b, p = math.floor(a / 2), math.floor(b / 2), p * 2
-            end
-            return r
-        end
-        local function bor(a, b)
-            local r, p = 0, 1
-            for _ = 1, 32 do
-                if a % 2 == 1 or b % 2 == 1 then r = r + p end
-                a, b, p = math.floor(a / 2), math.floor(b / 2), p * 2
-            end
-            return r
-        end
-        local function bnot(a)
-            local r, p = 0, 1
-            for _ = 1, 32 do
-                if a % 2 == 0 then r = r + p end
-                a, p = math.floor(a / 2), p * 2
-            end
-            return r
-        end
-        local function lrot(x, c)
-            return (x % 2 ^ (32 - c)) * 2 ^ c + math.floor(x / 2 ^ (32 - c))
-        end
-        local function bxor(a, b)
-            return bor(band(a, bnot(b)), band(bnot(a), b))
-        end
-        B32.band, B32.bor, B32.bnot, B32.bxor, B32.lrot = band, bor, bnot, bxor, lrot
-    end
-end
-
--- base64 → байты (бинарно-безопасно, как в wtrlab)
-local B64DEC = {}
-do
-    local chars = "ABCDEFGHIJKLMNOPQRSTUVWXYZabcdefghijklmnopqrstuvwxyz0123456789+/"
-    for i = 1, #chars do
-        B64DEC[string.byte(chars, i)] = i - 1
-    end
-end
-
-function tc_b64ToBytes(s)
-    s = string.gsub(s, "%s", "")
-    s = string.gsub(s, "=", "")
-    local out = {}
-    local len = #s
-    local i = 1
-    while i + 3 <= len do
-        local a = B64DEC[string.byte(s, i)]
-        local b = B64DEC[string.byte(s, i + 1)]
-        local c = B64DEC[string.byte(s, i + 2)]
-        local d = B64DEC[string.byte(s, i + 3)]
-        if not (a and b and c and d) then return nil end
-        out[#out + 1] = string.char(
-            a * 4 + math.floor(b / 16),
-            (b % 16) * 16 + math.floor(c / 4),
-            (c % 4) * 64 + d
-        )
-        i = i + 4
-    end
-    if i + 2 == len then
-        local a = B64DEC[string.byte(s, i)]
-        local b = B64DEC[string.byte(s, i + 1)]
-        local c = B64DEC[string.byte(s, i + 2)]
-        if not (a and b and c) then return nil end
-        out[#out + 1] = string.char(
-            a * 4 + math.floor(b / 16),
-            (b % 16) * 16 + math.floor(c / 4)
-        )
-        i = i + 3
-    elseif i + 1 == len then
-        local a = B64DEC[string.byte(s, i)]
-        local b = B64DEC[string.byte(s, i + 1)]
-        if not (a and b) then return nil end
-        out[#out + 1] = string.char(a * 4 + math.floor(b / 16))
-        i = i + 2
-    end
-    -- Висячий символ (len % 4 == 1) не декодируется ни в один байт —
-    -- отбрасываем (лязг Chromium/сайтового декодера), не роняя всю строку.
-    if i == len then
-        i = i + 1
-    end
-    if i ~= len + 1 then return nil end
-    local bytes = {}
-    local n = 0
-    for j = 1, #out do
-        local part = out[j]
-        for k = 1, #part do
-            n = n + 1
-            bytes[n] = string.byte(part, k)
-        end
-    end
-    return bytes
-end
-
-local SBOX = {
-    0x63,0x7C,0x77,0x7B,0xF2,0x6B,0x6F,0xC5,0x30,0x01,0x67,0x2B,0xFE,0xD7,0xAB,0x76,
-    0xCA,0x82,0xC9,0x7D,0xFA,0x59,0x47,0xF0,0xAD,0xD4,0xA2,0xAF,0x9C,0xA4,0x72,0xC0,
-    0xB7,0xFD,0x93,0x26,0x36,0x3F,0xF7,0xCC,0x34,0xA5,0xE5,0xF1,0x71,0xD8,0x31,0x15,
-    0x04,0xC7,0x23,0xC3,0x18,0x96,0x05,0x9A,0x07,0x12,0x80,0xE2,0xEB,0x27,0xB2,0x75,
-    0x09,0x83,0x2C,0x1A,0x1B,0x6E,0x5A,0xA0,0x52,0x3B,0xD6,0xB3,0x29,0xE3,0x2F,0x84,
-    0x53,0xD1,0x00,0xED,0x20,0xFC,0xB1,0x5B,0x6A,0xCB,0xBE,0x39,0x4A,0x4C,0x58,0xCF,
-    0xD0,0xEF,0xAA,0xFB,0x43,0x4D,0x33,0x85,0x45,0xF9,0x02,0x7F,0x50,0x3C,0x9F,0xA8,
-    0x51,0xA3,0x40,0x8F,0x92,0x9D,0x38,0xF5,0xBC,0xB6,0xDA,0x21,0x10,0xFF,0xF3,0xD2,
-    0xCD,0x0C,0x13,0xEC,0x5F,0x97,0x44,0x17,0xC4,0xA7,0x7E,0x3D,0x64,0x5D,0x19,0x73,
-    0x60,0x81,0x4F,0xDC,0x22,0x2A,0x90,0x88,0x46,0xEE,0xB8,0x14,0xDE,0x5E,0x0B,0xDB,
-    0xE0,0x32,0x3A,0x0A,0x49,0x06,0x24,0x5C,0xC2,0xD3,0xAC,0x62,0x91,0x95,0xE4,0x79,
-    0xE7,0xC8,0x37,0x6D,0x8D,0xD5,0x4E,0xA9,0x6C,0x56,0xF4,0xEA,0x65,0x7A,0xAE,0x08,
-    0xBA,0x78,0x25,0x2E,0x1C,0xA6,0xB4,0xC6,0xE8,0xDD,0x74,0x1F,0x4B,0xBD,0x8B,0x8A,
-    0x70,0x3E,0xB5,0x66,0x48,0x03,0xF6,0x0E,0x61,0x35,0x57,0xB9,0x86,0xC1,0x1D,0x9E,
-    0xE1,0xF8,0x98,0x11,0x69,0xD9,0x8E,0x94,0x9B,0x1E,0x87,0xE9,0xCE,0x55,0x28,0xDF,
-    0x8C,0xA1,0x89,0x0D,0xBF,0xE6,0x42,0x68,0x41,0x99,0x2D,0x0F,0xB0,0x54,0xBB,0x16
-}
-local INV_SBOX = {}
-do
-    for i = 1, 256 do INV_SBOX[SBOX[i] + 1] = i - 1 end
-end
-local RCON = {0x01,0x02,0x04,0x08,0x10,0x20,0x40,0x80,0x1B,0x36,0x6C,0xD8,0xAB,0x4D}
-
-local function gmul(a, b)
-    local p = 0
-    for _ = 1, 8 do
-        if b % 2 == 1 then p = B32.bxor(p, a) end
-        local h = a >= 128 and 1 or 0
-        a = a * 2
-        if a >= 256 then a = a - 256 end
-        if h == 1 then a = B32.bxor(a, 27) end
-        b = math.floor(b / 2)
-    end
-    return p
-end
-
--- Таблицы умножения в GF(2^8) для InvMixColumns: вместо 64 вызовов gmul
--- на блок (8 итераций каждый) — 64 обращения к таблице. Строются один раз
--- при загрузке плагина (1024 gmul).
-local MUL9, MUL11, MUL13, MUL14 = {}, {}, {}, {}
-for v = 0, 255 do
-    MUL9[v] = gmul(v, 9)
-    MUL11[v] = gmul(v, 11)
-    MUL13[v] = gmul(v, 13)
-    MUL14[v] = gmul(v, 14)
-end
-
--- AES-128 key expansion → плоский массив 11 round-keys (0..10), 16 байт каждый.
--- Та же схема слов/эндиана, что в m440in (aesExpandKey для AES-256),
--- меняются только числа: Nk=4, w[1..44], rcon-шаг при (i-1)%4==0,
--- sbox-шаг на (i-1)%Nk==4 для 128-бит не существует.
-function tc_aesExpandKey128(keyBytes)
-    local w = {}
-    for i = 1, 4 do
-        w[i] = { keyBytes[i * 4 - 3], keyBytes[i * 4 - 2], keyBytes[i * 4 - 1], keyBytes[i * 4] }
-    end
-    for i = 5, 44 do
-        local t = { w[i - 1][1], w[i - 1][2], w[i - 1][3], w[i - 1][4] }
-        if (i - 1) % 4 == 0 then
-            -- RotWord + SubWord + Rcon
-            t = { t[2], t[3], t[4], t[1] }
-            for j = 1, 4 do t[j] = SBOX[t[j] + 1] end
-            t[1] = B32.bxor(t[1], RCON[(i - 1) / 4])
-        end
-        local prev = w[i - 4]
-        w[i] = {
-            B32.bxor(prev[1], t[1]),
-            B32.bxor(prev[2], t[2]),
-            B32.bxor(prev[3], t[3]),
-            B32.bxor(prev[4], t[4])
-        }
-    end
-    local rk = {}
-    for round = 0, 10 do
-        for j = 1, 4 do
-            local word = w[round * 4 + j]
-            for b = 1, 4 do
-                rk[round * 16 + (j - 1) * 4 + b] = word[b]
-            end
-        end
-    end
-    return rk
-end
-
--- AES-128 decrypt одного 16-байтного блока (state мутируется на месте),
--- 10 раундов, как в m440in для 256-бит (там 14).
-function tc_aesDecryptBlock(state, rk)
-    -- AddRoundKey(10)
-    for i = 1, 16 do state[i] = B32.bxor(state[i], rk[10 * 16 + i]) end
-
-    for round = 9, 1, -1 do
-        -- InvShiftRows
-        local t
-        t = state[14]; state[14] = state[10]; state[10] = state[6]; state[6] = state[2]; state[2] = t
-        t = state[3];  state[3]  = state[11]; state[11] = t
-        t = state[7];  state[7]  = state[15]; state[15] = t
-        t = state[4];  state[4]  = state[8];  state[8]  = state[12]; state[12] = state[16]; state[16] = t
-        -- InvSubBytes
-        for i = 1, 16 do state[i] = INV_SBOX[state[i] + 1] end
-        -- AddRoundKey(round)
-        local off = round * 16
-        for i = 1, 16 do state[i] = B32.bxor(state[i], rk[off + i]) end
-        -- InvMixColumns (через предвычисленные таблицы MUL*)
-        for c = 0, 3 do
-            local i1 = c * 4 + 1
-            local a0, a1, a2, a3 = state[i1], state[i1 + 1], state[i1 + 2], state[i1 + 3]
-            local b0, b1, b2, b3 = MUL14[a0], MUL11[a1], MUL13[a2], MUL9[a3]
-            state[i1]     = B32.bxor(B32.bxor(b0, b1), B32.bxor(b2, b3))
-            b0, b1, b2, b3 = MUL9[a0], MUL14[a1], MUL11[a2], MUL13[a3]
-            state[i1 + 1] = B32.bxor(B32.bxor(b0, b1), B32.bxor(b2, b3))
-            b0, b1, b2, b3 = MUL13[a0], MUL9[a1], MUL14[a2], MUL11[a3]
-            state[i1 + 2] = B32.bxor(B32.bxor(b0, b1), B32.bxor(b2, b3))
-            b0, b1, b2, b3 = MUL11[a0], MUL13[a1], MUL9[a2], MUL14[a3]
-            state[i1 + 3] = B32.bxor(B32.bxor(b0, b1), B32.bxor(b2, b3))
-        end
-    end
-
-    -- Финальный раунд (без InvMixColumns)
-    local t
-    t = state[14]; state[14] = state[10]; state[10] = state[6]; state[6] = state[2]; state[2] = t
-    t = state[3];  state[3]  = state[11]; state[11] = t
-    t = state[7];  state[7]  = state[15]; state[15] = t
-    t = state[4];  state[4]  = state[8];  state[8]  = state[12]; state[12] = state[16]; state[16] = t
-    for i = 1, 16 do state[i] = INV_SBOX[state[i] + 1] end
-    for i = 1, 16 do state[i] = B32.bxor(state[i], rk[i]) end
-    return state
-end
-
--- AES-128-CBC decrypt → строка байтов (string.char), CBC-XOR, PKCS7-unpad.
--- Буферы (state/ct) выделяются один раз: на каждый 16-байтный блок раньше
--- создавались 2 таблицы + 16 одно-байтовых строк.
-function tc_aesCbcDecrypt128(ctBytes, keyBytes, ivBytes)
-    local bxor = B32.bxor
-    local rk = tc_aesExpandKey128(keyBytes)
-    local prev = { ivBytes[1], ivBytes[2], ivBytes[3], ivBytes[4],
-        ivBytes[5], ivBytes[6], ivBytes[7], ivBytes[8],
-        ivBytes[9], ivBytes[10], ivBytes[11], ivBytes[12],
-        ivBytes[13], ivBytes[14], ivBytes[15], ivBytes[16] }
-    local ct, state = {}, {}
-    local out, nout = {}, 0
-    for start = 1, #ctBytes, 16 do
-        for i = 1, 16 do
-            local b = ctBytes[start + i - 1]
-            ct[i] = b
-            state[i] = b
-        end
-        tc_aesDecryptBlock(state, rk)
-        nout = nout + 1
-        out[nout] = string.char(
-            bxor(state[1], prev[1]),   bxor(state[2], prev[2]),
-            bxor(state[3], prev[3]),   bxor(state[4], prev[4]),
-            bxor(state[5], prev[5]),   bxor(state[6], prev[6]),
-            bxor(state[7], prev[7]),   bxor(state[8], prev[8]),
-            bxor(state[9], prev[9]),   bxor(state[10], prev[10]),
-            bxor(state[11], prev[11]), bxor(state[12], prev[12]),
-            bxor(state[13], prev[13]), bxor(state[14], prev[14]),
-            bxor(state[15], prev[15]), bxor(state[16], prev[16]))
-        -- следующий prev — шифроблок этого шага; меняемся буферами
-        prev, ct = ct, prev
-    end
-    local pt = table.concat(out)
-    local pad = string.byte(pt, #pt)
-    if pad and pad >= 1 and pad <= 16 then
-        pt = pt:sub(1, #pt - pad)
-    end
-    return pt
-end
-
 -- ── Settings schema ──────────────────────────────────────────────────────────
 
 function getSettingsSchema()
+    ensureEngine()
     return {{
         key = PREF_MODE,
         type = "select",
@@ -546,6 +282,7 @@ end
 -- ── Фильтры (эндпоинт /fanqie-explorer, параметры как у сайта) ──────────────
 
 function getFilterList()
+    ensureEngine()
     return {
         {
             type = "select",
@@ -892,10 +629,12 @@ local function fetchExplorer(index, params)
 end
 
 function getCatalogList(index)
+    ensureEngine()
     return fetchExplorer(index, nil)
 end
 
 function getCatalogFiltered(index, filters)
+    ensureEngine()
     return fetchExplorer(index, {
         gender = filters["gender"],
         category_id = filters["category"],
@@ -908,6 +647,7 @@ end
 -- ── Поиск ───────────────────────────────────────────────────────────────────
 
 function getCatalogSearch(index, query)
+    ensureEngine()
     if index > 0 then
         return { items = {}, hasNext = false }
     end
@@ -943,6 +683,7 @@ end
 -- ── Детали книги ────────────────────────────────────────────────────────────
 
 function getBookTitle(bookUrl)
+    ensureEngine()
     local body = fetchPage(bookUrl)
     if not body then return nil end
     -- og:title серверный и надёжный; h1.book-title в raw-curl пуст (заполняется JS)
@@ -966,6 +707,7 @@ function getBookTitle(bookUrl)
 end
 
 function getBookCoverImageUrl(bookUrl)
+    ensureEngine()
     local body = fetchPage(bookUrl)
     if not body then return nil end
     local cover = html_attr(body, "img.book-cover", "src")
@@ -976,6 +718,7 @@ function getBookCoverImageUrl(bookUrl)
 end
 
 function getBookDescription(bookUrl)
+    ensureEngine()
     local body = fetchPage(bookUrl)
     if not body then return nil end
     local desc = html_attr(body, "meta[name=description]", "content")
@@ -983,6 +726,7 @@ function getBookDescription(bookUrl)
 end
 
 function getBookGenres(bookUrl)
+    ensureEngine()
     local body = fetchPage(bookUrl)
     if not body then return nil end
     local genres = {}
@@ -996,6 +740,7 @@ function getBookGenres(bookUrl)
 end
 
 function getBookStatus(bookUrl)
+    ensureEngine()
     local body = fetchPage(bookUrl)
     if not body then return nil end
     for _, el in ipairs(html_select(body, ".book-meta-item")) do
@@ -1011,6 +756,7 @@ function getBookStatus(bookUrl)
 end
 
 function getBookRating(bookUrl)
+    ensureEngine()
     local body = fetchPage(bookUrl)
     if not body then return nil end
     for _, el in ipairs(html_select(body, ".book-meta-item")) do
@@ -1023,6 +769,7 @@ function getBookRating(bookUrl)
 end
 
 function getBookLastUpdate(bookUrl)
+    ensureEngine()
     local body = fetchPage(bookUrl)
     if not body then return nil end
     for _, el in ipairs(html_select(body, ".book-meta-item")) do
@@ -1039,6 +786,7 @@ end
 local _chapterTitlesCache = {} -- кэш переведённого списка глав по bookUrl
 
 function getChapterList(bookUrl)
+    ensureEngine()
     if getMode() ~= "raw" and _chapterTitlesCache[bookUrl] then
         return _chapterTitlesCache[bookUrl]
     end
@@ -1089,6 +837,7 @@ end
 
 -- NOTE: намеренно НЕ через fetchPage — хэш должен отражать свежее состояние
 function getChapterListHash(bookUrl)
+    ensureEngine()
     local bookId = string.match(bookUrl, "/book/(%d+)")
     if not bookId then
         return nil
@@ -1130,6 +879,7 @@ local function translateCina(chunk)
 end
 
 function getChapterText(html, url)
+    ensureEngine()
     local uc = html:match('unlock_code%s*=%s*"([^"]+)"')
     if not uc then
         show_error("Chapter load error", "Unable to find the decryption key on the page.")
@@ -1150,20 +900,17 @@ function getChapterText(html, url)
         return nil
     end
 
-    local keyFull = tc_b64ToBytes(uc)
-    local keyBytes = {}
-    if keyFull then
-        for _, b in ipairs(keyFull) do
-            if #keyBytes >= 16 then break end
-            keyBytes[#keyBytes + 1] = b
-        end
-    end
-    local ctBytes = tc_b64ToBytes(enc)
-    local ivBytes = tc_b64ToBytes(iv)
-    if not keyBytes or #keyBytes < 16 or not ctBytes or not ivBytes then
-        local kst = keyBytes and tostring(#keyBytes) or "nil"
-        local cst = ctBytes and tostring(#ctBytes) or "nil"
-        local ist = ivBytes and tostring(#ivBytes) or "nil"
+    -- key/iv декодируются движковым base64_decode_bytes (сырые байты: в
+    -- base64 встречаются ≥0x80, Java-строка их портит). Ключ сайта — первые
+    -- 16 байт unlock_code (AES-128); сам шифротекст движку отдаётся как есть:
+    -- aes_decrypt(b64, key, iv) декодирует base64 внутри (фикс B4: key/iv —
+    -- бинарные поля LuaString, не UTF-8 round-trip).
+    local keyFull = base64_decode_bytes(uc)
+    local ivRaw = base64_decode_bytes(iv)
+    if not keyFull or #keyFull < 16 or not ivRaw or #ivRaw < 1 or not enc or #enc == 0 then
+        local kst = keyFull and tostring(#keyFull) or "nil"
+        local cst = enc and tostring(#enc) or "nil"
+        local ist = ivRaw and tostring(#ivRaw) or "nil"
         show_error("Chapter decrypt error", "Unable to decrypt chapter content.\n\nDIAG key#" .. kst
             .. " ct#" .. cst .. " iv#" .. ist
             .. "\nuc# " .. #uc .. " uc=" .. uc
@@ -1172,7 +919,8 @@ function getChapterText(html, url)
         return nil
     end
 
-    local text = tc_aesCbcDecrypt128(ctBytes, keyBytes, ivBytes)
+    -- Ошибки шифра (битый padding, неверный ключ) → nil, не LuaError.
+    local text = aes_decrypt(enc, keyFull:sub(1, 16), ivRaw)
 
     -- Честные причины отказа вместо общего «corrupted»:
     -- крошечный текст = глава-заголовок/разделитель без содержания,

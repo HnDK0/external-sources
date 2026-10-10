@@ -9,7 +9,7 @@
 -- ── Метаданные ──
 id           = "hitomi"
 name         = "Hitomi"
-version  = "1.14.3"
+version  = "1.15.0"
 baseUrl      = "https://hitomi.la/"
 language     = "en"
 content_type = "manga"
@@ -17,6 +17,22 @@ icon         = "https://raw.githubusercontent.com/HnDK0/external-sources/main/ic
 
 -- CDN-база: на ней живут .nozomi-индексы, карточки галерей и служебные JS.
 local CDN = "https://ltn.gold-usergeneratedcontent.net"
+
+-- ── GUARD: старые сборки приложения без sha256 (Kotlin API) ──
+-- Top-level обязан загрузиться без новых API (иначе плагин молча исчезает
+-- из списка источников), поэтому здесь только объявление; вызов — в начале
+-- каждой публичной функции. show_error в проде асинхронный (возвращает NIL),
+-- поэтому после него идёт error(..., 0).
+local function ensureEngine()
+	local missing = {}
+	if rawget(_G, "sha256") == nil then missing[#missing + 1] = "sha256" end
+	if #missing > 0 then
+		show_error("Please update NoveLA",
+			"This plugin needs new functions (" .. table.concat(missing, ", ") ..
+			"). Please update the application to the latest version.")
+		error("A newer version of the application is required: " .. table.concat(missing, ","), 0)
+	end
+end
 
 -- ── Хелперы ──
 
@@ -33,8 +49,11 @@ local function galleryIdFromUrl(url)
 	return string.match(url, "(%d+)%.html$")
 end
 
--- ── SHA256 (чистый Lua) ──
--- Нужен для B-tree: hash_term(term) = SHA256(term)[0..3].
+-- ── 32-битная битовая арифметика (Lua 5.1) ──
+-- SHA-256 считает движок: глобальный API sha256 возвращает сырые байты,
+-- hashTerm берёт из них первые 4 байта (как Uint8Array в JS-клиенте).
+-- Битовые хелперы оставлены в плагине (план T6): по объёму вызовов это не
+-- «тяжёлая» операция, бенчмарк/миграцию LuaJ не делаем.
 -- Битовые операции через пошаговый перебор бит (Lua 5.1 совместимо).
 
 local function bxor32(a, b)
@@ -60,75 +79,6 @@ local function rshift32(a, n) return math.floor(a / 2 ^ n) end
 local function lshift32(a, n) return (a * 2 ^ n) % 4294967296 end
 local function rotl32(a, n) return bxor32(lshift32(a, n), rshift32(a, 32 - n)) end
 local function rotr32(a, n) return bxor32(rshift32(a, n), lshift32(a, 32 - n)) end
-
-local SHA256_K = {
-	0x428a2f98, 0x71374491, 0xb5c0fbcf, 0xe9b5dba5, 0x3956c25b, 0x59f111f1, 0x923f82a4, 0xab1c5ed5,
-	0xd807aa98, 0x12835b01, 0x243185be, 0x550c7dc3, 0x72be5d74, 0x80deb1fe, 0x9bdc06a7, 0xc19bf174,
-	0xe49b69c1, 0xefbe4786, 0x0fc19dc6, 0x240ca1cc, 0x2de92c6f, 0x4a7484aa, 0x5cb0a9dc, 0x76f988da,
-	0x983e5152, 0xa831c66d, 0xb00327c8, 0xbf597fc7, 0xc6e00bf3, 0xd5a79147, 0x06ca6351, 0x14292967,
-	0x27b70a85, 0x2e1b2138, 0x4d2c6dfc, 0x53380d13, 0x650a7354, 0x766a0abb, 0x81c2c92e, 0x92722c85,
-	0xa2bfe8a1, 0xa81a664b, 0xc24b8b70, 0xc76c51a3, 0xd192e819, 0xd6990624, 0xf40e3585, 0x106aa070,
-	0x19a4c116, 0x1e376c08, 0x2748774c, 0x34b0bcb5, 0x391c0cb3, 0x4ed8aa4a, 0x5b9cca4f, 0x682e6ff3,
-	0x748f82ee, 0x78a5636f, 0x84c87814, 0x8cc70208, 0x90befffa, 0xa4506ceb, 0xbef9a3f7, 0xc67178f2,
-}
-
-local function sha256(msg)
-	-- Пре-процессинг: добавляем padding
-	local len = #msg
-	local bits = len * 8
-	msg = msg .. "\128"
-	while #msg % 64 ~= 56 do msg = msg .. "\0" end
-	-- Длина в big-endian (MSB первый), как требует SHA-256
-	local lenBytes = {}
-	for i = 1, 8 do
-		lenBytes[i] = bits % 256
-		bits = math.floor(bits / 256)
-	end
-	for i = 8, 1, -1 do
-		msg = msg .. string.char(lenBytes[i])
-	end
-
-	local H = {
-		0x6a09e667, 0xbb67ae85, 0x3c6ef372, 0xa54ff53a,
-		0x510e527f, 0x9b05688c, 0x1f83d9ab, 0x5be0cd19,
-	}
-
-	for offset = 1, #msg, 64 do
-		local W = {}
-		for t = 0, 15 do
-			local a, b, c, d = string.byte(msg, offset + t * 4, offset + t * 4 + 3)
-			W[t] = a * 16777216 + b * 65536 + c * 256 + d
-		end
-		for t = 16, 63 do
-			local s0 = bxor32(rotr32(W[t - 15], 7), bxor32(rotr32(W[t - 15], 18), rshift32(W[t - 15], 3)))
-			local s1 = bxor32(rotr32(W[t - 2], 17), bxor32(rotr32(W[t - 2], 19), rshift32(W[t - 2], 10)))
-			W[t] = (W[t - 16] + s0 + W[t - 7] + s1) % 4294967296
-		end
-
-		local a, b, c, d, e, f, g, h = H[1], H[2], H[3], H[4], H[5], H[6], H[7], H[8]
-		for t = 0, 63 do
-			local S1 = bxor32(rotr32(e, 6), bxor32(rotr32(e, 11), rotr32(e, 25)))
-			local ch = bxor32(band32(e, f), band32(bnot32(e), g))
-			local t1 = (h + S1 + ch + SHA256_K[t + 1] + W[t]) % 4294967296
-			local S0 = bxor32(rotr32(a, 2), bxor32(rotr32(a, 13), rotr32(a, 22)))
-			local maj = bxor32(band32(a, b), bxor32(band32(a, c), band32(b, c)))
-			local t2 = (S0 + maj) % 4294967296
-			h = g; g = f; f = e; e = (d + t1) % 4294967296
-			d = c; c = b; b = a; a = (t1 + t2) % 4294967296
-		end
-		H[1] = (H[1] + a) % 4294967296; H[2] = (H[2] + b) % 4294967296
-		H[3] = (H[3] + c) % 4294967296; H[4] = (H[4] + d) % 4294967296
-		H[5] = (H[5] + e) % 4294967296; H[6] = (H[6] + f) % 4294967296
-		H[7] = (H[7] + g) % 4294967296; H[8] = (H[8] + h) % 4294967296
-	end
-
-	local hash = ""
-	for i = 1, 8 do
-		local v = H[i]
-		hash = hash .. string.char(math.floor(v / 16777216) % 256, math.floor(v / 65536) % 256, math.floor(v / 256) % 256, v % 256)
-	end
-	return hash
-end
 
 -- ── B-tree: поиск по хешу тега в galleriesindex ──
 -- Формат узла (searchlib.js decode_node):
@@ -227,16 +177,6 @@ end
 local function stringToBytes(s)
 	local t = {}
 	for i = 1, #s do t[i] = string.byte(s, i) end
-	return t
-end
-
--- Преобразование hex-строки в таблицу байтов (по 2 hex-символа → 1 байт).
--- Нужен для hash_term: SHA256 → hex → первые 4 байта (как Uint8Array в JS).
-local function hexToBytes(hex)
-	local t = {}
-	for i = 1, math.floor(#hex / 2) do
-		t[i] = tonumber(string.sub(hex, i * 2 - 1, i * 2), 16)
-	end
 	return t
 end
 
@@ -717,6 +657,7 @@ end
 
 -- Каталог: бинарный .nozomi (полная пагинация), с фолбэком на RSS.
 function getCatalogList(index)
+	ensureEngine()
 	local ids = queryGalleryIds("index-all")
 	if #ids == 0 then
 		log_error("hitomi: nozomi returned 0 IDs, falling back to RSS")
@@ -727,6 +668,7 @@ end
 
 -- Поиск: строка из поисковой строки читалки в синтаксисе тегов hitomi.
 function getCatalogSearch(index, query)
+	ensureEngine()
 	if not query or query == "" then
 		return getCatalogList(index)
 	end
@@ -737,6 +679,7 @@ end
 
 -- Фильтры: поле тегов + язык + тип + сортировка.
 function getFilterList()
+	ensureEngine()
 	return {
 		{
 			type = "text",
@@ -866,6 +809,7 @@ end
 
 -- Фильтрованный каталог с сортировкой.
 function getCatalogFiltered(index, filters)
+	ensureEngine()
 	local q = buildQueryFromFilters(filters)
 	local sort = filters and filters["sort"] or "date_added"
 	local lang = filters and filters["language"] or ""
@@ -913,6 +857,7 @@ end
 
 -- Список глав: вся галерея — одна «глава» (набор картинок).
 function getChapterList(bookUrl)
+	ensureEngine()
 	local id = galleryIdFromUrl(bookUrl)
 	if not id then
 		log_error("hitomi: getChapterList no id in url=" .. tostring(bookUrl))
@@ -929,6 +874,7 @@ end
 
 -- Страницы главы (манга): движок грузит картинку сам, с Referer'ом origin-хоста.
 function getPageList(html, url)
+	ensureEngine()
 	local id = galleryIdFromUrl(url)
 	if not id then
 		log_error("hitomi: getPageList no id in url=" .. tostring(url))
@@ -951,6 +897,7 @@ end
 
 -- Текст главы: HTML с <img> для каждой страницы галереи.
 function getChapterText(html, url)
+	ensureEngine()
 	local id = galleryIdFromUrl(url)
 	if not id then return "" end
 	local body = galleryData(id)
@@ -966,6 +913,7 @@ end
 -- ── Детали книги ──
 
 function getBookTitle(bookUrl)
+	ensureEngine()
 	local id = galleryIdFromUrl(bookUrl)
 	if not id then return nil end
 	local body = galleryData(id)
@@ -974,6 +922,7 @@ function getBookTitle(bookUrl)
 end
 
 function getBookCoverImageUrl(bookUrl)
+	ensureEngine()
 	local id = galleryIdFromUrl(bookUrl)
 	if not id then return nil end
 	local item = galleryBlock(id)
@@ -982,6 +931,7 @@ function getBookCoverImageUrl(bookUrl)
 end
 
 function getBookDescription(bookUrl)
+	ensureEngine()
 	local id = galleryIdFromUrl(bookUrl)
 	if not id then return nil end
 	local body = galleryData(id)
@@ -997,6 +947,7 @@ end
 
 -- Теги/жанры галереи: извлекаем из galleryinfo.tags (массив объектов {tag, url}).
 function getBookGenres(bookUrl)
+	ensureEngine()
 	local id = galleryIdFromUrl(bookUrl)
 	if not id then return nil end
 	local body = galleryData(id)

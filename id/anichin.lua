@@ -9,7 +9,7 @@
 
 id           = "anichin"
 name         = "Anichin"
-version      = "1.0.1"
+version      = "1.1.0"
 baseUrl      = "https://anichin.moe"
 language     = "id"
 content_type = "video"
@@ -21,6 +21,52 @@ local CATALOG = baseUrl .. "/anime/"
 local SEARCH  = baseUrl .. "/?s="
 local BATCH_TIMEOUT = 10000
 
+-- ============ Guard: engine-API + общие либы (новые сборки NoveLA) ============
+-- Top-level обязан загрузиться без require_lib (иначе плагин молча исчезает из
+-- списка источников) — pcall-tryLib-паттерн latanime (M9): ошибка сохраняется
+-- в libErr и докладывается в ensureEngine. Канон (гайд «Паттерн guard»):
+-- проверяем только реально используемые API.
+local libErr = nil
+local HAS_LIBS = type(require_lib) == "function"
+
+local function tryLib(name)
+    if not HAS_LIBS then return nil end
+    local ok, res = pcall(require_lib, name)
+    if not ok then libErr = tostring(res) return nil end
+    return res
+end
+
+local URLS = tryLib("urls")
+local OKRU = tryLib("okru")
+local DM = tryLib("dailymotion")
+local DOOD = tryLib("dood")
+local DTUBE = tryLib("dtube")
+local MIRRORS = tryLib("mirrors")
+
+local function ensureEngine()
+    local missing = {}
+    -- base64_decode декодирует значения option зеркал (либа mirrors);
+    -- unpack_packed — packed-JS в общем page-резолвере.
+    if rawget(_G, "unpack_packed") == nil then missing[#missing + 1] = "unpack_packed" end
+    if rawget(_G, "base64_decode") == nil then missing[#missing + 1] = "base64_decode" end
+    if #missing > 0 then
+        show_error("NoveLA update required",
+            "This plugin needs new functions (" .. table.concat(missing, ", ") ..
+            "). Update the app to the latest version.")
+        error("A newer version of the app is required: " .. table.concat(missing, ","), 0)
+    end
+    if not HAS_LIBS then
+        show_error("NoveLA update required",
+            "This plugin needs shared libraries (require_lib). Update the app to the latest version.")
+        error("A newer version of the app is required: require_lib", 0)
+    end
+    if not URLS or not OKRU or not DM or not DOOD or not DTUBE or not MIRRORS then
+        show_error("Libraries not loaded",
+            "Open the extensions screen and tap update, then restart the app. " .. (libErr or ""))
+        error("Shared libraries not loaded", 0)
+    end
+end
+
 local function absUrl(href)
     if type(href) ~= "string" or href == "" then return "" end
     if href:sub(1, 2) == "//" then return "https:" .. href end
@@ -29,15 +75,15 @@ local function absUrl(href)
     return baseUrl .. "/" .. href
 end
 
+-- hostOf/origin — общая либа urls (origin хоста (scheme://host/) берётся
+-- как Referer для потоков). Обёртки, не алиасы: top-level обращение к полю
+-- nil-либы упало бы до ensureEngine (инцидент фазы 1).
 local function hostOf(url)
-    return (url:match("^https?://([^/?#]+)") or ""):lower()
+    return URLS.hostOf(url)
 end
 
--- origin хоста (scheme://host/) — из него берём Referer для потоков.
 local function originOf(url)
-    local scheme, host = url:match("^(https?)://([^/?#]+)")
-    if not scheme or not host then return nil end
-    return scheme .. "://" .. host .. "/"
+    return URLS.origin(url)
 end
 
 -- Поиск в таблице: точное совпадение хоста или его суффикс (www.geo.поддомен).
@@ -109,6 +155,7 @@ local function catalogHasNext(body)
 end
 
 function getCatalogList(index)
+    ensureEngine()
     index = tonumber(index) or 0
     local body = fetchPage(CATALOG .. "?page=" .. (index + 1))
     if not body then return { items = {}, hasNext = false } end
@@ -179,6 +226,7 @@ local GENRE_OPTIONS = {
 }
 
 function getFilterList()
+    ensureEngine()
     return {
         {
             type         = "select",
@@ -206,6 +254,7 @@ end
 
 -- Мультивыбор чекбоксов приходит ключом <key>_included (таблица-массив строк).
 function getCatalogFiltered(index, filters)
+    ensureEngine()
     index = tonumber(index) or 0
     local page = index + 1
     local params = { "page=" .. page }
@@ -229,6 +278,7 @@ end
 -- Поиск: 10 результатов на страницу, первая — /?s=q, дальше /page/N/?s=q
 -- (проверено вживую: ссылка «Next» — a.next.page-numbers).
 function getCatalogSearch(index, query)
+    ensureEngine()
     index = tonumber(index) or 0
     if type(query) ~= "string" or query == "" then
         return { items = {}, hasNext = false }
@@ -251,6 +301,7 @@ end
 ------------------------------------------------------------------------------
 
 function getBookTitle(bookUrl)
+    ensureEngine()
     local body = fetchPage(bookUrl)
     if not body then return nil end
     local el = html_select_first(body, "h1.entry-title")
@@ -265,6 +316,7 @@ function getBookTitle(bookUrl)
 end
 
 function getBookCoverImageUrl(bookUrl)
+    ensureEngine()
     local body = fetchPage(bookUrl)
     if not body then return nil end
     -- og:image на этом сайте относительный ("/wp-content/uploads/...").
@@ -279,6 +331,7 @@ function getBookCoverImageUrl(bookUrl)
 end
 
 function getBookDescription(bookUrl)
+    ensureEngine()
     local body = fetchPage(bookUrl)
     if not body then return nil end
     local el = html_select_first(body, ".bixbox.synp .entry-content")
@@ -289,6 +342,7 @@ end
 
 -- .spe — плоский список «Метка: значение», значения сайта: Ongoing / Completed.
 function getBookStatus(bookUrl)
+    ensureEngine()
     local body = fetchPage(bookUrl)
     if not body then return nil end
     local el = html_select_first(body, ".spe")
@@ -299,6 +353,7 @@ function getBookStatus(bookUrl)
 end
 
 function getBookRating(bookUrl)
+    ensureEngine()
     local body = fetchPage(bookUrl)
     if not body then return nil end
     local value = html_attr(body, 'meta[itemprop="ratingValue"]', "content")
@@ -309,6 +364,7 @@ function getBookRating(bookUrl)
 end
 
 function getBookGenres(bookUrl)
+    ensureEngine()
     local body = fetchPage(bookUrl)
     if not body then return {} end
     local genres = {}
@@ -322,6 +378,7 @@ end
 -- Эпизоды: .eplister li a (список полный, от новых к старым — разворачиваем).
 -- .epl-num — номер, .epl-date — дата релиза ("January 28, 2026").
 function getChapterList(bookUrl)
+    ensureEngine()
     local body = fetchPage(bookUrl)
     if not body then return {} end
     local rows = {}
@@ -466,168 +523,43 @@ end
 -- плеер распознаёт само (см. api-guide, «Видео-плагины» → mime).
 ------------------------------------------------------------------------------
 
--- ok.ru: data-options (entity-encoded) → JSON → flashvars.metadata
--- (строка → повторный json_parse) → hlsManifestUrl + videos[].url.
+-- ok.ru: data-options (entity-encoded) → JSON → flashvars.metadata —
+-- общая либа okru; возвращает { {url, mime, name?}, ... }.
+-- Обёртка, не алиас (см. комментарий у hostOf).
 local function resolveOkRu(body)
-    if type(body) ~= "string" then return {} end
-    local opts = body:match('data%-options="([^"]+)"')
-    if not opts then return {} end
-    opts = opts:gsub("&quot;", '"'):gsub("&#39;", "'"):gsub("&lt;", "<")
-        :gsub("&gt;", ">"):gsub("&amp;", "&")
-    local data = json_parse(opts)
-    if type(data) ~= "table" or type(data.flashvars) ~= "table" then return {} end
-    local meta = data.flashvars.metadata
-    if type(meta) == "string" then meta = json_parse(meta) end
-    if type(meta) ~= "table" then return {} end
-    local out = {}
-    if type(meta.hlsManifestUrl) == "string" and meta.hlsManifestUrl ~= "" then
-        out[#out + 1] = { url = meta.hlsManifestUrl }
-    end
-    if type(meta.videos) == "table" then
-        for _, v in ipairs(meta.videos) do
-            local u = type(v) == "table" and v.url or nil
-            if type(u) == "string" and u ~= "" then
-                out[#out + 1] = { url = u, mime = "mp4", name = type(v.name) == "string" and v.name or nil }
-            end
-        end
-    end
-    return out
+    return OKRU.resolveOkRu(body)
 end
 
--- dailymotion: qualities.auto[].url. Запасной путь — общий regex на m3u8
--- (в JSON слеши экранированы: application\/x-mpegURL).
+-- dailymotion: body — metadata JSON из батча; разбор qualities.auto и
+-- regex-фоллбэк — общая либа dailymotion (parseMetadata).
 -- UNVERIFIED (воспроизведение): метаданные отдаются (200, URL извлекается), но
 -- cdndirector.dailymotion.com отвечает 403 из тестовой сети при любом Referer —
 -- подтвердить воспроизведение не удалось (та же ситуация, что в animexin).
+-- Обёртка, не алиас (см. комментарий у hostOf).
 local function resolveDailymotion(body)
-    if type(body) ~= "string" then return {} end
-    local data = json_parse(body)
-    local out = {}
-    if type(data) == "table" and type(data.qualities) == "table"
-        and type(data.qualities.auto) == "table" then
-        for _, q in ipairs(data.qualities.auto) do
-            if type(q) == "table" and type(q.url) == "string" and q.url ~= "" then
-                out[#out + 1] = { url = q.url }
-            end
-        end
-    end
-    if #out == 0 then
-        local flat = body:gsub("\\/", "/")
-        local m = flat:match('(https://[^"\'%s?]+%.m3u8[^"\'%s]*)')
-        if m then out[#out + 1] = { url = m } end
-    end
-    return out
+    return DM.parseMetadata(body)
 end
 
--- play.d.tube: {"video_url":"https://nas1.d.tube/videos/<uuid>/master.m3u8"}.
+-- play.d.tube: {"video_url":"https://nas1.d.tube/videos/<uuid>/master.m3u8"}
+-- — разбор JSON (video_url) — общая либа dtube.
+-- Обёртка, не алиас (см. комментарий у hostOf).
 local function resolveDTube(body)
-    if type(body) ~= "string" then return {} end
-    local data = json_parse(body)
-    if type(data) ~= "table" then return {} end
-    local url = data.video_url
-    if type(url) ~= "string" or url == "" then return {} end
-    return { { url = url } }
+    return DTUBE.resolve(body)
 end
 
 ------------------------------------------------------------------------------
 -- Packed JS (VidHide): eval(function(p,a,c,k,e,d){…}('payload',radix,count,
--- 'sym'.split('|'),0,0)) — Dean Edwards packer. Распаковка: вырезаем вызов,
--- режем payload по escape-правилам, symtab делим на | (пустые слоты значимы),
--- каждый токен переводим из radix-нотации и подставляем из symtab.
+-- 'sym'.split('|'),0,0)) — Dean Edwards packer. Распаковка — engine API
+-- unpack_packed: возвращает "", если упаковщика нет.
 ------------------------------------------------------------------------------
-
-local B64_DIGITS = "0123456789abcdefghijklmnopqrstuvwxyzABCDEFGHIJKLMNOPQRSTUVWXYZ"
-
-local function unbase(word, radix)
-    local value = 0
-    for i = 1, #word do
-        local pos = B64_DIGITS:find(word:sub(i, i), 1, true)
-        if not pos then return nil end
-        value = value * radix + (pos - 1)
-    end
-    return value
-end
-
--- Разделение с сохранением пустых частей: в symtab индексация строгая.
-local function splitPipes(text)
-    local out, start = {}, 1
-    while true do
-        local bar = text:find("|", start, true)
-        if not bar then
-            out[#out + 1] = text:sub(start)
-            return out
-        end
-        out[#out + 1] = text:sub(start, bar - 1)
-        start = bar + 1
-    end
-end
-
-local function unpackPackedJs(body)
-    local callAt = body:find("eval(function(p,a,c", 1, true)
-    if not callAt then return nil end
-    local openAt = body:find("}('", callAt, true)
-    if not openAt then return nil end
-
-    local i = openAt + 3
-    local payloadChunks = {}
-    while i <= #body do
-        local ch = body:sub(i, i)
-        if ch == "\\" then
-            payloadChunks[#payloadChunks + 1] = body:sub(i, i + 1)
-            i = i + 2
-        elseif ch == "'" then
-            break
-        else
-            payloadChunks[#payloadChunks + 1] = ch
-            i = i + 1
-        end
-    end
-    if i > #body then return nil end
-    local payload = table.concat(payloadChunks)
-
-    -- Остаток: ",36,524,'sym|tab…'.split('|'),0,0))"
-    local after = body:sub(i + 1)
-    local radixStr = after:match("^,(%d+),")
-    local radix = tonumber(radixStr)
-    if not radix or radix < 2 then return nil end
-
-    -- Ищем конец symtab — строку .split('|'); | собираем через string.char,
-    -- потому что это plain-поиск (plain=true), а не Lua-паттерн.
-    local splitNeedle = ".split('" .. string.char(124) .. "')"
-    local splitAt = after:find(splitNeedle, 1, true)
-    if not splitAt then return nil end
-    local symOpen = after:find("'", 1, true)
-    if not symOpen or symOpen > splitAt then return nil end
-    local symtab = after:sub(symOpen + 1, splitAt - 1)
-    if symtab:sub(-1) == "'" then symtab = symtab:sub(1, -2) end
-    symtab = symtab:gsub("\\'", "'"):gsub("\\\\", "\\")
-    local words = splitPipes(symtab)
-    if #words == 0 then return nil end
-
-    local unpacked = payload:gsub("[0-9A-Za-z]+", function(word)
-        if #word > 7 then return word end
-        local index = unbase(word, radix)
-        if not index or index < 0 or index >= #words then return word end
-        local replacement = words[index + 1]
-        if type(replacement) == "string" and replacement ~= "" then return replacement end
-        return word
-    end)
-    return unpacked
-end
 
 -- Прямая страница: ищем готовые ссылки (после разэкранирования \/), плюс
 -- распаковываем packed-JS, если он есть (VidHide).
 local function resolvePage(body)
     if type(body) ~= "string" then return {} end
     local flat = body:gsub("\\/", "/")
-    if flat:find("eval(function(p,a,c", 1, true) then
-        local ok, unpacked = pcall(unpackPackedJs, flat)
-        if ok and type(unpacked) == "string" then
-            flat = flat .. "\n" .. unpacked
-        elseif not ok then
-            log_error("Anichin: unpack failed: " .. tostring(unpacked))
-        end
-    end
+    local un = unpack_packed(flat)
+    if un ~= "" then flat = flat .. "\n" .. un end
     local out, seen = {}, {}
     local function take(pattern)
         for url in flat:gmatch(pattern) do
@@ -644,45 +576,17 @@ local function resolvePage(body)
     return out
 end
 
--- dood/playmogo: body — embed, откуда берётся путь /pass_md5/<...>; тело
--- /pass_md5 — начало финального URL, к нему дописываются 10 случайных
--- символов и "?token=<последний сегмент>&expiry=".
--- expiry = Date.now() в МИЛЛИСЕКУНДАХ — проверено по inline-коду плеера
--- playmogo.com/e/yx3yl4w4y9br (живьём 2026-10-07), os_time() в NoveLA тоже
--- миллисекунды. Финал — mp4 на cloudatacdn.com, без расширения → mime = "mp4".
+-- dood/playmogo: body — embed (загружен батчем), embedUrl — Referer pass_md5.
+-- Разбор /pass_md5 и http_get тела — общая либа dood (сигнатура
+-- resolveDood(embedUrl, body) — аргументы местами, здесь адаптер).
 -- Капча-вариант embed отдаётся без /pass_md5 — тогда возвращаем пусто.
-local RANDOM_CHARS = "abcdefghijklmnopqrstuvwxyzABCDEFGHIJKLMNOPQRSTUVWXYZ0123456789"
-
 local function resolveDood(body, embedUrl)
-    if type(body) ~= "string" then return {} end
-    local md5 = body:match("(/pass_md5/[^'\"]+)")
-    local origin = type(embedUrl) == "string"
-        and embedUrl:match("^(https?://[^/]+)") or nil
-    if not md5 or not origin then
-        log_error("Anichin: dood: в embed нет /pass_md5")
+    local url, mime = DOOD.resolveDood(embedUrl, body)
+    if not url then
+        log_error("Anichin: dood: failed to resolve")
         return {}
     end
-    local token = md5:match("([^/]+)$")
-    local r = http_get(origin .. md5, {
-        headers = { ["Referer"] = embedUrl }, timeout = BATCH_TIMEOUT,
-    })
-    local start = r.success and type(r.body) == "string"
-        and r.body:match("^%s*(https?://.-)%s*$") or nil
-    if not start then
-        local b = type(r.body) == "string" and r.body or ""
-        log_error("Anichin: dood: /pass_md5 — "
-            .. (b:find("RELOAD", 1, true) and "RELOAD"
-                or ("HTTP " .. tostring(r.code))))
-        return {}
-    end
-    local rnd = {}
-    for i = 1, 10 do
-        local k = math.random(1, #RANDOM_CHARS)
-        rnd[i] = RANDOM_CHARS:sub(k, k)
-    end
-    local url = start .. table.concat(rnd)
-        .. "?token=" .. token .. "&expiry=" .. tostring(os_time())
-    return { { url = url, mime = "mp4" } }
+    return { { url = url, mime = mime } }
 end
 
 local RESOLVERS = {
@@ -698,48 +602,17 @@ local RESOLVERS = {
 ------------------------------------------------------------------------------
 
 -- Значение option — base64 от <iframe src="..."> (atob на сайте). Метка option
--- («Okru», «VidHide [ADS]») уходит в quality варианта. Разметка внутри бывает
--- в верхнем регистре (<IFRAME SRC=...>), поэтому src ищем regex'ом без учёта
--- регистра.
-local function mirrorOptions(body)
-    local select = html_select_first(body, "select.mirror")
-    if not select then return nil end
-    local out = {}
-    for _, opt in ipairs(html_select(select.html, "option[value]")) do
-        local value = opt:attr("value")
-        if type(value) == "string" and value ~= "" then
-            local label = string_clean(html_text(opt.html))
-            local decoded = base64_decode(value)
-            if type(decoded) == "string" and decoded ~= "" then
-                -- regex_match возвращает ПОЛНЫЕ совпадения (m.value), а не
-                -- группы: m[1] здесь = 'src="https://…"' с префиксом и кавычками.
-                -- Вырезаем сам URL; если движок вернёт чистую группу — оставим.
-                local m = regex_match(decoded, '(?i)src\\s*=\\s*"([^"]+)"')
-                local src = m and m[1] or nil
-                if src then src = src:match('^[^"]*"([^"]+)"') or src end
-                if not src then src = decoded:match('src=([^%s>]+)') end
-                if src then
-                    src = src:gsub('^"', ""):gsub('"$', "")
-                        :gsub("^'", ""):gsub("'$", "")
-                    -- Кавычка/пробел внутри src = битый embed: он упал бы в
-                    -- http_get_batch до сети (HTTP -1), поэтому не добавляем.
-                    if not src:find("[%s\"'<>]") then
-                        out[#out + 1] = { label = label, embed = absUrl(src) }
-                    end
-                end
-            end
-        end
-    end
-    return out
-end
-
+-- («Okru», «VidHide [ADS]») уходит в quality варианта. Разбор (включая
+-- regex-фоллбэки для регистра/кавычек) — общая либа mirrors; baseUrl нужен
+-- либе для абсолютизации относительных embed.
 function getVideoList(episodeUrl)
+    ensureEngine()
     local r = http_get(episodeUrl, { timeout = 15000 })
     if not r.success then
         log_error("Anichin: episode request failed (HTTP " .. tostring(r.code) .. ")")
         return {}
     end
-    local options = mirrorOptions(r.body)
+    local options = MIRRORS.mirrorOptions(r.body, baseUrl)
     if not options or #options == 0 then
         log_error("Anichin: no mirror list on " .. tostring(episodeUrl))
         return {}

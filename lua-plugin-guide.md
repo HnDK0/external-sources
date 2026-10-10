@@ -23,9 +23,11 @@
 15. [Фильтры каталога](#фильтры-каталога)
 16. [Настройки плагина](#настройки-плагина)
 17. [Хелперы и утилиты](#хелперы-и-утилиты)
-18. [Полный справочник API](#полный-справочник-api)
-19. [Полный шаблон плагина](#полный-шаблон-плагина)
-20. [Частые ошибки](#частые-ошибки)
+18. [Общие библиотеки (require_lib)](#общие-библиотеки-require_lib)
+19. [Тяжёлые операции (Kotlin API)](#тяжёлые-операции-kotlin-api)
+20. [Полный справочник API](#полный-справочник-api)
+21. [Полный шаблон плагина](#полный-шаблон-плагина)
+22. [Частые ошибки](#частые-ошибки)
 
 ---
 
@@ -1810,6 +1812,179 @@ end
 
 **Важно:** кэш сбрасывается при закрытии/перезапуске приложения. Не используйте его для данных, которые должны быть актуальными при каждом запуске.
 
+### pow_solve(challenge, difficulty)
+
+Kotlin-солвер Proof-of-Work (глобал только в новых версиях NoveLA): поиск nonce для byse/filemoon PoW (memory-hard функция gr), батчи 1024, бюджет 15 секунд. Возвращает nonce строкой или `nil` при таймауте/ошибке.
+
+```lua
+local nonce = pow_solve(challenge, 12)
+if not nonce then
+    log_error("my_source: pow_solve timeout")
+    return nil
+end
+```
+
+---
+
+## Общие библиотеки (require_lib)
+
+`require_lib(id)` — Lua-глобал (только в новых версиях NoveLA): читает общую библиотеку и возвращает её таблицу.
+
+```lua
+local urls = require_lib("urls")
+local host = urls.hostOf(pageUrl)
+```
+
+Пути поиска `<id>.lua`:
+
+| Окружение | Пути поиска |
+|---|---|
+| На устройстве | `lua_extensions/lib/<id>.lua` |
+| Репо-тестер | `<scriptDir>/lib/<id>.lua`, затем `<scriptDir>/../libs/<id>.lua` и `<scriptDir>/../libs/*/<id>.lua` |
+
+**Ошибки** — LuaError (не `nil`): невалидный id (не `[a-z0-9_]+`), файл отсутствует, либа не вернула таблицу.
+
+Внутри либы `require_lib` доступен (метатаблица `__index` → глобалы) — можно ссылаться на другие либы; циклы между либами запрещены. Уже загруженные либы кэшируются (инвалидация по mtime/размеру файла).
+
+### Структура libs/
+
+`libs/` — в корне репозитория, общий для всех языков: один файл на экстрактор/декодер. Подпапки — чистая раскладка репо: **id либы = basename файла и не зависит от подпапки**, `require_lib` принимает только id.
+
+| Файл | Содержимое |
+|---|---|
+| `libs/helpers/urls.lua` | `origin`, `hostOf`, `unescapeSlashes`, `resolve`, `driveDirectUrl` |
+| `libs/helpers/hls.lua` | `pickStream`, `hasMediaExt` |
+| `libs/helpers/text.lua` | `rot13`, `rot18` |
+| `libs/hosters/aksor.lua` | `apiUrl`, `resolve` — JSON API Aksor по iframe |
+| `libs/hosters/alloha.lua` | `resolve` — borth-пермутации, POST /bnsi → HLS |
+| `libs/hosters/cvh.lua` | `videoUrl`, `sourceFrom` — player API CDN VideoHub |
+| `libs/hosters/dailymotion.lua` | `parseMetadata`, `resolveDailymotion` — метаданные → HLS master |
+| `libs/hosters/dood.lua` | `resolveDood` — экстрактор DOOD/dsvplay |
+| `libs/hosters/dotplay.lua` | `resolve` — embed → api.php → base64 video_url |
+| `libs/hosters/dropbox.lua` | `resolve` — shared link → прямой CDN URL |
+| `libs/hosters/dtube.lua` | `resolve` — JSON api.d.tube → master.m3u8 |
+| `libs/hosters/embeds.lua` | диспетчер `extractFromEmbed` (роутит по хостерам) |
+| `libs/hosters/gdriveplayer.lua` | `decode` — atob+XOR скрипта → HLS playlist |
+| `libs/hosters/hgcloud.lua` | `mirrors`, `mediaUrls`, `resolve` — packed-конфиг с зеркала |
+| `libs/hosters/kodik.lua` | `resolve` — urlParams/d_sign → POST /ftor |
+| `libs/hosters/mailru.lua` | `parseMeta`, `resolve` — metadataUrl → mp4 |
+| `libs/hosters/mirrors.lua` | `mirrorOptions` — список mirror-опций эмбедов |
+| `libs/hosters/mixdrop.lua` | `extractMixdrop` — MDCore.wurl → mp4 |
+| `libs/hosters/mp4upload.lua` | `extractMp4upload` — player.src → mp4 |
+| `libs/hosters/okru.lua` | `resolveOkRu` — data-options → flashvars.metadata |
+| `libs/hosters/otaku.lua` | `resolve` — window.__P (base64∘xor) → m3u8 + субтитры |
+| `libs/hosters/pixeldrain.lua` | `resolve` — embed /u/ → /api/file/ mp4 |
+| `libs/hosters/rumble.lua` | `resolve` — jwplayer-конфиг → mp4/HLS |
+| `libs/hosters/seekplayer.lua` | `decode` — hex blob API → AES-128-CBC JSON |
+| `libs/hosters/share4max.lua` | `version`, `resolve` — Inertia XHR → props.streams |
+| `libs/hosters/shared.lua` | `extract` — 4shared embed → первый `<source>` |
+| `libs/hosters/sibnet.lua` | `resolve` — shell.php → единственный mp4 |
+| `libs/hosters/soraplay.lua` | `parsePlayers`, `parseSources` — sources и список плееров |
+| `libs/hosters/uqload.lua` | `packedMediaUrls`, `resolve` — packed-JS → jwplayer sources |
+| `libs/hosters/vidbom.lua` | `isLink`, `parseSources` — семейство vidbom/vadbom/… → sources |
+| `libs/hosters/videa.lua` | `request`, `parse` — токен _xt → XML (RC4 + base64) |
+| `libs/hosters/videas.lua` | `parse` — embed videas.fr → прямой HLS/MP4 |
+| `libs/hosters/vidmoly.lua` | `resolve` — redirect → player → packed media URLs |
+| `libs/hosters/vidyard.lua` | `origin`, `resolve` — player/<id>.json → профили hls[] |
+| `libs/hosters/vk.lua` | `videoExtUrl`, `resolve` — video_ext.php → mp4_144…1080 |
+| `libs/hosters/voe.lua` | `extractVoe`, `extractSources` — обфусцированный JSON (1.3.0) |
+
+**Критерий выноса в `libs/hosters/`**: generic-хостер-резолверы, которые может встроить любой сайт. Site-специфичный диспетчер/gate (kind-ID бэкенда, Livewire-гейты, собственный CDN сайта) остаётся в плагине — примеры: `record`/yummyanime, `yonaplay`/witanime, `gateUrl`/witanime.
+
+Исторические `libs/common.lua` и `libs/decode.lua` **удалены**: URL-хелперы переехали в `urls`, `pickStream` — в `hls`, а `base64Decode`/`unpackAll` заменены на engine API `base64_decode_bytes`/`unpack_packed` (см. «Тяжёлые операции (Kotlin API)»). Отдельных Lua-декрипторов в `libs/` нет — весь крипто (AES-GCM/RC4/base64/hash) живёт в engine API Kotlin. Не используйте старые имена — `require_lib("common")` на новом репо бросит LuaError.
+
+Формат файла: шапка-комментарий, локальные helpers, `return M`. Поля `version` в либах НЕТ.
+
+### Синк либ (по sha256)
+
+Каталог либ — секция `libraries` в корневом `index.yaml` (не в языковых):
+
+```yaml
+libraries:
+  - id: "urls"
+    url: "https://raw.githubusercontent.com/HnDK0/external-sources/refs/heads/main/libs/helpers/urls.lua"
+    sha256: "<hex>"
+```
+
+`sha256` считает `scripts/sync_index.py` автоматически из содержимого `libs/**/*.lua` (обход рекурсивный, URL содержит подпапку) — регенерация сама обновляет хеши. Приложение качает либу в flat `lua_extensions/lib/<id>.lua`, если sha256 локального файла отличается от каталожного — подпапка в URL на это не влияет. Версии в этом не участвуют. `libs/` входит в SKIP_DIRS синка (вместе с подпапками) — это не языковая папка.
+
+После любой правки `libs/**/*.lua` обязательно прогони `GITHUB_REF_NAME=main python3 scripts/sync_index.py` — иначе каталожный sha256 устареет и приложение будет перекачивать либу при каждом pull. **`GITHUB_REF_NAME=main` обязателен**: без него синк на feature-ветке перепишет все URL в index.yaml на эту ветку и сломает релиз.
+
+### Фоллбэк старых билдов
+
+`require_lib` есть только в новых версиях приложения. **Не бросайте `error` в top-level** — плагин молча исчезнет из списка источников. Паттерн: проверка в начале каждой публичной функции, канон — `show_error(...)` + `error(..., 0)` (в проде `show_error` асинхронен и возвращает `nil`, поэтому без `error` функция продолжит работу без либ):
+
+```lua
+function getChapterText(html, url)
+    if type(require_lib) ~= "function" then
+        show_error("Требуется обновление NoveLA", "Плагину нужны общие библиотеки")
+        error("Требуется обновление NoveLA (require_lib)", 0)
+    end
+    local embeds = require_lib("embeds")
+    -- ...
+end
+```
+
+---
+
+## Тяжёлые операции (Kotlin API)
+
+Хеши, шифры, байтовый base64 и распаковка P.A.C.K.E.R выполняются на стороне движка (Kotlin) — Lua только вызывает. Эти глобалы есть **только в новых версиях NoveLA** (см. «Паттерн guard» ниже).
+
+| API | Сигнатура | Возврат / контракт |
+|---|---|---|
+| `sha256(data)` | `(data: str) -> str` | **Сырые байты** (binary-str, 32 шт.), НЕ hex; hex делает вызывающий. Неверный тип → LuaError |
+| `md5(data)` | `(data: str) -> str` | **Сырые байты** (16 шт.), НЕ hex. Неверный тип → LuaError |
+| `sha1(data [, "hex"\|"raw"])` | `(data: str, mode?: "hex"\|"raw") -> str` | **Сырые байты** (20 шт.) без режима и со `"raw"` (зеркало `sha256`); `"hex"` → 40-символьный hex. Неизвестный режим/неверный тип → LuaError |
+| `crc32(data)` | `(data: str) -> number` | CRC-32 → **Lua-число** беззнакового значения `0..2^32-1` (в double лежит точно). `crc32("123456789")` = 3421780262 (0xCBF43926), `crc32("")` = 0. Неверный тип → LuaError |
+| `hmac_sha256(key, data)` | `(key: str, data: str) -> str` | **Сырые байты** (32 шт.), НЕ hex; если нужен hex — `hexEncode(...)` на стороне вызывающего. Неверный тип → LuaError |
+| `pbkdf2(password, salt, iterations, dkLen [, hash])` | `(str, str, int, int, "sha1"\|"sha256"\|"sha512"?) -> str` | PBKDF2-HMAC → **сырые байты** длины `dkLen`; `hash` по умолчанию `sha256`. Пароль читается как UTF-8-текст, соль — сырые байты. Неверный `hash`/тип, `iterations < 1`, `dkLen < 1` → LuaError |
+| `aes_gcm_decrypt(key, iv, ct, tag)` | 4 аргумента, все **сырые байты** (binary-str) | Расшифровка AES-GCM; тег передаётся отдельным аргументом. **`nil` при любой ошибке** (битый тег, неверный ключ) — Lua делает nil-fallback. Разбор упакованных форм (`iv‖tag‖ct`, `arr:<b64 iv>:<b64 tag>:<b64 ct>`) — на стороне вызывающего. Неверный тип → LuaError |
+| `rc4(key, data)` | `(key: str, data: str) -> str` | RC4, **сырые байты** на входе и выходе; пустой ключ → LuaError |
+| `aes_ctr(data, key, iv)` | `(data, key, iv: str) -> str` | AES/CTR/NoPadding → **сырые байты**; режим симметричен (один вызов и шифрует, и дешифрует). key 16/24/32, iv строго 16 байт (контракт = блок AES; 8-байтовый nonce не принимается). Неверная длина key/iv → LuaError. Только в новых версиях |
+| `rsa_decrypt(data, privateKey)` | `(data, privateKey: str) -> str` | RSA/ECB/PKCS1Padding → **сырые байты**; `privateKey` — standard base64 DER PKCS#8 (как принимает `base64_decode`). Битый base64/ключ/padding → LuaError (английское сообщение). Только в новых версиях |
+| `aes_decrypt(data, key, iv)` | `(data, key, iv: str) -> str \| nil` | AES/CBC/PKCS5; key/iv — сырые байты. **`nil` при ошибке** |
+| `base64_encode(s)` | `(s: str) -> str` | Base64 (Java String — для бинарных данных не годится) |
+| `base64_decode(s)` | `(s: str) -> str \| nil` | Base64 → строка (UTF-8); `nil` при невалидном base64 |
+| `base64_decode_bytes(s)` | `(s: str) -> str \| nil` | Base64 → **сырые байты** (binary-str с `\0` и т.п.); lenient: пробелы, url-safe `-_/`, автодопadding. `nil` при невалидном base64, неверный тип → LuaError |
+| `unpack_packed(script)` | `(script: str) -> str` | Распаковка `eval(function(p,a,c,k,e,d)...)` → исходный src; **первый матч** в тексте; **`""` если упаковщика нет** (не `nil` — вызовы проверяют `un ~= ""`). Неверный тип → LuaError |
+| `json_encode(value)` | `(value: bool\|num\|str\|table) -> str` | Компактный JSON (без пробелов), объектные ключи сортируются → детерминированный вывод. Таблица → **массив** при непрерывных целых ключах `1..n`, иначе **объект** (пустая таблица → `[]`, дырки → `{"1":..,"3":..}`). `nil` сверху, смешанные/неподдерживаемые ключи, циклы, функции, нефинитные числа → LuaError. **Каноничный encoder**; `json_stringify` — legacy (см. «JSON») |
+| `inflate(data [, mode])` | `(data: str, mode?: "zlib"\|"gzip") -> str \| nil` | Декомпрессия → **сырые байты**; `mode` по умолчанию `"zlib"`. Битые/усечённые данные и неизвестный `mode` → `nil` (обработка данных, не ошибка вызова); неверный тип → LuaError. HTTP Content-Encoding (gzip/deflate/br) движок снимает сам — `inflate` нужен только для сжатых блобов **внутри** данных |
+| `pow_solve(challenge, difficulty)` | `(str, int) -> str \| nil` | Nonce для byse/filemoon PoW; `nil` при таймауте/ошибке |
+| `require_lib(id)` | `(id: str) -> table` | Общая библиотека из `libs/`; ошибки — LuaError (подробнее — «Общие библиотеки (require_lib)») |
+
+Контракт **сырых байт** важен: ключи, IV, шифротекст и хеши — бинарь, `checkjstring()`/`tojstring()` (UTF-8 round-trip) их портит. Поэтому `sha256(...)` возвращает binary-str: `string.byte(sha256(x))` даёт байты, а `hexEncode` делает вызывающий, если нужен hex.
+
+### Когда выносить в Kotlin
+
+**Маркер:** цикл по байтам, битовые операции, крипто и декодеры, написанные в чистом Lua, — кандидат в engine API: посимвольный перебор бинарного блоба в Lua слишком медлен, а своих библиотек в песочнице нет. Остаётся в Lua: `fetch`/HTTP, JSON-выборка полей и сборка URL — это таблицы и строки, их Lua делает нормально.
+
+Новые API появляются через TDD: golden-снапшоты → юнит-тесты (`HeavyOpsTest`) → паритет с тестером (`plugin-tester-jvm`), и только после этого строка в этот гайд.
+
+Дорожная карта: `json_encode` / `inflate` / `pbkdf2` / `sha1` / `crc32` / `aes_ctr` / `rsa_decrypt` — добавлены (все — в таблицах выше). Новые кандидаты при появлении 2+ потребителей — по мере появления callsites.
+
+### Паттерн guard
+
+Глобалы выше появляются только в новых сборках. Плагин, который их использует, обязан проверять их **внутри первой публичной функции** и вызывать проверку **во всех публичных функциях** (канон `ensureEngine`; в `es/latanime.lua` одна объединённая `ensureLibs` — она же проверяет `require_lib` и engine API). Проверять нужно **только реально используемые API**:
+
+```lua
+local function ensureEngine()
+    local missing = {}
+    if rawget(_G, "sha256") == nil then missing[#missing + 1] = "sha256" end
+    if rawget(_G, "unpack_packed") == nil then missing[#missing + 1] = "unpack_packed" end
+    if #missing > 0 then
+        show_error("Se requiere actualizar NoveLA",
+            "Este complemento necesita funciones nuevas (" .. table.concat(missing, ", ") ..
+            "). Actualice la aplicación a la última versión.")
+        error("Se requiere una versión más reciente de la aplicación: " .. table.concat(missing, ","), 0)
+    end
+end
+```
+
+`rawget(_G, "<api>")` вместо прямого обращения — на старых билдах глобала нет, прямое чтение дало бы `nil` без ошибки, а сравнение с `nil` ловит именно отсутствие.
+
+Для `require_lib` — отдельный слой на **top-level** (иначе на старых билдах top-level `require_lib(...)` — nil-call и плагин молча исчезнет из списка источников): поимённая загрузка через `pcall` с сохранением ошибки в `libErr` + `ensureLibs()` в публичных функциях (канон latanime:40-65). Текст сообщения — на языке плагина (es → испанский, остальные — английский).
+
 ---
 
 ## Полный справочник API
@@ -1870,15 +2045,30 @@ end
 | Функция | Описание |
 |---|---|
 | `json_parse(s)` | Строка → Lua таблица/значение |
-| `json_stringify(v)` | Lua таблица → JSON строка |
+| `json_stringify(v)` | Lua таблица → JSON строка. **Legacy**: `nil` при ошибке, порядок ключей не гарантирован. Канонично — `json_encode` (см. «Крипто / Кодирование») |
 
 ### Крипто / Кодирование
 
 | Функция | Описание |
 |---|---|
 | `base64_encode(s)` | Base64 encode |
-| `base64_decode(s)` | Base64 decode |
-| `aes_decrypt(data, key, iv)` | AES/CBC/PKCS5 расшифровка |
+| `base64_decode(s)` | Base64 decode → строка; `nil` при невалидном base64 |
+| `base64_decode_bytes(s)` | Base64 decode → **сырые байты** (lenient: пробелы, url-safe, автодопadding); `nil` при невалидном base64. Только в новых версиях |
+| `aes_decrypt(data, key, iv)` | AES/CBC/PKCS5 расшифровка → строка или `nil` при ошибке |
+| `aes_gcm_decrypt(key, iv, ct, tag)` | AES-GCM расшифровка, аргументы — сырые байты → строка или `nil` при ошибке. Только в новых версиях |
+| `rc4(key, data)` | RC4 → сырые байты. Только в новых версиях |
+| `aes_ctr(data, key, iv)` | AES/CTR → сырые байты, симметричен; key 16/24/32, iv строго 16; неверная длина → LuaError. Только в новых версиях |
+| `rsa_decrypt(data, privateKey)` | RSA/ECB/PKCS1Padding → сырые байты; `privateKey` — standard base64 DER PKCS#8; ошибка → LuaError. Только в новых версиях |
+| `sha256(data)` | SHA-256 → **сырые байты** (не hex). Только в новых версиях |
+| `md5(data)` | MD5 → **сырые байты** (не hex). Только в новых версиях |
+| `sha1(data [, "hex"\|"raw"])` | SHA-1 → **сырые байты** (20 шт.), `"hex"` → hex. Только в новых версиях |
+| `crc32(data)` | CRC-32 → Lua-число `0..2^32-1`. Только в новых версиях |
+| `hmac_sha256(key, data)` | HMAC-SHA256 → **сырые байты** (не hex). Только в новых версиях |
+| `pbkdf2(password, salt, iterations, dkLen [, hash])` | PBKDF2-HMAC → **сырые байты** длины `dkLen`; `hash` = `sha1`/`sha256`/`sha512`, по умолчанию `sha256`; пароль — UTF-8-текст, соль — сырые байты; неверный `hash`, `iterations < 1`, `dkLen < 1` → LuaError. Только в новых версиях |
+| `unpack_packed(script)` | Распаковка P.A.C.K.E.R → src; `""` если упаковщика нет. Только в новых версиях |
+| `json_encode(v)` | Компактный JSON → строка; массив при непрерывных ключах `1..n`, иначе объект (ключи сортируются), пустая таблица → `[]`; `nil`/смешанные ключи/циклы/функции → LuaError. **Каноничный** encoder (см. `json_stringify` в «JSON»). Только в новых версиях |
+| `inflate(data [, mode])` | Декомпрессия zlib (по умолчанию) или gzip → **сырые байты**; битые данные/неизвестный `mode` → `nil`. HTTP Content-Encoding движок декомпрессит сам — только для сжатых блобов внутри данных. Только в новых версиях |
+| `pow_solve(challenge, difficulty)` | Поиск nonce для byse/filemoon PoW (memory-hard функция gr), батчи 1024, бюджет 15 с → nonce строкой или `nil` при таймауте/ошибке. Только в новых версиях |
 
 ### Хранилище
 
@@ -1898,6 +2088,7 @@ end
 | `log_error(msg)` | Лог ERROR (Timber) |
 | `show_error(title, message)` | Показать диалог ошибки пользователю. Останавливает загрузку главы, после вызова верните `nil` |
 | `os_time()` | Unix timestamp в миллисекундах |
+| `require_lib(id)` | Общая библиотека из `libs/` → таблица; ошибки — LuaError (невалидный id `[a-z0-9_]+`, файла нет, либа не вернула таблицу). Пути: `lua_extensions/lib/<id>.lua` на устройстве, `<scriptDir>/lib/` → `<scriptDir>/../libs/` → `<scriptDir>/../libs/*/` в тестере. Кэш по mtime/размеру. Только в новых версиях |
 
 ---
 

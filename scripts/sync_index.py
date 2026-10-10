@@ -19,7 +19,7 @@ SYNC_BASE_URL — переопределяет базовый URL целиком
 (как рабочий пример / история), но не попадают в index.yaml.
 """
 
-import os, re, sys, subprocess
+import os, re, sys, subprocess, hashlib
 from pathlib import Path
 
 # ── Совместимость вывода (Windows cp1251 и т.п. падает на ─ и кириллице) ──
@@ -32,7 +32,7 @@ except Exception:
 # ── Конфиг ────────────────────────────────────────────────────────────────────
 
 RAW_BASE  = "https://raw.githubusercontent.com/{repo}/refs/heads/{branch}"
-SKIP_DIRS = {".git", ".github", "scripts", "icons"}
+SKIP_DIRS = {".git", ".github", "scripts", "icons", "libs"}
 
 # ── Автодетект языковых папок ─────────────────────────────────────────────────
 
@@ -126,12 +126,39 @@ def parse_lua(filepath: Path) -> dict | None:
 
 # ── Генерация index.yaml ──────────────────────────────────────────────────────
 
-def build_lang_index(plugins: list[dict], lang_code: str, lang_name: str) -> str:
+def extract_libraries(old_text: str) -> str:
+    """Passthrough секции libraries: скрипт не знает источника правды для неё,
+    поэтому вырезает блок из старого index.yaml и вставляет в новый."""
+    m = re.search(r'^libraries:\n(?:[ \t]+.*\n?)*', old_text, re.MULTILINE)
+    return m.group(0) if m else ""
+
+def build_libraries(root: Path, raw_base: str) -> str:
+    """Каталог общих либ libs/**/*.lua для корневого index.yaml, с sha256
+    содержимого — приложение качает либу при расхождении хеша.
+    id = basename (подпапки helpers/ hosters/ в URL отражаются, в id — нет)."""
+    base = root / "libs"
+    files = sorted(base.glob("**/*.lua"))
+    if not files:
+        return ""
+    lines = ["libraries:"]
+    for f in files:
+        sha256 = hashlib.sha256(f.read_bytes()).hexdigest()
+        rel = f.relative_to(base).as_posix()
+        lines += [
+            f'  - id: "{f.stem}"',
+            f'    url: "{raw_base}/libs/{rel}"',
+            f'    sha256: "{sha256}"',
+        ]
+    return "\n".join(lines) + "\n"
+
+def build_lang_index(plugins: list[dict], lang_code: str, lang_name: str, libraries: str = "") -> str:
     lines = [
         f'language: "{lang_code}"',
         f'name: "{lang_name}"',
-        'sources:',
     ]
+    if libraries:
+        lines.append(libraries.rstrip("\n"))
+    lines.append('sources:')
     for p in plugins:
         lines += [
             f'  - id: "{p["id"]}"',
@@ -145,7 +172,7 @@ def build_lang_index(plugins: list[dict], lang_code: str, lang_name: str) -> str
             lines.append(f'    content_type: "{p["content_type"]}"')
     return "\n".join(lines) + "\n"
 
-def build_root_index(langs: list[dict], raw_base: str) -> str:
+def build_root_index(langs: list[dict], raw_base: str, libraries: str = "") -> str:
     """langs — список {"dir": str, "code": str, "name": str}"""
     lines = ["languages:"]
     for lang in langs:
@@ -154,6 +181,8 @@ def build_root_index(langs: list[dict], raw_base: str) -> str:
             f'    name: "{lang["name"]}"',
             f'    url: "{raw_base}/{lang["dir"]}/index.yaml"',
         ]
+    if libraries:
+        lines.append(libraries.rstrip("\n"))
     return "\n".join(lines) + "\n"
 
 def rewrite_readme(raw_base: str):
@@ -223,8 +252,9 @@ def sync(root: Path):
             print(f"  {meta['id']} v{meta['version']}")
 
         index_path = dir_path / "index.yaml"
-        new_text   = build_lang_index(plugins, lang_code, lang_name)
         old_text   = index_path.read_text(encoding="utf-8") if index_path.exists() else ""
+        libraries  = extract_libraries(old_text)
+        new_text   = build_lang_index(plugins, lang_code, lang_name, libraries)
 
         if new_text != old_text:
             index_path.write_text(new_text, encoding="utf-8")
@@ -237,7 +267,7 @@ def sync(root: Path):
 
     # Корневой index.yaml
     root_index = root / "index.yaml"
-    new_root   = build_root_index(langs_meta, raw_base)
+    new_root   = build_root_index(langs_meta, raw_base, build_libraries(root, raw_base))
     old_root   = root_index.read_text(encoding="utf-8") if root_index.exists() else ""
 
     print("── index.yaml (корневой) ──")

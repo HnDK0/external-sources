@@ -4,11 +4,42 @@
 
 id           = "hentaila"
 name         = "Hentaila"
-version      = "1.0.0"
+version      = "1.1.0"
 baseUrl      = "https://hentaila.com"
 language     = "es"
 content_type = "video"
 icon         = "https://raw.githubusercontent.com/HnDK0/external-sources/main/icons/hentaila.png"
+
+-- ── Guard: old app builds without require_lib ────────────────────────────────
+-- Top-level must load without require_lib (otherwise the plugin silently
+-- disappears from the sources list) — pcall-tryLib pattern (latanime M9):
+-- the error is kept in libErr and reported from ensureLibs.
+local libErr = nil
+local HAS_LIBS = type(require_lib) == "function"
+
+local function tryLib(name)
+    if not HAS_LIBS then return nil end
+    local ok, res = pcall(require_lib, name)
+    if not ok then libErr = tostring(res) return nil end
+    return res
+end
+
+local MP4UPLOAD = tryLib("mp4upload")
+local PIXELDRAIN = tryLib("pixeldrain")
+
+-- User-facing strings stay in Spanish (plugin language = "es"), like
+-- es/latanime.lua. show_error is async in production, hence error(..., 0).
+local function ensureLibs()
+    if not HAS_LIBS then
+        show_error("Se requiere actualizar NoveLA", "Este complemento usa bibliotecas comunes (require_lib). Actualice la aplicación a la última versión.")
+        error("Se requiere la última versión de la aplicación (require_lib)", 0)
+    end
+    if not MP4UPLOAD or not PIXELDRAIN then
+        show_error("Bibliotecas no cargadas", "Abra la pantalla de extensiones y pulse actualizar; después reinicie la aplicación. " .. (libErr or ""))
+        error("Bibliotecas comunes no cargadas", 0)
+    end
+end
+
 local CATALOG = baseUrl .. "/catalogo"
 -- Same selector as the Kotlin source; "\\/" is the escaped slash in "group/item".
 local CARD_SEL = "div.grid.grid-cols-2 article.group\\/item"
@@ -74,10 +105,12 @@ end
 -- ── Catalog / search ──────────────────────────────────────────────────────────
 
 function getCatalogList(index)
+    ensureLibs()
     return fetchCatalog("?order=latest_added&page=" .. (index + 1))
 end
 
 function getCatalogSearch(index, query)
+    ensureLibs()
     if not query or query == "" then return { items = {}, hasNext = false } end
     return fetchCatalog("?search=" .. url_encode(query) .. "&page=" .. (index + 1))
 end
@@ -85,6 +118,7 @@ end
 -- ── Book details ──────────────────────────────────────────────────────────────
 
 function getBookTitle(bookUrl)
+    ensureLibs()
     local body = fetchPage(bookUrl)
     if not body then return nil end
     local el = html_select_first(body, "h1")
@@ -92,6 +126,7 @@ function getBookTitle(bookUrl)
 end
 
 function getBookCoverImageUrl(bookUrl)
+    ensureLibs()
     local body = fetchPage(bookUrl)
     if not body then return nil end
     local cover = html_attr(body, "img.aspect-poster", "src")
@@ -99,6 +134,7 @@ function getBookCoverImageUrl(bookUrl)
 end
 
 function getBookDescription(bookUrl)
+    ensureLibs()
     local body = fetchPage(bookUrl)
     if not body then return nil end
     local el = html_select_first(body, "div.entry.text-lead p")
@@ -106,6 +142,7 @@ function getBookDescription(bookUrl)
 end
 
 function getBookGenres(bookUrl)
+    ensureLibs()
     local body = fetchPage(bookUrl)
     if not body then return {} end
 
@@ -174,10 +211,12 @@ local function loadEpisodes(bookUrl)
 end
 
 function getChapterList(bookUrl)
+    ensureLibs()
     return loadEpisodes(bookUrl)
 end
 
 function getChapterListHash(bookUrl)
+    ensureLibs()
     local chapters = loadEpisodes(bookUrl)
     if #chapters == 0 then return nil end
     return tostring(#chapters) .. "|" .. chapters[#chapters].url
@@ -217,20 +256,20 @@ local function resolveEmbed(server, url)
         }
     end
 
-    -- PixelDrain: /u/<id> page → /api/file/<id> direct file.
-    if lower == "pdrain" or url:find("pixeldrain", 1, true) then
-        local fileId = url:match("/u/([%w_%-]+)") or url:match("/api/file/([%w_%-]+)")
-        if fileId then
-            return { url = "https://pixeldrain.com/api/file/" .. fileId, mime = "mp4" }
-        end
-        return nil
-    end
+    -- PixelDrain: /u/<id> page → /api/file/<id> direct file (lib pixeldrain).
+    -- Второй возврат resolve — «это pixeldrain»: при нераспознанном id ветка
+    -- коротко замыкается в nil, фоллбэки ниже не применяются.
+    local pdrain, isPdrain = PIXELDRAIN.resolve(server, url)
+    if isPdrain then return pdrain end
 
-    -- MP4Upload: needs the embed page's Referer; file URL is inside the page.
+    -- MP4Upload: needs the embed page's Referer; file URL comes from
+    -- player.src inside the page (lib mp4upload).
     if lower == "mp4upload" or url:find("mp4upload", 1, true) then
-        local stream, mime = scanEmbedPage(url)
-        if stream then
-            return { url = stream, mime = mime, headers = { ["Referer"] = "https://www.mp4upload.com/" } }
+        local r = http_get(url)
+        if not r.success then return nil end
+        local u, mime, ref = MP4UPLOAD.extractMp4upload(r.body:gsub("\\/", "/"))
+        if u then
+            return { url = u, mime = mime, headers = { ["Referer"] = ref } }
         end
         return nil
     end
@@ -250,6 +289,7 @@ local function resolveEmbed(server, url)
 end
 
 function getVideoList(episodeUrl)
+    ensureLibs()
     local r = http_get(episodeUrl)
     if not r.success then
         log_error("Hentaila: episode page failed (HTTP " .. tostring(r.code) .. ")")
@@ -365,6 +405,7 @@ local function discoverGenres()
 end
 
 function getFilterList()
+    ensureLibs()
     return {
         {
             type         = "select",
@@ -396,6 +437,7 @@ function getFilterList()
 end
 
 function getCatalogFiltered(index, filters)
+    ensureLibs()
     if type(filters) ~= "table" then filters = {} end
 
     local order = filters["order"]

@@ -4,15 +4,47 @@
 
 id           = "hianimes"
 name         = "Hianime"
-version      = "1.0.0"
+version      = "1.1.0"
 baseUrl      = "https://hianimes.se"
 language     = "en"
 content_type = "video"
 icon         = "https://raw.githubusercontent.com/HnDK0/external-sources/main/icons/hianimes.png"
 
 local API = "https://animehot.cc/api"
--- Player config key: window.__P = base64(xor(json)) with this key.
-local OBF_KEY = "otaku-embed-v1"
+
+-- GUARD: builds older than require_lib / the base64_decode_bytes API.
+-- Declared at top-level so the script still loads without them (otherwise the
+-- plugin silently disappears from the source list); called from the start
+-- of every public function. show_error is async in production, so the
+-- error() below is what aborts the call. require_lib loads via pcall
+-- (latanime M9 tryLib pattern): a load failure is kept in libErr.
+local libErr = nil
+local HAS_LIBS = type(require_lib) == "function"
+
+local function tryLib(name)
+    if not HAS_LIBS then return nil end
+    local ok, res = pcall(require_lib, name)
+    if not ok then libErr = tostring(res) return nil end
+    return res
+end
+
+local OTAKU = tryLib("otaku")
+
+local function ensureEngine()
+    local missing = {}
+    -- base64_decode_bytes — transitively via libs/otaku.lua (the player blob
+    -- is base64); canon: guards also check the engine APIs of the libs.
+    if rawget(_G, "base64_decode_bytes") == nil then missing[#missing + 1] = "base64_decode_bytes" end
+    if not HAS_LIBS then missing[#missing + 1] = "require_lib" end
+    if OTAKU == nil then missing[#missing + 1] = "otaku" end
+    if #missing > 0 then
+        show_error("Please update NoveLA",
+            "This plugin needs new functions or libraries (" .. table.concat(missing, ", ") ..
+            "). Please update the application to the latest version." ..
+            (libErr and (" " .. libErr) or ""))
+        error("A newer version of the application is required: " .. table.concat(missing, ","), 0)
+    end
+end
 
 -- Absolute URL helper; relative paths resolve against baseUrl.
 local function absUrl(href)
@@ -87,6 +119,7 @@ local function itemsToResult(arr)
 end
 
 function getCatalogList(index)
+    ensureEngine()
     local r = http_get(API .. "/latest/anime?page=" .. (index + 1) .. "&limit=20")
     if not r.success then
         log_error("Hianime: catalog request failed (HTTP " .. tostring(r.code) .. ")")
@@ -110,6 +143,7 @@ function getCatalogList(index)
 end
 
 function getCatalogSearch(index, query)
+    ensureEngine()
     -- The API has no search pagination: only page 0 exists.
     if index > 0 then return { items = {}, hasNext = false } end
     if type(query) ~= "string" or query == "" then
@@ -130,12 +164,14 @@ function getCatalogSearch(index, query)
 end
 
 function getBookTitle(bookUrl)
+    ensureEngine()
     local a = fetchAnime(bookUrl)
     if not a or type(a.title) ~= "string" or a.title == "" then return nil end
     return string_clean(a.title)
 end
 
 function getBookCoverImageUrl(bookUrl)
+    ensureEngine()
     local a = fetchAnime(bookUrl)
     if not a then return nil end
     local cover = absUrl(a.image)
@@ -143,6 +179,7 @@ function getBookCoverImageUrl(bookUrl)
 end
 
 function getBookDescription(bookUrl)
+    ensureEngine()
     local a = fetchAnime(bookUrl)
     if not a or type(a.synopsis) ~= "string" then return nil end
     local text = string_trim(a.synopsis)
@@ -150,6 +187,7 @@ function getBookDescription(bookUrl)
 end
 
 function getBookGenres(bookUrl)
+    ensureEngine()
     local a = fetchAnime(bookUrl)
     if not a or type(a.genres) ~= "table" then return {} end
     local genres = {}
@@ -160,12 +198,14 @@ function getBookGenres(bookUrl)
 end
 
 function getBookStatus(bookUrl)
+    ensureEngine()
     local a = fetchAnime(bookUrl)
     if not a or type(a.Status) ~= "string" or a.Status == "" then return nil end
     return a.Status
 end
 
 function getBookRating(bookUrl)
+    ensureEngine()
     local a = fetchAnime(bookUrl)
     if not a then return nil end
     local score = tonumber(a.Score)
@@ -178,6 +218,7 @@ end
 local EPISODE_BLOCK = 100
 
 function getChapterList(bookUrl)
+    ensureEngine()
     local a = fetchAnime(bookUrl)
     if not a then return {} end
 
@@ -264,52 +305,6 @@ end
 -- Stream resolution
 ------------------------------------------------------------------------------
 
-local B64_CHARS = "ABCDEFGHIJKLMNOPQRSTUVWXYZabcdefghijklmnopqrstuvwxyz0123456789+/"
-local B64_INDEX = {}
-for i = 1, #B64_CHARS do
-    B64_INDEX[B64_CHARS:sub(i, i)] = i - 1
-end
-
--- Base64 → bytes. Arithmetic only: works on Lua 5.1/LuaJ without bit operators.
-local function base64Decode(data)
-    data = data:gsub("%s", ""):gsub("%-", "+"):gsub("%_", "/")
-    local out = {}
-    for i = 1, #data, 4 do
-        local c1 = data:sub(i, i)
-        local c2 = data:sub(i + 1, i + 1)
-        local c3 = data:sub(i + 2, i + 2)
-        local c4 = data:sub(i + 3, i + 3)
-        local v1 = B64_INDEX[c1] or 0
-        local v2 = B64_INDEX[c2] or 0
-        local v3 = B64_INDEX[c3]
-        local v4 = B64_INDEX[c4]
-        local n = v1 * 262144 + v2 * 4096 + (v3 or 0) * 64 + (v4 or 0)
-        out[#out + 1] = string.char(math.floor(n / 65536) % 256)
-        if v3 then out[#out + 1] = string.char(math.floor(n / 256) % 256) end
-        if v4 then out[#out + 1] = string.char(n % 256) end
-    end
-    return table.concat(out)
-end
-
--- Byte-wise XOR with OBF_KEY (the JS deobfuscate() roundtrip over UTF-8 bytes;
--- Lua strings are byte arrays, so no transcoding is needed).
-local function xorDecode(data)
-    local out = {}
-    for i = 1, #data do
-        local a = data:byte(i)
-        local b = OBF_KEY:byte((i - 1) % #OBF_KEY + 1)
-        local r, p = 0, 1
-        for _ = 1, 8 do
-            if a % 2 ~= b % 2 then r = r + p end
-            a = math.floor(a / 2)
-            b = math.floor(b / 2)
-            p = p * 2
-        end
-        out[i] = string.char(r)
-    end
-    return table.concat(out)
-end
-
 -- Origin of the provider page — the HLS server checks exactly this Referer
 -- (the m3u8 itself lives on another host).
 local function pageOrigin(url)
@@ -318,39 +313,13 @@ local function pageOrigin(url)
     return scheme .. "://" .. host .. "/"
 end
 
--- Provider page → master m3u8 URL + subtitle list (nil when absent).
-local function resolveStream(html)
-    -- Pattern A: a direct HLS URL embedded in the page.
-    local direct = html:match('(https?://[^"\'%s]+%.m3u8[^"\'%s]*)')
-    if direct then return direct, nil end
-
-    -- Pattern B: obfuscated player config.
-    local blob = html:match('window%.__P%s*=%s*"([^"]+)"')
-        or html:match("window%.__P%s*=%s*'([^']+)'")
-    if not blob then return nil, nil end
-    local cfg = json_parse(xorDecode(base64Decode(blob)))
-    if type(cfg) ~= "table" or type(cfg.src) ~= "string" or cfg.src == "" then
-        return nil, nil
-    end
-
-    local subtitles = nil
-    if type(cfg.subtitles) == "table" then
-        subtitles = {}
-        for _, s in ipairs(cfg.subtitles) do
-            if type(s) == "table" and type(s.src) == "string" and s.src ~= "" then
-                local track = { url = s.src }
-                if type(s.label) == "string" and s.label ~= "" then track.label = s.label end
-                if type(s.lang) == "string" and s.lang ~= "" then track.lang = s.lang end
-                table.insert(subtitles, track)
-            end
-        end
-        if #subtitles == 0 then subtitles = nil end
-    end
-    return cfg.src, subtitles
-end
+-- Provider page → master m3u8 URL + subtitle list comes from lib otaku
+-- (window.__P + XOR deobfuscation, require_lib("otaku")); the lib needs
+-- engine base64_decode_bytes, checked in ensureEngine above.
 
 -- Episode → playable variants (sub providers first, then dub).
 function getVideoList(episodeUrl)
+    ensureEngine()
     local slug = episodeUrl:match("/watch/(.+)$")
     if type(slug) ~= "string" or slug == "" then
         log_error("Hianime: cannot parse episode URL " .. tostring(episodeUrl))
@@ -391,7 +360,7 @@ function getVideoList(episodeUrl)
     for i, pageUrl in ipairs(providers) do
         local res = pages[i]
         if type(res) == "table" and res.success and type(res.body) == "string" then
-            local stream, subtitles = resolveStream(res.body)
+            local stream, subtitles = OTAKU.resolve(res.body)
             if stream then
                 local source = { url = stream, mime = "hls" }
                 -- Label the variant with its track so the picker shows
@@ -516,6 +485,7 @@ local FILTER_SORT = {
 local FILTER_SELECT_KEYS = { "type", "status", "rated", "score", "language", "sort" }
 
 function getFilterList()
+    ensureEngine()
     return {
         { type = "select", key = "type", label = "Type", defaultValue = "All", options = FILTER_TYPE },
         { type = "select", key = "status", label = "Status", defaultValue = "All", options = FILTER_STATUS },
@@ -528,6 +498,7 @@ function getFilterList()
 end
 
 function getCatalogFiltered(index, filters)
+    ensureEngine()
     if type(filters) ~= "table" then filters = {} end
     local body = { page = index + 1, limit = 20 }
     for _, key in ipairs(FILTER_SELECT_KEYS) do

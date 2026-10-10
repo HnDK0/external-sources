@@ -23,9 +23,11 @@
 15. [Catalog Filters](#catalog-filters)
 16. [Plugin Settings](#plugin-settings)
 17. [Helpers and Utilities](#helpers-and-utilities)
-18. [Full API Reference](#full-api-reference)
-19. [Full Plugin Template](#full-plugin-template)
-20. [Common Mistakes](#common-mistakes)
+18. [Shared Libraries (require_lib)](#shared-libraries-require_lib)
+19. [Heavy Operations (Kotlin API)](#heavy-operations-kotlin-api)
+20. [Full API Reference](#full-api-reference)
+21. [Full Plugin Template](#full-plugin-template)
+22. [Common Mistakes](#common-mistakes)
 
 ---
 
@@ -1813,6 +1815,179 @@ end
 
 **Important:** the cache resets when the app is closed/restarted. Don't use it for data that must be up to date on every run.
 
+### pow_solve(challenge, difficulty)
+
+Kotlin Proof-of-Work solver (global, new NoveLA builds only): nonce search for byse/filemoon PoW (memory-hard function gr), batches of 1024, 15-second budget. Returns the nonce as a string, or `nil` on timeout/error.
+
+```lua
+local nonce = pow_solve(challenge, 12)
+if not nonce then
+    log_error("my_source: pow_solve timeout")
+    return nil
+end
+```
+
+---
+
+## Shared Libraries (require_lib)
+
+`require_lib(id)` — a Lua global (new NoveLA builds only): reads a shared library and returns its table.
+
+```lua
+local urls = require_lib("urls")
+local host = urls.hostOf(pageUrl)
+```
+
+Search paths for `<id>.lua`:
+
+| Environment | Search paths |
+|---|---|
+| On device | `lua_extensions/lib/<id>.lua` |
+| Repo tester | `<scriptDir>/lib/<id>.lua`, then `<scriptDir>/../libs/<id>.lua` and `<scriptDir>/../libs/*/<id>.lua` |
+
+**Errors** are LuaError (not `nil`): invalid id (not `[a-z0-9_]+`), file missing, library did not return a table.
+
+Inside a library `require_lib` is available (metatable `__index` → globals) — libraries can reference each other; cycles between libraries are forbidden. Already-loaded libraries are cached (invalidated by file mtime/size).
+
+### libs/ structure
+
+`libs/` lives in the repo root, shared by all languages: one file per extractor/decoder. Subfolders are repo layout only: **a library id is the file basename and does not depend on the subfolder** — `require_lib` takes only the id.
+
+| File | Contents |
+|---|---|
+| `libs/helpers/urls.lua` | `origin`, `hostOf`, `unescapeSlashes`, `resolve`, `driveDirectUrl` |
+| `libs/helpers/hls.lua` | `pickStream`, `hasMediaExt` |
+| `libs/helpers/text.lua` | `rot13`, `rot18` |
+| `libs/hosters/aksor.lua` | `apiUrl`, `resolve` — Aksor JSON API by iframe |
+| `libs/hosters/alloha.lua` | `resolve` — borth permutations, POST /bnsi → HLS |
+| `libs/hosters/cvh.lua` | `videoUrl`, `sourceFrom` — CDN VideoHub player API |
+| `libs/hosters/dailymotion.lua` | `parseMetadata`, `resolveDailymotion` — metadata → HLS master |
+| `libs/hosters/dood.lua` | `resolveDood` — DOOD/dsvplay extractor |
+| `libs/hosters/dotplay.lua` | `resolve` — embed → api.php → base64 video_url |
+| `libs/hosters/dropbox.lua` | `resolve` — shared link → direct CDN URL |
+| `libs/hosters/dtube.lua` | `resolve` — api.d.tube JSON → master.m3u8 |
+| `libs/hosters/embeds.lua` | `extractFromEmbed` dispatcher (routes per hoster) |
+| `libs/hosters/gdriveplayer.lua` | `decode` — atob+XOR script → HLS playlist |
+| `libs/hosters/hgcloud.lua` | `mirrors`, `mediaUrls`, `resolve` — packed config from mirror |
+| `libs/hosters/kodik.lua` | `resolve` — urlParams/d_sign → POST /ftor |
+| `libs/hosters/mailru.lua` | `parseMeta`, `resolve` — metadataUrl → mp4 |
+| `libs/hosters/mirrors.lua` | `mirrorOptions` — embed mirror option list |
+| `libs/hosters/mixdrop.lua` | `extractMixdrop` — MDCore.wurl → mp4 |
+| `libs/hosters/mp4upload.lua` | `extractMp4upload` — player.src → mp4 |
+| `libs/hosters/okru.lua` | `resolveOkRu` — data-options → flashvars.metadata |
+| `libs/hosters/otaku.lua` | `resolve` — window.__P (base64∘xor) → m3u8 + subtitles |
+| `libs/hosters/pixeldrain.lua` | `resolve` — embed /u/ → /api/file/ mp4 |
+| `libs/hosters/rumble.lua` | `resolve` — jwplayer config → mp4/HLS |
+| `libs/hosters/seekplayer.lua` | `decode` — API hex blob → AES-128-CBC JSON |
+| `libs/hosters/share4max.lua` | `version`, `resolve` — Inertia XHR → props.streams |
+| `libs/hosters/shared.lua` | `extract` — 4shared embed → first `<source>` |
+| `libs/hosters/sibnet.lua` | `resolve` — shell.php → single mp4 |
+| `libs/hosters/soraplay.lua` | `parsePlayers`, `parseSources` — sources and player list |
+| `libs/hosters/uqload.lua` | `packedMediaUrls`, `resolve` — packed-JS → jwplayer sources |
+| `libs/hosters/vidbom.lua` | `isLink`, `parseSources` — vidbom/vadbom/… family → sources |
+| `libs/hosters/videa.lua` | `request`, `parse` — _xt token → XML (RC4 + base64) |
+| `libs/hosters/videas.lua` | `parse` — videas.fr embed → direct HLS/MP4 |
+| `libs/hosters/vidmoly.lua` | `resolve` — redirect → player → packed media URLs |
+| `libs/hosters/vidyard.lua` | `origin`, `resolve` — player/<id>.json → hls[] profiles |
+| `libs/hosters/vk.lua` | `videoExtUrl`, `resolve` — video_ext.php → mp4_144…1080 |
+| `libs/hosters/voe.lua` | `extractVoe`, `extractSources` — obfuscated JSON (1.3.0) |
+
+**What belongs in `libs/hosters/`**: generic hoster resolvers that any site can embed. A site-specific dispatcher/gate (backend kind-ID, Livewire gates, the site's own CDN) stays in the plugin — examples: `record`/yummyanime, `yonaplay`/witanime, `gateUrl`/witanime.
+
+The historical `libs/common.lua` and `libs/decode.lua` are **gone**: URL helpers moved to `urls`, `pickStream` to `hls`, and `base64Decode`/`unpackAll` were replaced by the engine API `base64_decode_bytes`/`unpack_packed` (see "Heavy Operations (Kotlin API)"). There are no Lua decryptor files in `libs/` — all crypto (AES-GCM/RC4/base64/hash) lives in the Kotlin engine API. Do not use the old names — `require_lib("common")` on the new repo throws a LuaError.
+
+File format: header comment, local helpers, `return M`. Libraries have NO `version` field.
+
+### Library sync (by sha256)
+
+The library catalog is the `libraries` section in the root `index.yaml` (not the per-language ones):
+
+```yaml
+libraries:
+  - id: "urls"
+    url: "https://raw.githubusercontent.com/HnDK0/external-sources/refs/heads/main/libs/helpers/urls.lua"
+    sha256: "<hex>"
+```
+
+`sha256` is computed by `scripts/sync_index.py` automatically from the contents of `libs/**/*.lua` (recursive walk, the URL carries the subfolder) — regeneration updates the hashes itself. The app downloads a library into flat `lua_extensions/lib/<id>.lua` when the local file's sha256 differs from the catalog's — the subfolder in the URL does not affect that. Versions are not involved. `libs/` is in the sync SKIP_DIRS (subfolders included) — it is not a language folder.
+
+After any edit to `libs/**/*.lua`, always run `GITHUB_REF_NAME=main python3 scripts/sync_index.py` — otherwise the catalog sha256 goes stale and the app re-downloads the library on every pull. **`GITHUB_REF_NAME=main` is mandatory**: without it the sync on a feature branch rewrites every URL in index.yaml to that branch and breaks the release.
+
+### Fallback for old builds
+
+`require_lib` exists only in new app versions. **Do not throw `error` at top level** — the plugin will silently disappear from the source list. Pattern: a check at the start of every public function; the canonical form is `show_error(...)` + `error(..., 0)` (in production `show_error` is asynchronous and returns `nil`, so without `error` the function would keep running without the libraries):
+
+```lua
+function getChapterText(html, url)
+    if type(require_lib) ~= "function" then
+        show_error("NoveLA update required", "This plugin needs shared libraries")
+        error("NoveLA update required (require_lib)", 0)
+    end
+    local embeds = require_lib("embeds")
+    -- ...
+end
+```
+
+---
+
+## Heavy Operations (Kotlin API)
+
+Hashes, ciphers, binary base64 and P.A.C.K.E.R unpacking run engine-side (Kotlin) — Lua only calls them. These globals exist **only in new NoveLA builds** (see "Guard pattern" below).
+
+| API | Signature | Return / contract |
+|---|---|---|
+| `sha256(data)` | `(data: str) -> str` | **Raw bytes** (binary-str, 32 of them), NOT hex; the caller hex-encodes if needed. Invalid type → LuaError |
+| `md5(data)` | `(data: str) -> str` | **Raw bytes** (16 of them), NOT hex. Invalid type → LuaError |
+| `sha1(data [, "hex"\|"raw"])` | `(data: str, mode?: "hex"\|"raw") -> str` | **Raw bytes** (20 of them) with no mode and with `"raw"` (mirrors `sha256`); `"hex"` → 40-char hex. Unknown mode/invalid type → LuaError |
+| `crc32(data)` | `(data: str) -> number` | CRC-32 → a Lua **number** holding the unsigned value `0..2^32-1` exactly (fits a double). `crc32("123456789")` = 3421780262 (0xCBF43926), `crc32("")` = 0. Invalid type → LuaError |
+| `hmac_sha256(key, data)` | `(key: str, data: str) -> str` | **Raw bytes** (32 of them), NOT hex; run `hexEncode(...)` on the caller's side when hex is required. Invalid type → LuaError |
+| `pbkdf2(password, salt, iterations, dkLen [, hash])` | `(str, str, int, int, "sha1"\|"sha256"\|"sha512"?) -> str` | PBKDF2-HMAC → **raw bytes** of length `dkLen`; `hash` defaults to `sha256`. The password is read as UTF-8 text, the salt as raw bytes. Invalid `hash`/type, `iterations < 1`, `dkLen < 1` → LuaError |
+| `aes_gcm_decrypt(key, iv, ct, tag)` | 4 args, all **raw bytes** (binary-str) | AES-GCM decryption; the tag is a separate argument. **`nil` on any error** (bad tag, wrong key) — Lua does the nil-fallback. Unpacking bundled forms (`iv‖tag‖ct`, `arr:<b64 iv>:<b64 tag>:<b64 ct>`) happens on the caller's side. Invalid type → LuaError |
+| `rc4(key, data)` | `(key: str, data: str) -> str` | RC4, raw bytes in and out; empty key → LuaError |
+| `aes_ctr(data, key, iv)` | `(data, key, iv: str) -> str` | AES/CTR/NoPadding → **raw bytes**; the mode is symmetric (the same call encrypts and decrypts). key 16/24/32, iv strictly 16 bytes (contract = AES block; an 8-byte nonce is rejected). Wrong key/iv length → LuaError. New builds only |
+| `rsa_decrypt(data, privateKey)` | `(data, privateKey: str) -> str` | RSA/ECB/PKCS1Padding → **raw bytes**; `privateKey` is standard base64 DER PKCS#8 (the same base64 `base64_decode` takes). Broken base64/key/padding → LuaError (English message). New builds only |
+| `aes_decrypt(data, key, iv)` | `(data, key, iv: str) -> str \| nil` | AES/CBC/PKCS5; key/iv are raw bytes. **`nil` on error** |
+| `base64_encode(s)` | `(s: str) -> str` | Base64 (Java String — not suitable for binary data) |
+| `base64_decode(s)` | `(s: str) -> str \| nil` | Base64 → string (UTF-8); `nil` on invalid base64 |
+| `base64_decode_bytes(s)` | `(s: str) -> str \| nil` | Base64 → **raw bytes** (binary-str with `\0` etc.); lenient: whitespace, url-safe `-_/`, auto-padding. `nil` on invalid base64, invalid type → LuaError |
+| `unpack_packed(script)` | `(script: str) -> str` | Unpacks `eval(function(p,a,c,k,e,d)...)` → original src; **first match** in the text; **`""` when there is no packer** (not `nil` — callers check `un ~= ""`). Invalid type → LuaError |
+| `json_encode(value)` | `(value: bool\|num\|str\|table) -> str` | Compact JSON (no spaces), object keys are sorted → deterministic output. A table → **array** on contiguous integer keys `1..n`, otherwise an **object** (empty table → `[]`, holes → `{"1":..,"3":..}`). Top-level `nil`, mixed/unsupported keys, cycles, functions, non-finite numbers → LuaError. **The canonical encoder**; `json_stringify` is legacy (see "JSON") |
+| `inflate(data [, mode])` | `(data: str, mode?: "zlib"\|"gzip") -> str \| nil` | Decompression → **raw bytes**; `mode` defaults to `"zlib"`. Corrupt/truncated data and an unknown `mode` → `nil` (data handling, not a call error); invalid type → LuaError. HTTP Content-Encoding (gzip/deflate/br) is decoded by the engine itself — `inflate` is only for compressed blobs **inside** the data |
+| `pow_solve(challenge, difficulty)` | `(str, int) -> str \| nil` | Nonce for byse/filemoon PoW; `nil` on timeout/error |
+| `require_lib(id)` | `(id: str) -> table` | Shared library from `libs/`; errors are LuaError (see "Shared Libraries (require_lib)") |
+
+The **raw bytes** contract matters: keys, IVs, ciphertext and digests are binary, and `checkjstring()`/`tojstring()` (UTF-8 round-trip) corrupt them. That is why `sha256(...)` returns a binary-str: `string.byte(sha256(x))` gives bytes, and `hexEncode` is done by the caller when hex is wanted.
+
+### When to move it to Kotlin
+
+**Marker:** a byte loop, bit twiddling, crypto or decoders written in pure Lua — a candidate for the engine API: character-by-character work over a binary blob is far too slow in Lua, and the sandbox ships no libraries of its own. Stays in Lua: `fetch`/HTTP, JSON field extraction and URL building — tables and strings, Lua handles those fine.
+
+New API lands through TDD: golden snapshots → unit tests (`HeavyOpsTest`) → parity with the tester (`plugin-tester-jvm`), and only after that a line in this guide.
+
+Roadmap: `json_encode` / `inflate` / `pbkdf2` / `sha1` / `crc32` / `aes_ctr` / `rsa_decrypt` — added (all listed in the tables above). New candidates appear as their callsites do.
+
+### Guard pattern
+
+The globals above only exist in new builds. A plugin that uses them must check them **inside the first public function** and call that check **from every public function** (the `ensureEngine` canon; `es/latanime.lua` has a single combined `ensureLibs` that checks `require_lib` and the engine API alike). Check **only the APIs actually used**:
+
+```lua
+local function ensureEngine()
+    local missing = {}
+    if rawget(_G, "sha256") == nil then missing[#missing + 1] = "sha256" end
+    if rawget(_G, "unpack_packed") == nil then missing[#missing + 1] = "unpack_packed" end
+    if #missing > 0 then
+        show_error("Please update NoveLA",
+            "This plugin needs new functions (" .. table.concat(missing, ", ") ..
+            "). Please update the application to the latest version.")
+        error("A newer version of the application is required: " .. table.concat(missing, ","), 0)
+    end
+end
+```
+
+`rawget(_G, "<api>")` instead of a direct read — old builds have no such global, a direct read would silently give `nil`, while the comparison against `nil` catches the absence itself.
+
+For `require_lib` — a separate **top-level** layer (otherwise on old builds a top-level `require_lib(...)` is a nil-call and the plugin silently vanishes from the source list): per-name loading via `pcall` with the error kept in `libErr` + `ensureLibs()` in the public functions (the latanime:40-65 canon). Message text is in the plugin's language (es → Spanish, the rest → English).
+
 ---
 
 ## Full API Reference
@@ -1873,15 +2048,30 @@ end
 | Function              | Description                    |
 | ----------------------- | --------------------------------- |
 | `json_parse(s)`       | String → Lua table/value        |
-| `json_stringify(v)`   | Lua table → JSON string          |
+| `json_stringify(v)`   | Lua table → JSON string. **Legacy**: `nil` on error, key order not guaranteed. `json_encode` is canonical (see "Crypto / Encoding") |
 
 ### Crypto / Encoding
 
 | Function                        | Description                    |
 | ---------------------------------- | ---------------------------------- |
 | `base64_encode(s)`               | Base64 encode                  |
-| `base64_decode(s)`               | Base64 decode                  |
-| `aes_decrypt(data, key, iv)`     | AES/CBC/PKCS5 decryption        |
+| `base64_decode(s)`               | Base64 decode → string; `nil` on invalid base64 |
+| `base64_decode_bytes(s)`         | Base64 decode → **raw bytes** (lenient: whitespace, url-safe, auto-padding); `nil` on invalid base64. New builds only |
+| `aes_decrypt(data, key, iv)`     | AES/CBC/PKCS5 decryption → string or `nil` on error |
+| `aes_gcm_decrypt(key, iv, ct, tag)` | AES-GCM decryption, args are raw bytes → string or `nil` on error. New builds only |
+| `rc4(key, data)`                 | RC4 → raw bytes. New builds only |
+| `aes_ctr(data, key, iv)`         | AES/CTR → raw bytes, symmetric; key 16/24/32, iv strictly 16; wrong length → LuaError. New builds only |
+| `rsa_decrypt(data, privateKey)`  | RSA/ECB/PKCS1Padding → raw bytes; `privateKey` = standard base64 DER PKCS#8; errors → LuaError. New builds only |
+| `sha256(data)`                   | SHA-256 → **raw bytes** (not hex). New builds only |
+| `md5(data)`                      | MD5 → **raw bytes** (not hex). New builds only |
+| `sha1(data [, "hex"\|"raw"])`    | SHA-1 → **raw bytes** (20 of them), `"hex"` → hex. New builds only |
+| `crc32(data)`                    | CRC-32 → Lua number `0..2^32-1`. New builds only |
+| `hmac_sha256(key, data)`         | HMAC-SHA256 → **raw bytes** (not hex). New builds only |
+| `pbkdf2(password, salt, iterations, dkLen [, hash])` | PBKDF2-HMAC → **raw bytes** of length `dkLen`; `hash` = `sha1`/`sha256`/`sha512`, default `sha256`; password as UTF-8 text, salt as raw bytes; invalid `hash`, `iterations < 1`, `dkLen < 1` → LuaError. New builds only |
+| `unpack_packed(script)`          | Unpack P.A.C.K.E.R → src; `""` when there is no packer. New builds only |
+| `json_encode(v)`                 | Compact JSON → string; array on contiguous keys `1..n`, otherwise object (keys sorted), empty table → `[]`; `nil`/mixed keys/cycles/functions → LuaError. **Canonical** encoder (see `json_stringify` under "JSON"). New builds only |
+| `inflate(data [, mode])`         | Decompress zlib (default) or gzip → **raw bytes**; corrupt data/unknown `mode` → `nil`. The engine decodes HTTP Content-Encoding itself — for compressed blobs inside the data only. New builds only |
+| `pow_solve(challenge, difficulty)` | Nonce search for byse/filemoon PoW (memory-hard function gr), batches of 1024, 15 s budget → nonce as a string or `nil` on timeout/error. New builds only |
 
 ### Storage
 
@@ -1901,6 +2091,7 @@ end
 | `log_error(msg)`                | ERROR log (Timber)                             |
 | `show_error(title, message)`    | Show error dialog to user. Stops chapter loading, return `nil` after calling |
 | `os_time()`                     | Unix timestamp in milliseconds                 |
+| `require_lib(id)`               | Shared library from `libs/` → table; errors are LuaError (invalid id `[a-z0-9_]+`, file missing, library returned no table). Paths: `lua_extensions/lib/<id>.lua` on device, `<scriptDir>/lib/` → `<scriptDir>/../libs/` → `<scriptDir>/../libs/*/` in the tester. Cached by mtime/size. New builds only |
 
 ---
 

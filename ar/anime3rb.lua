@@ -10,7 +10,7 @@
 content_type = "video"
 id           = "anime3rb"
 name         = "Anime3rb"
-version      = "1.0.0"
+version      = "1.1.0"
 baseUrl      = "https://anime3rb.com"
 language     = "ar"
 icon         = "https://raw.githubusercontent.com/HnDK0/external-sources/refs/heads/main/icons/anime3rb.png"
@@ -416,7 +416,9 @@ local function decodeSnapshot(s)
     return s
 end
 
+-- Страница эпизода → URL плеера video.vid3rb.com или nil.
 local function playerUrlFrom(body)
+    if type(body) ~= "string" then return nil end
     -- 1) Проверенный путь: video_url внутри wire:snapshot.
     for snap in body:gmatch('wire:snapshot="([^"]*)"') do
         if snap:find("video_url", 1, true) then
@@ -426,8 +428,9 @@ local function playerUrlFrom(body)
         end
     end
     -- 2) Фоллбэк: статический src iframe (динамический :src Alpine не читается).
+    -- Селектор пинит https://-префикс, поэтому src уже абсолютный.
     local src = html_attr(body, "iframe[src^='https://video.vid3rb.com/player/']", "src")
-    if src and src ~= "" then return absUrl(src) end
+    if src and src ~= "" then return src end
     return nil
 end
 
@@ -438,6 +441,7 @@ end
 -- субтитров в ответе не видено.
 local function collectSources(body)
     local list, seen = {}, {}
+    if type(body) ~= "string" then return list end
     for arr in body:gmatch("var%s+video_sources%s*=%s*(%b[])") do
         local data = json_parse(arr)
         if type(data) == "table" then

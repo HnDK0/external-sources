@@ -3,11 +3,26 @@
 -- ── Metadata ───────────────────────────────────────────────────────────────
 id = "wtrlab"
 name = "WTR-LAB"
-version = "1.1.11"
+version = "1.2.0"
 baseUrl = "https://wtr-lab.com/"
 language = "MTL"
 icon = "https://raw.githubusercontent.com/HnDK0/external-sources/main/icons/wtr-lab.png"
 description = "Machine-translated novels (wtr-lab.com). AI, raw (web), and Web+ translation modes, full novel-finder filters. If a 'Security Check' error appears, open any chapter of the book in the integrated browser, complete the verification, then retry."
+
+-- GUARD: old app builds without the engine APIs (base64_decode_bytes/aes_gcm_decrypt).
+-- Called from every public function; show_error is async in prod, hence the
+-- error(..., 0) after it (the adapter surfaces pending-show-error first).
+local function ensureEngine()
+    local missing = {}
+    if rawget(_G, "base64_decode_bytes") == nil then missing[#missing + 1] = "base64_decode_bytes" end
+    if rawget(_G, "aes_gcm_decrypt") == nil then missing[#missing + 1] = "aes_gcm_decrypt" end
+    if #missing > 0 then
+        show_error("Update NoveLA required",
+            "This plugin needs new functions (" .. table.concat(missing, ", ") ..
+            "). Please update the app to the latest version.")
+        error("A newer version of the app is required: " .. table.concat(missing, ","), 0)
+    end
+end
 
 -- ── Settings keys ──────────────────────────────────────────────────────────
 local PREF_MODE = "wtrlab_mode"           -- "ai" | "raw" | "webplus"  (key kept from 1.x so existing settings survive)
@@ -92,282 +107,17 @@ local function extractRating(html)
 end
 
 -- ═══════════════════════════════════════════════════════════════════════════
--- Pure-Lua AES-256-GCM decryption (for `arr:` / `str:` encrypted chapter bodies)
---
--- Site-side scheme (reverse-engineered from wtr-lab's reader JS, verified
--- against live payloads): AES-256-GCM, static key below, payload format
---     arr:<b64 IV>:<b64 GCM tag>:<b64 ciphertext>   (body is a JSON array)
---     str:<b64 IV>:<b64 GCM tag>:<b64 ciphertext>   (body is one string)
--- The auth tag is NOT verified (unnecessary for display; skipping it avoids
--- a full GHASH implementation for the tag path).
+-- Chapter body decryption: local AES-GCM first, fly.dev proxy as fallback
 -- ═══════════════════════════════════════════════════════════════════════════
 
+-- The static ASCII key (32 bytes) is handed to the engine as-is: it holds no
+-- bytes >= 0x80, so no binary/UTF-8 issue arises.
 local GCM_KEY = "IJAFUUxjM25hyzL2AZrn0wl7cESED6Ru"
 
--- F/byte XOR: use bit32 when the host provides it, else arithmetic fallback.
-local HAS_BIT32 = (bit32 ~= nil and type(bit32) == "table" and type(bit32.bxor) == "function")
-
-local function bxorB(a, b)
-    if HAS_BIT32 then
-        return bit32.bxor(a, b)
-    end
-    local r, p = 0, 1
-    for _ = 1, 8 do
-        local ab = a % 2
-        local bb = b % 2
-        if ab ~= bb then r = r + p end
-        a = math.floor(a / 2)
-        b = math.floor(b / 2)
-        p = p * 2
-    end
-    return r
-end
-
-local function gmul2(a) -- xtime
-    local h = a >= 128 and 1 or 0
-    a = a * 2
-    if a >= 256 then a = a - 256 end
-    if h == 1 then a = bxorB(a, 27) end -- 0x1B
-    return a
-end
-
-local function gmul3(a)
-    return bxorB(gmul2(a), a)
-end
-
--- AES S-box
-local SBOX = {
-    0x63,0x7C,0x77,0x7B,0xF2,0x6B,0x6F,0xC5,0x30,0x01,0x67,0x2B,0xFE,0xD7,0xAB,0x76,
-    0xCA,0x82,0xC9,0x7D,0xFA,0x59,0x47,0xF0,0xAD,0xD4,0xA2,0xAF,0x9C,0xA4,0x72,0xC0,
-    0xB7,0xFD,0x93,0x26,0x36,0x3F,0xF7,0xCC,0x34,0xA5,0xE5,0xF1,0x71,0xD8,0x31,0x15,
-    0x04,0xC7,0x23,0xC3,0x18,0x96,0x05,0x9A,0x07,0x12,0x80,0xE2,0xEB,0x27,0xB2,0x75,
-    0x09,0x83,0x2C,0x1A,0x1B,0x6E,0x5A,0xA0,0x52,0x3B,0xD6,0xB3,0x29,0xE3,0x2F,0x84,
-    0x53,0xD1,0x00,0xED,0x20,0xFC,0xB1,0x5B,0x6A,0xCB,0xBE,0x39,0x4A,0x4C,0x58,0xCF,
-    0xD0,0xEF,0xAA,0xFB,0x43,0x4D,0x33,0x85,0x45,0xF9,0x02,0x7F,0x50,0x3C,0x9F,0xA8,
-    0x51,0xA3,0x40,0x8F,0x92,0x9D,0x38,0xF5,0xBC,0xB6,0xDA,0x21,0x10,0xFF,0xF3,0xD2,
-    0xCD,0x0C,0x13,0xEC,0x5F,0x97,0x44,0x17,0xC4,0xA7,0x7E,0x3D,0x64,0x5D,0x19,0x73,
-    0x60,0x81,0x4F,0xDC,0x22,0x2A,0x90,0x88,0x46,0xEE,0xB8,0x14,0xDE,0x5E,0x0B,0xDB,
-    0xE0,0x32,0x3A,0x0A,0x49,0x06,0x24,0x5C,0xC2,0xD3,0xAC,0x62,0x91,0x95,0xE4,0x79,
-    0xE7,0xC8,0x37,0x6D,0x8D,0xD5,0x4E,0xA9,0x6C,0x56,0xF4,0xEA,0x65,0x7A,0xAE,0x08,
-    0xBA,0x78,0x25,0x2E,0x1C,0xA6,0xB4,0xC6,0xE8,0xDD,0x74,0x1F,0x4B,0xBD,0x8B,0x8A,
-    0x70,0x3E,0xB5,0x66,0x48,0x03,0xF6,0x0E,0x61,0x35,0x57,0xB9,0x86,0xC1,0x1D,0x9E,
-    0xE1,0xF8,0x98,0x11,0x69,0xD9,0x8E,0x94,0x9B,0x1E,0x87,0xE9,0xCE,0x55,0x28,0xDF,
-    0x8C,0xA1,0x89,0x0D,0xBF,0xE6,0x42,0x68,0x41,0x99,0x2D,0x0F,0xB0,0x54,0xBB,0x16
-}
-
-local RCON = {0x01,0x02,0x04,0x08,0x10,0x20,0x40,0x80,0x1B,0x36,0x6C,0xD8,0xAB,0x4D}
-
--- AES-256 key expansion → flat round-key array of 15 * 16 bytes
-local function aesExpandKey(keyBytes)
-    -- keyBytes: 32 bytes; returns rk[1..240] (1-indexed flat)
-    local w = {}          -- w[i] = 4-byte word tables, w[1..60]
-    for i = 1, 8 do
-        w[i] = { keyBytes[i * 4 - 3], keyBytes[i * 4 - 2], keyBytes[i * 4 - 1], keyBytes[i * 4] }
-    end
-    for i = 9, 60 do
-        local t = { w[i - 1][1], w[i - 1][2], w[i - 1][3], w[i - 1][4] }
-        if (i - 1) % 8 == 0 then
-            -- RotWord + SubWord + Rcon
-            t = { t[2], t[3], t[4], t[1] }
-            for j = 1, 4 do t[j] = SBOX[t[j] + 1] end
-            t[1] = bxorB(t[1], RCON[(i - 1) / 8 + 1 > 14 and 14 or (i - 1) / 8])
-        elseif (i - 1) % 8 == 4 then
-            for j = 1, 4 do t[j] = SBOX[t[j] + 1] end
-        end
-        local prev = w[i - 8]
-        w[i] = {
-            bxorB(prev[1], t[1]),
-            bxorB(prev[2], t[2]),
-            bxorB(prev[3], t[3]),
-            bxorB(prev[4], t[4])
-        }
-    end
-    -- flatten to round keys: rk[round][byte]
-    local rk = {}
-    for round = 0, 14 do
-        for j = 1, 4 do
-            local word = w[round * 4 + j]
-            for b = 1, 4 do
-                rk[round * 16 + (j - 1) * 4 + b] = word[b]
-            end
-        end
-    end
-    return rk
-end
-
--- AES-256 encrypt one 16-byte block (state table mutated in place)
-local function aesEncryptBlock(state, rk)
-    -- AddRoundKey(0)
-    for i = 1, 16 do state[i] = bxorB(state[i], rk[i]) end
-
-    for round = 1, 13 do
-        -- SubBytes
-        for i = 1, 16 do state[i] = SBOX[state[i] + 1] end
-        -- ShiftRows (state is column-major: s[c*4+r])
-        local t
-        t = state[2];  state[2]  = state[6];  state[6]  = state[10]; state[10] = state[14]; state[14] = t
-        t = state[3];  state[3]  = state[11]; state[11] = t
-        t = state[7];  state[7]  = state[15]; state[15] = t
-        t = state[16]; state[16] = state[12]; state[12] = state[8];  state[8]  = state[4];  state[4]  = t
-        -- MixColumns
-        for c = 0, 3 do
-            local i1 = c * 4 + 1
-            local a0, a1, a2, a3 = state[i1], state[i1 + 1], state[i1 + 2], state[i1 + 3]
-            state[i1]     = bxorB(bxorB(gmul2(a0), gmul3(a1)), bxorB(a2, a3))
-            state[i1 + 1] = bxorB(bxorB(a0, gmul2(a1)), bxorB(gmul3(a2), a3))
-            state[i1 + 2] = bxorB(bxorB(a0, a1), bxorB(gmul2(a2), gmul3(a3)))
-            state[i1 + 3] = bxorB(bxorB(gmul3(a0), a1), bxorB(a2, gmul2(a3)))
-        end
-        -- AddRoundKey(round)
-        local off = round * 16
-        for i = 1, 16 do state[i] = bxorB(state[i], rk[off + i]) end
-    end
-
-    -- Final round (no MixColumns)
-    for i = 1, 16 do state[i] = SBOX[state[i] + 1] end
-    local t
-    t = state[2];  state[2]  = state[6];  state[6]  = state[10]; state[10] = state[14]; state[14] = t
-    t = state[3];  state[3]  = state[11]; state[11] = t
-    t = state[7];  state[7]  = state[15]; state[15] = t
-    t = state[16]; state[16] = state[12]; state[12] = state[8];  state[8]  = state[4];  state[4]  = t
-    local off = 14 * 16
-    for i = 1, 16 do state[i] = bxorB(state[i], rk[off + i]) end
-    return state
-end
-
--- GF(2^128) multiply for GHASH (right-shift algorithm, SP 800-38D)
-local function gfMul(x, y)
-    local z = { 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0 }
-    local v = { y[1], y[2], y[3], y[4], y[5], y[6], y[7], y[8],
-                y[9], y[10], y[11], y[12], y[13], y[14], y[15], y[16] }
-    for i = 0, 127 do
-        local byte = x[math.floor(i / 8) + 1]
-        local bit = math.floor(byte / 2 ^ (7 - (i % 8))) % 2
-        if bit == 1 then
-            for j = 1, 16 do z[j] = bxorB(z[j], v[j]) end
-        end
-        local lsb = v[16] % 2
-        for j = 16, 2, -1 do
-            v[j] = math.floor(v[j] / 2) + (v[j - 1] % 2) * 128
-        end
-        v[1] = math.floor(v[1] / 2)
-        if lsb == 1 then v[1] = bxorB(v[1], 0xE1) end
-    end
-    return z
-end
-
--- GCM J0 derivation (IV here is 16 bytes → GHASH path; 12-byte IVs also handled)
-local function gcmJ0(iv, H)
-    if #iv == 12 then
-        return { iv[1], iv[2], iv[3], iv[4], iv[5], iv[6], iv[7], iv[8],
-                 iv[9], iv[10], iv[11], iv[12], 0, 0, 0, 1 }
-    end
-    -- J0 = GHASH_H(IV || 0^{s+64} || [len(IV)]_{64})
-    local bitLen = #iv * 8
-    local blocks = {}
-    for i = 1, #iv do blocks[i] = iv[i] end
-    local pad = (16 - (#iv % 16)) % 16
-    for _ = 1, pad do blocks[#blocks + 1] = 0 end
-    -- 8 zero bytes + 64-bit big-endian bit length (upper bytes are 0 for sane sizes)
-    for _ = 1, 8 do blocks[#blocks + 1] = 0 end
-    local lenBytes = { 0, 0, 0, 0, 0, 0, 0, 0 }
-    local n = bitLen
-    for i = 8, 1, -1 do
-        lenBytes[i] = n % 256
-        n = math.floor(n / 256)
-    end
-    for i = 1, 8 do blocks[#blocks + 1] = lenBytes[i] end
-
-    local y = { 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0 }
-    for start = 1, #blocks, 16 do
-        local blk = {}
-        for i = 1, 16 do blk[i] = blocks[start + i - 1] or 0 end
-        for i = 1, 16 do y[i] = bxorB(y[i], blk[i]) end
-        y = gfMul(y, H)
-    end
-    return y
-end
-
-local function inc32(block)
-    local carry = 1
-    for i = 16, 13, -1 do
-        local v = block[i] + carry
-        block[i] = v % 256
-        carry = math.floor(v / 256)
-        if carry == 0 then break end
-    end
-    return block
-end
-
--- Pure-Lua base64 → byte table.
--- IMPORTANT: the host `base64_decode` returns a UTF-8 Java String, which
--- CORRUPTS binary data (IV/ciphertext bytes ≥ 0x80). Binary-safe decoding
--- must be done entirely in Lua via string.char/string.byte.
-local B64DEC = {}
-do
-    local chars = "ABCDEFGHIJKLMNOPQRSTUVWXYZabcdefghijklmnopqrstuvwxyz0123456789+/"
-    for i = 1, #chars do
-        B64DEC[string.byte(chars, i)] = i - 1
-    end
-end
-
-local function b64ToBytes(s)
-    s = string.gsub(s, "%s", "")
-    s = string.gsub(s, "=", "")
-    local out = {}
-    local len = #s
-    local i = 1
-    while i + 3 <= len do
-        local a = B64DEC[string.byte(s, i)]
-        local b = B64DEC[string.byte(s, i + 1)]
-        local c = B64DEC[string.byte(s, i + 2)]
-        local d = B64DEC[string.byte(s, i + 3)]
-        if not (a and b and c and d) then return nil end
-        out[#out + 1] = string.char(
-            a * 4 + math.floor(b / 16),
-            (b % 16) * 16 + math.floor(c / 4),
-            (c % 4) * 64 + d
-        )
-        i = i + 4
-    end
-    if i + 2 == len then
-        -- 3 leftover chars (unpadded, encodes 2 bytes)
-        local a = B64DEC[string.byte(s, i)]
-        local b = B64DEC[string.byte(s, i + 1)]
-        local c = B64DEC[string.byte(s, i + 2)]
-        if not (a and b and c) then return nil end
-        out[#out + 1] = string.char(
-            a * 4 + math.floor(b / 16),
-            (b % 16) * 16 + math.floor(c / 4)
-        )
-        i = i + 3
-    elseif i + 1 == len then
-        -- 2 leftover chars (unpadded, encodes 1 byte)
-        local a = B64DEC[string.byte(s, i)]
-        local b = B64DEC[string.byte(s, i + 1)]
-        if not (a and b) then return nil end
-        out[#out + 1] = string.char(a * 4 + math.floor(b / 16))
-        i = i + 2
-    end
-    -- After the leftover branches, every input char must have been consumed
-    -- (i == len + 1). A single dangling char (len % 4 == 1) is impossible to
-    -- decode to any whole byte in either padded or unpadded base64, so fail
-    -- loud here -- the GCM tag check would catch the corruption anyway, but a
-    -- nil lets the caller distinguish "malformed" from "decrypted garbage".
-    if i ~= len + 1 then return nil end
-    local bytes = {}
-    local n = 0
-    for j = 1, #out do
-        local part = out[j]
-        for k = 1, #part do
-            n = n + 1
-            bytes[n] = string.byte(part, k)
-        end
-    end
-    return bytes
-end
-
--- Decrypt an "arr:"/"str:" payload → plaintext string (tag NOT verified)
+-- Decrypt an "arr:"/"str:" payload -> plaintext string.
+-- Unpacking "iv:tag:ct" (base64) stays here; decryption itself is the engine
+-- call aes_gcm_decrypt(key, iv, ct, tag) on raw bytes (the engine verifies the
+-- GCM tag). On any failure decryptBody falls back to the fly.dev proxy below.
 local function gcmDecrypt(payload)
     local prefix = string.sub(payload, 1, 4)
     local body = string.sub(payload, 5)
@@ -376,41 +126,16 @@ local function gcmDecrypt(payload)
         parts[#parts + 1] = part
     end
     if #parts ~= 3 then return nil, "bad payload format" end
-    local iv = b64ToBytes(parts[1])
-    local ct = b64ToBytes(parts[3])
-    if not iv or not ct or #iv < 1 or #ct < 1 then return nil, "bad base64" end
-
-    local keyBytes = {}
-    for i = 1, 32 do keyBytes[i] = string.byte(GCM_KEY, i) end
-    local rk = aesExpandKey(keyBytes)
-
-    -- H = AES_K(0^128)
-    local H = aesEncryptBlock({ 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0 }, rk)
-    local j0 = gcmJ0(iv, H)
-
-    -- CTR decrypt starting from inc32(J0)
-    local counter = { j0[1], j0[2], j0[3], j0[4], j0[5], j0[6], j0[7], j0[8],
-                      j0[9], j0[10], j0[11], j0[12], j0[13], j0[14], j0[15], j0[16] }
-    local out = {}
-    for start = 1, #ct, 16 do
-        counter = inc32(counter)
-        local ks = aesEncryptBlock({ counter[1], counter[2], counter[3], counter[4],
-                                     counter[5], counter[6], counter[7], counter[8],
-                                     counter[9], counter[10], counter[11], counter[12],
-                                     counter[13], counter[14], counter[15], counter[16] }, rk)
-        for i = 1, 16 do
-            local idx = start + i - 1
-            if idx <= #ct then
-                out[#out + 1] = string.char(bxorB(ct[idx], ks[i]))
-            end
-        end
+    local iv = base64_decode_bytes(parts[1])
+    local tag = base64_decode_bytes(parts[2])
+    local ct = base64_decode_bytes(parts[3])
+    if not iv or not tag or not ct or #iv < 1 or #tag < 1 or #ct < 1 then
+        return nil, "bad base64"
     end
-    return table.concat(out), prefix
+    local pt = aes_gcm_decrypt(GCM_KEY, iv, ct, tag)
+    if not pt or #pt == 0 then return nil, "aes_gcm_decrypt failed" end
+    return pt, prefix
 end
-
--- ═══════════════════════════════════════════════════════════════════════════
--- Chapter body decryption: local AES-GCM first, fly.dev proxy as fallback
--- ═══════════════════════════════════════════════════════════════════════════
 
 local function decryptBody(rawBody)
     if not string_starts_with(rawBody, "arr:") and not string_starts_with(rawBody, "str:") then
@@ -1462,6 +1187,7 @@ end
 -- substring of every tag label; if the token itself is a numeric
 -- tag id it is also accepted verbatim. Returned ids are unique.
 function tagSearchResolve(text)
+    ensureEngine()
     if not text or text == "" then return {} end
     local lower = text:lower()
     local seen = {}
@@ -1487,6 +1213,7 @@ end
 -- ── Catalog ─────────────────────────────────────────────────────────────────
 
 function getCatalogList(index)
+    ensureEngine()
     local page = index + 1
     local pp = fetchNextData("/en/novel-list.json", "page=" .. tostring(page) .. "&orderBy=reader")
     if not pp then
@@ -1499,6 +1226,7 @@ end
 -- ── Search ──────────────────────────────────────────────────────────────────
 
 function getCatalogSearch(index, query)
+    ensureEngine()
     local page = index + 1
     local params = "text=" .. url_encode(query) .. "&page=" .. tostring(page)
     local pp = fetchNextData("/en/novel-finder.json", params)
@@ -1512,6 +1240,7 @@ end
 -- ── Book details ────────────────────────────────────────────────────────────
 
 function getBookTitle(bookUrl)
+    ensureEngine()
     local body = fetchPage(bookUrl)
     if not body then
         return nil
@@ -1524,6 +1253,7 @@ function getBookTitle(bookUrl)
 end
 
 function getBookCoverImageUrl(bookUrl)
+    ensureEngine()
     local body = fetchPage(bookUrl)
     if not body then
         return nil
@@ -1536,6 +1266,7 @@ function getBookCoverImageUrl(bookUrl)
 end
 
 function getBookDescription(bookUrl)
+    ensureEngine()
     local body = fetchPage(bookUrl)
     if not body then
         return nil
@@ -1549,6 +1280,7 @@ end
 
 -- NOTE: intentionally NOT using fetchPage — the hash must reflect fresh state
 function getChapterListHash(bookUrl)
+    ensureEngine()
     local r = http_get(bookUrl)
     if not r.success then
         return nil
@@ -1583,6 +1315,7 @@ end
 -- ── Chapter list ─────────────────────────────────────────────────────────────
 
 function getChapterList(bookUrl)
+    ensureEngine()
     local novelId = string.match(bookUrl, "/novel/(%d+)/")
     if not novelId then
         log_error("wtrlab: cannot extract novelId from " .. bookUrl)
@@ -1778,6 +1511,7 @@ local function fetchChapterJson(novelId, chapterNo, chapterUrl, translateParam)
 end
 
 function getChapterText(html, chapterUrl)
+    ensureEngine()
     if not chapterUrl or chapterUrl == "" then
         chapterUrl = html_attr(html, "link[rel='canonical']", "href")
     end
@@ -1940,6 +1674,7 @@ end
 -- ── Settings schema ──────────────────────────────────────────────────────────
 
 function getSettingsSchema()
+    ensureEngine()
     return {{
         key = PREF_MODE,
         type = "select",
@@ -1979,6 +1714,7 @@ end
 -- ── Book metadata ────────────────────────────────────────────────────────────
 
 function getBookGenres(bookUrl)
+    ensureEngine()
     local body = fetchPage(bookUrl)
     if not body then
         return {}
@@ -1996,6 +1732,7 @@ function getBookGenres(bookUrl)
 end
 
 function getBookRating(bookUrl)
+    ensureEngine()
     local body = fetchPage(bookUrl)
     if not body then
         return nil
@@ -2004,6 +1741,7 @@ function getBookRating(bookUrl)
 end
 
 function getBookStatus(bookUrl)
+    ensureEngine()
     local body = fetchPage(bookUrl)
     if not body then
         return nil
@@ -2021,6 +1759,7 @@ function getBookStatus(bookUrl)
 end
 
 function getBookLastUpdate(bookUrl)
+    ensureEngine()
     local body = fetchPage(bookUrl)
     if not body then
         return nil
@@ -2031,6 +1770,7 @@ end
 -- ── Filter list (full parity with wtr-lab.com/en/novel-finder) ───────────────
 
 function getFilterList()
+    ensureEngine()
     return {
         {
             type = "select",
@@ -2648,6 +2388,7 @@ end
 -- ── Filtered catalog ─────────────────────────────────────────────────────────
 
 function getCatalogFiltered(index, filters)
+    ensureEngine()
     local page = index + 1
     local orderBy = filters["orderBy"] or "update"
     local order = filters["order"] or "desc"

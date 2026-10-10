@@ -7,10 +7,53 @@
 content_type = "video"
 id          = "yummyanime"
 name        = "YummyAnime"
-version     = "1.0.2"
+version     = "1.1.0"
 baseUrl     = "https://ru.yummyani.me"
 language    = "ru"
 icon        = "https://raw.githubusercontent.com/HnDK0/external-sources/refs/heads/main/icons/yummyanime.png"
+
+-- ── GUARD: старые сборки приложения без require_lib/либ и base64_decode ──
+-- Top-level обязан загрузиться без новых API (иначе плагин молча исчезает
+-- из списка источников), поэтому либа грузится через pcall, а ошибка
+-- поднимается из публичных функций. show_error в проде асинхронный
+-- (возвращает NIL), поэтому сразу после него идёт error(..., 0).
+local libErr = nil
+local HAS_LIBS = type(require_lib) == "function"
+
+local function tryLib(name)
+    if not HAS_LIBS then return nil end
+    local ok, res = pcall(require_lib, name)
+    if not ok then libErr = tostring(res) return nil end
+    return res
+end
+
+local TEXT = tryLib("text")
+-- Хостер-резолверы вынесены в libs/hosters/ (lane shared-libs): каждая либа
+-- грузится тем же pcall-паттерном, ошибка копится в libErr для ensureEngine.
+local KODIK  = tryLib("kodik")
+local ALLOHA = tryLib("alloha")
+local AKSOR  = tryLib("aksor")
+local SIBNET = tryLib("sibnet")
+local CVH    = tryLib("cvh")
+
+local function ensureEngine()
+    local missing = {}
+    if not HAS_LIBS then missing[#missing + 1] = "require_lib" end
+    if rawget(_G, "base64_decode") == nil then missing[#missing + 1] = "base64_decode" end
+    if TEXT == nil then missing[#missing + 1] = "text" end
+    if KODIK == nil then missing[#missing + 1] = "kodik" end
+    if ALLOHA == nil then missing[#missing + 1] = "alloha" end
+    if AKSOR == nil then missing[#missing + 1] = "aksor" end
+    if SIBNET == nil then missing[#missing + 1] = "sibnet" end
+    if CVH == nil then missing[#missing + 1] = "cvh" end
+    if #missing > 0 then
+        show_error("Please update NoveLA",
+            "This plugin needs new functions or libraries (" .. table.concat(missing, ", ") ..
+            "). Please update the application to the latest version." ..
+            (libErr and (" " .. libErr) or ""))
+        error("A newer version of the application is required: " .. table.concat(missing, ","), 0)
+    end
+end
 
 local API     = "https://api.yani.tv"
 -- Lang — заголовок, которым сайт (ru.yummyani.me) выбирает язык ответа api.yani.tv:
@@ -100,11 +143,13 @@ local function fetchCatalog(url)
 end
 
 function getCatalogList(index)
+    ensureEngine()
     local offset = index * PAGE_SIZE
     return fetchCatalog(API .. "/anime?limit=" .. PAGE_SIZE .. "&offset=" .. offset)
 end
 
 function getCatalogSearch(index, query)
+    ensureEngine()
     if index > 0 then return { items = {}, hasNext = false } end
     return fetchCatalog(
         API .. "/anime?q=" .. url_encode(query) .. "&limit=" .. PAGE_SIZE .. "&offset=0"
@@ -147,6 +192,7 @@ local function filterGenreOptions()
 end
 
 function getFilterList()
+    ensureEngine()
     local list = {
         {
             type         = "select",
@@ -226,6 +272,7 @@ local function filterValue(filters, key)
 end
 
 function getCatalogFiltered(index, filters)
+    ensureEngine()
     local parts = { "limit=" .. PAGE_SIZE, "offset=" .. (index * PAGE_SIZE) }
     -- genres = список id через запятую (AND), exclude_genres — исключения.
     local status   = filterValue(filters, "status")
@@ -251,24 +298,28 @@ function getCatalogFiltered(index, filters)
 end
 
 function getBookTitle(bookUrl)
+    ensureEngine()
     local d = fetchDetail(bookUrl)
     if not d or type(d.title) ~= "string" or d.title == "" then return nil end
     return string_clean(d.title)
 end
 
 function getBookCoverImageUrl(bookUrl)
+    ensureEngine()
     local d = fetchDetail(bookUrl)
     if not d then return nil end
     return posterUrl(d.poster)
 end
 
 function getBookDescription(bookUrl)
+    ensureEngine()
     local d = fetchDetail(bookUrl)
     if not d or type(d.description) ~= "string" or d.description == "" then return nil end
     return string_trim(d.description)
 end
 
 function getBookStatus(bookUrl)
+    ensureEngine()
     local d = fetchDetail(bookUrl)
     local status = d and d.anime_status
     if type(status) ~= "table" then return nil end
@@ -277,12 +328,14 @@ function getBookStatus(bookUrl)
 end
 
 function getBookRating(bookUrl)
+    ensureEngine()
     local d = fetchDetail(bookUrl)
     if not d then return nil end
     return ratingText(d.rating)
 end
 
 function getBookGenres(bookUrl)
+    ensureEngine()
     local d = fetchDetail(bookUrl)
     if not d or type(d.genres) ~= "table" then return {} end
     local genres = {}
@@ -402,6 +455,7 @@ end
 -- Серии = главы. url сохраняет вид <bookUrl>/episode/<number>: номер не
 -- кодируется (движок кодирует при запросе), поэтому «57-58» доедет до сервера.
 function getChapterList(bookUrl)
+    ensureEngine()
     local slug = bookSlug(bookUrl)
     if not slug then return {} end
     local videos = fetchVideos(slug)
@@ -422,6 +476,7 @@ end
 -- ответ тут же кладётся в кэш, чтобы getChapterList его переиспользовал.
 -- Ошибка сети или пустой список → nil, движок тогда возьмёт полный getChapterList.
 function getChapterListHash(bookUrl)
+    ensureEngine()
     local slug = bookSlug(bookUrl)
     if not slug then return nil end
     local r = http_get(videosUrl(slug), { headers = API_APP })
@@ -432,23 +487,6 @@ function getChapterListHash(bookUrl)
     local numbers = videoNumbers(videos)
     if #numbers == 0 then return nil end
     return #numbers .. ":" .. numbers[#numbers]
-end
-
--- Подпись озвучки — это ещё и ключ запоминания выбора в плеере, нужен различимым.
-local function voiceLabel(item)
-    local studio = type(item.voiceStudio) == "string" and item.voiceStudio or ""
-    local vtype  = type(item.voiceType) == "string" and item.voiceType or ""
-    local label
-    if studio ~= "" and vtype ~= "" then
-        label = studio .. " (" .. vtype .. ")"
-    elseif studio ~= "" then
-        label = studio
-    elseif vtype ~= "" then
-        label = vtype
-    else
-        label = "vk" .. tostring(item.vkId)
-    end
-    return string_clean(label)
 end
 
 -- AniLiberty (семейный проект) — первым, остальные по алфавиту.
@@ -468,7 +506,11 @@ end
 -- ============ Потоки: резолверы плееров сайта ============
 -- Один источник — { url, quality, headers? } ровно в том виде, в каком его
 -- принимает convertLuaVideoList. Каждая цепочка закрыта в pcall: упал один
--- плеер → log_error и переход к следующему, каталог серий не должен ломаться.
+-- плеер → log_error и переход к следующему, каталог серий не должен
+-- ломаться. Механика плагина — батч GET-запросов, кэши и сборка списка
+-- источников; резолверы хостеров (kodik/alloha/aksor/sibnet/cvh) — в
+-- libs/hosters/. Диспетчер record (api.yani.tv) остаётся в плагине: kind-ID
+-- 4=kodik/2=alloha/1=aksor/7=sibnet специфичны для бэкенда yummyanime.
 
 local function pushSource(list, seen, src)
     if type(src) ~= "table" then return end
@@ -478,403 +520,16 @@ local function pushSource(list, seen, src)
     list[#list + 1] = src
 end
 
--- Base64 на чистом Lua: в движке есть base64_decode, но по условию задачи
--- реализация своя (только stdlib, без внешних библиотек).
-local B64_ALPHABET = "ABCDEFGHIJKLMNOPQRSTUVWXYZabcdefghijklmnopqrstuvwxyz0123456789+/"
-local B64_VALUES = nil
-
-local function base64DecodePure(s)
-    if not B64_VALUES then
-        B64_VALUES = {}
-        for i = 1, #B64_ALPHABET do
-            B64_VALUES[B64_ALPHABET:sub(i, i)] = i - 1
-        end
-    end
-    local out, buf, bits = {}, 0, 0
-    for i = 1, #s do
-        local v = B64_VALUES[s:sub(i, i)]
-        if v ~= nil then
-            buf = buf * 64 + v
-            bits = bits + 6
-            if bits >= 8 then
-                bits = bits - 8
-                local div = 2 ^ bits
-                out[#out + 1] = string.char(math.floor(buf / div) % 256)
-                buf = buf % div
-            end
-        end
-    end
-    return table.concat(out)
-end
-
--- Kodik: src в ответе /ftor либо абсолютный, либо ROT-18 по буквам + base64.
-local function kodikDecode(src)
-    if src:find("//", 1, true) then return src end
-    local t = {}
-    for i = 1, #src do
-        local b = src:byte(i)
-        if b >= 65 and b <= 90 then
-            b = b + 18
-            if b > 90 then b = b - 26 end
-        elseif b >= 97 and b <= 122 then
-            b = b + 18
-            if b > 122 then b = b - 26 end
-        end
-        t[#t + 1] = string.char(b)
-    end
-    local url = base64DecodePure(table.concat(t))
-    if url == "" then return nil end
-    if url:sub(1, 2) == "//" then return "https:" .. url end
-    return url
-end
-
--- page — ответ общего http_get_batch по этому iframe (см. batchPlayers):
--- эмбеды Kodik/Alloha грузятся одним батчем, без своих заголовков.
-local function resolveKodik(iframeUrl, dubbing, page)
-    if type(page) ~= "table" or not page.success then
-        log_error("YummyAnime: Kodik iframe " .. tostring(page and page.code))
-        return nil
-    end
-    local url = iframeUrl
-    if url:sub(1, 2) == "//" then url = "https:" .. url end
-    local html = page.body
-    -- urlParams — JSON с подписями d_sign/pd_sign/ref_sign, без них /ftor отдаёт 500
-    local raw = html:match("urlParams%s*=%s*'([^']+)'")
-        or html:match('urlParams%s*=%s*"([^"]+)"')
-    local params = raw and json_parse(raw) or nil
-    if type(params) ~= "table" or type(params.d_sign) ~= "string" or params.d_sign == "" then
-        log_error("YummyAnime: Kodik — не найдены urlParams")
-        return nil
-    end
-    local vtype = html:match("vInfo%.type%s*=%s*'([^']+)'")
-        or html:match('var%s+type%s*=%s*"([^"]+)"')
-    local vhash = html:match("vInfo%.hash%s*=%s*'([^']+)'")
-    local vid   = html:match('videoId%s*=%s*"([^"]+)"')
-        or html:match("vInfo%.id%s*=%s*'([^']+)'")
-    if not vtype or not vhash or not vid then
-        -- запасной путь: сегменты пути iframe — host/type/id/hash
-        local seg = {}
-        for part in url:gsub("[?#].*$", ""):gmatch("[^/]+") do seg[#seg + 1] = part end
-        vtype = vtype or seg[2]
-        vid   = vid   or seg[3]
-        vhash = vhash or seg[4]
-    end
-    if not vtype or not vid or not vhash then
-        log_error("YummyAnime: Kodik — не удалось получить type/id/hash")
-        return nil
-    end
-    local function field(v)
-        return url_encode(type(v) == "string" and v or "")
-    end
-    -- ponytail: ref/ref_sign не отправляем — сервер подписывает их под Referer
-    -- запроса iframe, а движок всегда шлёт свой Referer, из-за чего подпись
-    -- не сходится и /ftor отдаёт 500; без этих полей 200 в обоих случаях
-    local body = table.concat({
-        "d=",        field(params.d),
-        "&d_sign=",  field(params.d_sign),
-        "&pd=",      field(params.pd),
-        "&pd_sign=", field(params.pd_sign),
-        "&type=",    url_encode(vtype),
-        "&id=",      url_encode(vid),
-        "&hash=",    url_encode(vhash),
-        "&bad_user=false&cdn_is_working=true",
-    })
-    local pr = http_post("https://kodikplayer.com/ftor", body)
-    if not pr.success then
-        log_error("YummyAnime: Kodik /ftor " .. tostring(pr.code))
-        return nil
-    end
-    local data = json_parse(pr.body)
-    local links = data and data.links
-    if type(links) ~= "table" then return nil end
-    -- ключи links — качества в строковом виде ("240".."720"), от большего к меньшему
-    local qs = {}
-    for k in pairs(links) do
-        if type(k) == "string" and k:match("^%d+$") then qs[#qs + 1] = k end
-    end
-    table.sort(qs, function(a, b) return tonumber(a) > tonumber(b) end)
-    local out = {}
-    for _, q in ipairs(qs) do
-        local items = links[q]
-        if type(items) == "table" then
-            for _, it in ipairs(items) do
-                local src = type(it) == "table" and it.src or nil
-                local hls = type(src) == "string" and kodikDecode(src) or nil
-                if hls then
-                    -- m3u8 Kodik отдаётся и без Referer/Origin (проверено: 200)
-                    out[#out + 1] = {
-                        url     = hls,
-                        quality = "Kodik · " .. dubbing .. " · " .. q .. "p",
-                    }
-                end
-            end
-        end
-    end
-    return out
-end
-
--- Borth (Alloha): перестановки ZU/Zx/ZQ из dec_app — порт borth_core.js.
--- Порты сверены с эталоном node: 170 входов (1..513 символов, реальный
--- viewporti) побайтово совпадают. Zf в эталоне всегда false, поэтому
--- финальные повороты строк — мёртвый код и здесь их нет.
-local function borthBits(len)
-    local bits = 0
-    while 2 ^ bits < len do bits = bits + 1 end
-    return bits
-end
-
-local function borthGroupU(v)
-    local n = 0
-    while v > 0 do
-        n = n + 1
-        v = math.floor(v / 2)
-    end
-    return n
-end
-
-local function borthGroupX(v, bits)
-    if v == 0 then return bits end
-    local n = 0
-    while v % 2 == 0 do
-        n = n + 1
-        v = math.floor(v / 2)
-    end
-    return n
-end
-
-local function borthU(s)
-    local len = #s
-    if len <= 1 then return s end
-    local bits = borthBits(len)
-    local counts = {}
-    for g = 0, bits do counts[g] = 0 end
-    for i = 0, len - 1 do
-        local g = borthGroupU(i)
-        counts[g] = counts[g] + 1
-    end
-    local chunks, pos = {}, 0
-    for g = bits, 0, -1 do              -- нарезка входа по группам сверху вниз
-        local n = counts[g]
-        chunks[g] = s:sub(pos + 1, pos + n)
-        pos = pos + n
-    end
-    local used = {}
-    for g = 0, bits do used[g] = 0 end
-    local out = {}
-    for i = 0, len - 1 do
-        local g = borthGroupU(i)
-        local o = used[g]
-        used[g] = o + 1
-        out[i + 1] = chunks[g]:sub(o + 1, o + 1)
-    end
-    return table.concat(out)
-end
-
-local function borthX(s)
-    local len = #s
-    if len <= 1 then return s end
-    local bits = borthBits(len)
-    local counts = {}
-    for g = 0, bits do counts[g] = 0 end
-    for i = 0, len - 1 do
-        local g = borthGroupX(i, bits)
-        counts[g] = counts[g] + 1
-    end
-    local chunks, pos = {}, 0
-    for g = 0, bits do                  -- нарезка входа по группам снизу вверх
-        local n = counts[g]
-        chunks[g] = s:sub(pos + 1, pos + n)
-        pos = pos + n
-    end
-    local used = {}
-    for g = 0, bits do used[g] = 0 end
-    local out = {}
-    for i = 0, len - 1 do
-        local g = borthGroupX(i, bits)
-        local o = used[g]
-        used[g] = o + 1
-        out[i + 1] = chunks[g]:sub(o + 1, o + 1)
-    end
-    return table.concat(out)
-end
-
-local function isPrime(n)
-    if n < 2 then return false end
-    if n % 2 == 0 then return n == 2 end
-    local d = 3
-    while d * d <= n do
-        if n % d == 0 then return false end
-        d = d + 2
-    end
-    return true
-end
-
-local function borthQ(s)
-    local len = #s
-    if len <= 1 then return s end
-    local p = len + 1
-    while not isPrime(p) do p = p + 1 end
-    local taken, order, cur = {}, {}, 0
-    while #order < len do
-        cur = (cur + 2) % p
-        if cur < len and not taken[cur + 1] then
-            taken[cur + 1] = true
-            order[#order + 1] = cur
-        end
-    end
-    local out = {}
-    for m = 0, len - 1 do
-        out[order[m + 1] + 1] = s:sub(m + 1, m + 1)
-    end
-    return table.concat(out)
-end
-
-local function borthPayload(viewporti)
-    return borthQ(borthX(borthU(viewporti)))
-end
-
--- Качества в порядке убывания: ключи JSON приходят в произвольном порядке.
-local function sortedQualityKeys(quals)
-    local keys = {}
-    for k in pairs(quals) do keys[#keys + 1] = k end
-    table.sort(keys, function(a, b)
-        local na, nb = tonumber(a), tonumber(b)
-        if na and nb and na ~= nb then return na > nb end
-        return tostring(a) < tostring(b)
-    end)
-    return keys
-end
-
-local ALLOHA_ORIGIN = "https://alloha.yani.tv"
-
--- page — ответ общего http_get_batch по этому iframe (см. batchPlayers).
-local function resolveAlloha(iframeUrl, dubbing, page)
-    if type(page) ~= "table" or not page.success then
-        log_error("YummyAnime: Alloha iframe " .. tostring(page and page.code))
-        return nil
-    end
-    local html = page.body
-    local viewporti = html:match('<meta name="viewporti" content="([^"]+)"')
-    local token     = html:match("token:%s*'([0-9a-f]+)'")
-    local activeId  = html:match('"active"%s*:%s*{%s*"id"%s*:%s*(%d+)')
-    if not viewporti or not token or not activeId then
-        log_error("YummyAnime: Alloha — не удалось разобрать страницу плеера")
-        return nil
-    end
-    -- fp (sha256-отпечаток) сервер не сверяет: на живом нули и настоящий sha256
-    -- дают одинаковый 200, а хеш-функции в песочнице движка нет.
-    local borth = string.rep("0", 64) .. "|" .. borthPayload(viewporti)
-    local body = "token=" .. token .. "&av1=true&autoplay=0&audio=&subtitle="
-    local pr = http_post(ALLOHA_ORIGIN .. "/bnsi/movies/" .. activeId, body, {
-        headers = {
-            ["Referer"]          = iframeUrl,
-            ["Origin"]           = ALLOHA_ORIGIN,
-            ["X-Requested-With"] = "XMLHttpRequest",
-            ["Borth"]            = borth,
-        },
-    })
-    if not pr.success then
-        log_error("YummyAnime: Alloha /bnsi " .. tostring(pr.code))
-        return nil
-    end
-    local data = json_parse(pr.body)
-    local tracks = data and data.hlsSource
-    if type(tracks) ~= "table" then return nil end
-    -- CDN vkvideo отвечает 403 без Origin → заголовки источника обязательны
-    local headers = { ["Referer"] = iframeUrl, ["Origin"] = ALLOHA_ORIGIN }
-    local out = {}
-    for _, track in ipairs(tracks) do
-        local quals = type(track) == "table" and track.quality or nil
-        if type(quals) == "table" then
-            for _, k in ipairs(sortedQualityKeys(quals)) do
-                local u = quals[k]
-                if type(u) == "string" and u ~= "" then
-                    out[#out + 1] = {
-                        url     = u,
-                        quality = "Alloha · " .. dubbing .. " · " .. tostring(k) .. "p",
-                        headers = headers,
-                    }
-                end
-            end
-        end
-    end
-    return out
-end
-
--- Aksor: один запрос к api/video/<md5 из iframe_url>; страница заполняет
--- только q1080, остальные качества приходят null.
-local AKSOR_QUALITIES = {
-    { key = "q1080", label = "1080" },
-    { key = "q720",  label = "720" },
-    { key = "q480",  label = "480" },
-}
-
-local function aksorApiUrl(iframeUrl)
-    local md5 = iframeUrl:gsub("[?#].*$", ""):match("([^/]+)$")
-    if not md5 or md5 == "" then return nil end
-    return "https://player.aksor.tv/api/video/" .. md5
-end
-
--- page — ответ общего http_get_batch по api/video/<md5> (см. batchPlayers):
--- в pages ответ лежит под ключом iframe, запросом идёт API-URL.
--- Пустой md5 в iframe → тихий пропуск, как и раньше (запрос не делался).
-local function resolveAksor(iframeUrl, dubbing, page)
-    if not aksorApiUrl(iframeUrl) then return nil end
-    if type(page) ~= "table" or not page.success then
-        log_error("YummyAnime: Aksor api " .. tostring(page and page.code))
-        return nil
-    end
-    local data = json_parse(page.body)
-    local quals = type(data) == "table" and data.qualities or nil
-    if type(quals) ~= "table" then return nil end
-    local out = {}
-    for _, q in ipairs(AKSOR_QUALITIES) do
-        local u = quals[q.key]
-        if type(u) == "string" and u ~= "" then
-            -- в путях Aksor встречается пробел («SHIZA Project»): без %20 URL
-            -- не проходит, а .mpd движок проигрывает и без заголовков
-            local enc = (u:gsub(" ", "%%20"))
-            out[#out + 1] = {
-                url     = enc,
-                quality = "Aksor · " .. dubbing .. " · " .. q.label .. "p",
-            }
-        end
-    end
-    return out
-end
-
--- page — ответ общего http_get_batch по этому iframe (charset берётся из
--- SIBNET_OPTS в batchPlayers).
-local function resolveSibnet(iframeUrl, dubbing, page)
-    -- shell.php отдаёт windows-1251; шаблон режет ~35-45 запросов за 2-3 минуты
-    -- (403 rate-limit) — тогда этот плеер просто пропускаем
-    if type(page) ~= "table" or not page.success then
-        log_error("YummyAnime: Sibnet " .. tostring(page and page.code))
-        return nil
-    end
-    local src = page.body:match('player%.src%(%[%s*{%s*src:%s*"([^"]+)"')
-        or page.body:match('src:%s*"(/v/[^"]+)"')
-    if not src then return nil end
-    if src:sub(1, 1) == "/" then src = "https://video.sibnet.ru" .. src end
-    return {
-        {
-            url     = src,
-            quality = "Sibnet · " .. dubbing,
-            -- /v/ отвечает 302 на подписанный mp4: редирект раскрутит плеер
-            -- (OkHttp), заголовки источника применятся ко всему потоку.
-            -- Без Referer video.sibnet.ru отдаёт 403 — проверено.
-            headers = { ["Referer"] = "https://video.sibnet.ru/" },
-        },
-    }
-end
-
 local PLAYER_KINDS = { [4] = "kodik", [2] = "alloha", [1] = "aksor", [7] = "sibnet" }
 
+-- KODIK/ALLOHA/AKSOR/SIBNET = nil, пока require_lib недоступен, а таблица
+-- создаётся на top-level: значение берём через and, иначе падение при загрузке
+-- молча убрало бы плагин из списка источников (не-nil гарантирует ensureEngine).
 local RESOLVERS = {
-    kodik  = resolveKodik,
-    alloha = resolveAlloha,
-    aksor  = resolveAksor,
-    sibnet = resolveSibnet,
+    kodik  = KODIK and KODIK.resolve,
+    alloha = ALLOHA and ALLOHA.resolve,
+    aksor  = AKSOR and AKSOR.resolve,
+    sibnet = SIBNET and SIBNET.resolve,
 }
 
 local function playerKind(rec)
@@ -920,25 +575,6 @@ local function resolveRecord(rec, sources, seen, pages)
     for _, s in ipairs(result) do pushSource(sources, seen, s) end
 end
 
--- nil vkId (плейлист без идентификатора) → nil: batchAdd пропустит запрос,
--- а pages[nil] вернёт nil и резолвер тихо не выдаст источник.
-local function cvhVideoUrl(vkId)
-    if vkId == nil then return nil end
-    return CVH_API .. "/video/" .. vkId
-end
-
--- Ответ видео CVH → источник. Заголовки потока НЕ задаём: подписанные сегменты
--- okcdn (путь .../sig/<подпись>/...) отвечают 400, если в запросе есть Referer
--- или Origin. Проверено: без них сегмент 200, с ними 400 при любом User-Agent.
--- Referer/Origin нужны только для API-запросов плагина, см. CVH_HDR выше.
-local function cvhSourceFrom(item, r)
-    if type(r) ~= "table" or not r.success then return nil end
-    local data = json_parse(r.body)
-    local hls = data and data.sources and data.sources.hlsUrl
-    if type(hls) ~= "string" or hls == "" then return nil end
-    return { url = hls, quality = voiceLabel(item) }
-end
-
 -- CVH-плейлист тайтла по URL серии: detail → shikimori_id → плейлист.
 -- Оба ответа кэшируются на сеанс, поэтому серия за серией не ходит в сеть.
 local function cvhPlaylist(episodeUrl)
@@ -967,7 +603,7 @@ end
 -- Варианты CVH — в конец списка, после плееров сайта.
 local function appendCvhSources(matched, pages, sources, seen)
     for _, it in ipairs(matched) do
-        local ok, src = pcall(cvhSourceFrom, it, pages[cvhVideoUrl(it.vkId)])
+        local ok, src = pcall(CVH.sourceFrom, it, pages[CVH.videoUrl(it.vkId)])
         if ok then
             pushSource(sources, seen, src)
         else
@@ -1034,7 +670,7 @@ local function batchPlayers(b, recs)
             if kind == "kodik" or kind == "alloha" then
                 batchAdd(b, iframe, iframe, nil)
             elseif kind == "aksor" then
-                batchAdd(b, aksorApiUrl(iframe), iframe, AKSOR_OPTS)
+                batchAdd(b, AKSOR.apiUrl(iframe), iframe, AKSOR_OPTS)
             elseif kind == "sibnet" then
                 batchAdd(b, iframe, iframe, SIBNET_OPTS)
             end
@@ -1044,7 +680,7 @@ end
 
 local function batchCvh(b, items)
     for _, it in ipairs(items) do
-        local url = cvhVideoUrl(it.vkId)
+        local url = CVH.videoUrl(it.vkId)
         batchAdd(b, url, url, CVH_OPTS)
     end
 end
@@ -1082,6 +718,7 @@ local function legacyVideoList(episodeUrl)
 end
 
 function getVideoList(episodeUrl)
+    ensureEngine()
     if episodeUrl:find("/season/", 1, true) then
         return legacyVideoList(episodeUrl)
     end
@@ -1120,5 +757,6 @@ function getVideoList(episodeUrl)
 end
 
 function getUserAgentPreset()
+    ensureEngine()
     return "Chrome Mobile"
 end

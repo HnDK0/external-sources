@@ -1,10 +1,42 @@
 -- ── Metadata ────────────────────────────────────────────────────────────────
 id       = "novelhi"
 name     = "NovelHi"
-version  = "1.0.9"
+version  = "1.1.0"
 baseUrl  = "https://novelhi.com"
 language = "en"
 icon     = "https://raw.githubusercontent.com/HnDK0/external-sources/main/icons/novelhi.png"
+
+-- =====================================================================
+-- GUARD: old app builds without require_lib / libs/text.
+-- Top-level must load without them, otherwise the plugin silently
+-- disappears from the source list, so the lib is loaded through pcall and
+-- the failure is raised later from the public functions. show_error is
+-- async in production, hence error(..., 0) right after it.
+-- =====================================================================
+local libErr = nil
+local HAS_LIBS = type(require_lib) == "function"
+
+local function tryLib(name)
+    if not HAS_LIBS then return nil end
+    local ok, res = pcall(require_lib, name)
+    if not ok then libErr = tostring(res) return nil end
+    return res
+end
+
+local TEXT = tryLib("text")
+
+local function ensureEngine()
+    local missing = {}
+    if not HAS_LIBS then missing[#missing + 1] = "require_lib" end
+    if TEXT == nil then missing[#missing + 1] = "text" end
+    if #missing > 0 then
+        show_error("Please update NoveLA",
+            "This plugin needs new functions or libraries (" .. table.concat(missing, ", ") ..
+            "). Please update the application to the latest version." ..
+            (libErr and (" " .. libErr) or ""))
+        error("A newer version of the application is required: " .. table.concat(missing, ","), 0)
+    end
+end
 
 -- ── Helpers ───────────────────────────────────────────────────────────────────
 
@@ -30,14 +62,7 @@ end
 
 -- NovelHi obfuscates chapter text with ROT13 + a custom font (the raw JSON
 -- contains ROT13-encoded English; the font visually decodes it in a browser).
-local function rot13Decode(s)
-    if not s or s == "" then return "" end
-    return (s:gsub("[%a]", function(c)
-        local b = c:byte()
-        local base = (b < 97) and 65 or 97
-        return string.char(base + ((b - base + 13) % 26))
-    end))
-end
+-- The ROT13 itself lives in libs/text (require_lib("text").rot13).
 
 -- Book page cache: the engine calls the detail functions in parallel.
 local _pageCache = {}
@@ -57,6 +82,7 @@ end
 -- UA нет ни ul.list (статус/дата), ни .book-rate (рейтинг) — функции возвращают nil.
 -- Принудительно запрашиваем десктопный Chrome, чтобы получать PC-шаблон.
 function getUserAgentPreset()
+    ensureEngine()
     return "Chrome Desktop"
 end
 
@@ -148,6 +174,7 @@ end
 -- ── Catalog ───────────────────────────────────────────────────────────────────
 
 function getCatalogList(index)
+    ensureEngine()
     local page = (index or 0) + 1
     local url  = baseUrl .. "/book/searchBookListWithShelfState?curr=" .. page .. "&limit=20"
     return fetchCatalog(url)
@@ -156,6 +183,7 @@ end
 -- ── Search ─────────────────────────────────────────────────────────────────────
 
 function getCatalogSearch(index, query)
+    ensureEngine()
     local page = (index or 0) + 1
     local url  = baseUrl .. "/book/searchBookListWithShelfState?curr=" .. page ..
                  "&limit=20&keyword=" .. url_encode(query or "")
@@ -165,6 +193,7 @@ end
 -- ── Filters (status + genre, matching the site's own filter UI) ──────────────
 
 function getFilterList()
+    ensureEngine()
     local genreOptions = {}
     for _, g in ipairs(GENRES) do
         table.insert(genreOptions, { value = tostring(g.id), label = g.name })
@@ -192,6 +221,7 @@ function getFilterList()
 end
 
 function getCatalogFiltered(index, filters)
+    ensureEngine()
     local page   = (index or 0) + 1
     local status = tostring(filters and filters["status"] or "")
     local genre  = tostring(filters and filters["genre"] or "")
@@ -208,6 +238,7 @@ end
 -- ── Book details ──────────────────────────────────────────────────────────────
 
 function getBookTitle(bookUrl)
+    ensureEngine()
     local body = fetchPage(bookUrl)
     if not body then return nil end
     local el = html_select_first(body, "h1")
@@ -217,6 +248,7 @@ function getBookTitle(bookUrl)
 end
 
 function getBookCoverImageUrl(bookUrl)
+    ensureEngine()
     local body = fetchPage(bookUrl)
     if not body then return nil end
     local cover = html_attr(body, "img.cover", "src")
@@ -225,6 +257,7 @@ function getBookCoverImageUrl(bookUrl)
 end
 
 function getBookDescription(bookUrl)
+    ensureEngine()
     local body = fetchPage(bookUrl)
     if not body then return nil end
     local el = html_select_first(body, "p.detail-desc")
@@ -233,6 +266,7 @@ function getBookDescription(bookUrl)
 end
 
 function getBookGenres(bookUrl)
+    ensureEngine()
     local body = fetchPage(bookUrl)
     if not body then return {} end
     local bookId = html_attr(body, "#bookId", "value")
@@ -261,6 +295,7 @@ end
 --   <span class="item">Status: <em>Ongoing</em></span>
 --   <span class="item">Update: <em>25/01/29 15:10:03</em></span>
 function getBookStatus(bookUrl)
+    ensureEngine()
     local body = fetchPage(bookUrl)
     if not body then return nil end
     for _, span in ipairs(html_select(body, "ul.list li span.item")) do
@@ -275,6 +310,7 @@ function getBookStatus(bookUrl)
 end
 
 function getBookLastUpdate(bookUrl)
+    ensureEngine()
     local body = fetchPage(bookUrl)
     if not body then return nil end
     for _, span in ipairs(html_select(body, "ul.list li span.item")) do
@@ -298,6 +334,7 @@ end
 -- Рейтинг книги — число в <span class="rate-text"> внутри первого <div class="book-rate">
 -- (например "4.1"; второй book-rate содержит подпись "Your Rating:", её пропускаем).
 function getBookRating(bookUrl)
+    ensureEngine()
     local body = fetchPage(bookUrl)
     if not body then return nil end
     local rt = html_select_first(body, ".book-rate .rate-text")
@@ -311,6 +348,7 @@ end
 -- ── Chapter list ──────────────────────────────────────────────────────────────
 
 function getChapterList(bookUrl)
+    ensureEngine()
     if not bookUrl or bookUrl == "" then return {} end
     local tocUrl = bookUrl:gsub("/+$", "") .. "/chapters"
     local r = http_get(tocUrl)
@@ -338,6 +376,7 @@ end
 -- Hash = id of the last chapter. Must use a direct http_get (not fetchPage)
 -- so that new chapters are always detected.
 function getChapterListHash(bookUrl)
+    ensureEngine()
     if not bookUrl or bookUrl == "" then return nil end
     local r = http_get(bookUrl)
     if not r.success then return nil end
@@ -363,6 +402,7 @@ end
 -- (X-Requested-With: XMLHttpRequest), returning JSON with data.content.
 -- The content is ROT13-obfuscated and contains inline ad blocks.
 function getChapterText(html, url)
+    ensureEngine()
     if not html or html == "" then return "" end
     local path  = html_attr(html, "#chapterContentPath", "value")
     local token = html_attr(html, "#chapterContentToken", "value")
@@ -394,7 +434,7 @@ function getChapterText(html, url)
     content = regex_replace(content, "&#39;", "'")
     content = regex_replace(content, "&quot;", "\"")
 
-    content = rot13Decode(content)
+    content = TEXT.rot13(content)
     -- Any remaining tags (decoded names like <frag>, <oe>) are junk
     content = regex_replace(content, "<[^>]*>", "")
 
