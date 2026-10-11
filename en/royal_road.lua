@@ -1,36 +1,46 @@
 -- ── Метаданные ────────────────────────────────────────────────────────────────
 id       = "royal_road"
 name     = "Royal Road"
-version  = "1.1.7"
+version  = "1.1.8"
 baseUrl  = "https://www.royalroad.com"
 language = "en"
 icon     = "https://raw.githubusercontent.com/HnDK0/external-sources/main/icons/royalroad.png"
 
 -- ── Хелперы ───────────────────────────────────────────────────────────────────
 
-local function absUrl(href)
-  if not href or href == "" then return "" end
-  if string_starts_with(href, "http") then return href end
-  if string_starts_with(href, "//") then return "https:" .. href end
-  return url_resolve(baseUrl, href)
+-- Old builds ship no require_lib: keep the plugin loadable (a top-level error
+-- would drop it from the source list) and fail with a visible message on the
+-- first call instead. Shared libs load lazily and are cached per session.
+local _libs
+local function LIB(id)
+  if type(require_lib) ~= "function" then
+    show_error("Requires NoveLA update", "This plugin needs the shared libraries")
+    error("Requires NoveLA update (require_lib)", 0)
+  end
+  if not _libs then _libs = {} end
+  if not _libs[id] then _libs[id] = require_lib(id) end
+  return _libs[id]
 end
 
+local function absUrl(href)
+  return LIB("urls").absUrl(baseUrl, href)
+end
+
+-- Engine global url_encode delegates to the shared catalog lib.
+local url_encode = function(s) return LIB("catalog").urlEncode(s) end
+
+-- Standard chapter-text cleanup from the shared content lib, plus Royal Road's
+-- own anti-piracy banners.
 local function applyStandardContentTransforms(text)
-  if not text or text == "" then return "" end
-  text = string_normalize(text)
-  local domain = baseUrl:gsub("https?://", ""):gsub("^www%.", ""):gsub("/$", "")
-  text = regex_replace(text, "(?i)" .. domain .. ".*?\\n", "")
-  text = regex_replace(text, "(?i)\\A[\\s\\p{Z}\\uFEFF]*((Chapter\\s+\\d+)[^\\n\\r]*[\\n\\r\\s]*)+", "")
-  text = regex_replace(text, "(?im)^\\s*(Translator|Editor|Proofreader|Read\\s+(at|on|latest))[:\\s][^\\n\\r]{0,70}(\\r?\\n|$)", "")
+  text = LIB("content").standardTransforms(text, { domain = baseUrl, lang = "en" })
+  if text == "" then return "" end
   -- Anti-piracy: "If you come across this story on Amazon..." / "This tale has been pilfered..."
   text = regex_replace(text, "(?i)If you come across this story.*?Please report it\\.?", "")
   text = regex_replace(text, "(?i)This story has been stolen.*?Please report it\\.?", "")
   text = regex_replace(text, "(?i)This tale has been pilfered.*?kindly file a report\\.?", "")
   text = regex_replace(text, "(?i)The tale has been illicitly lifted.*?report the violation\\.?", "")
-  -- Убираем множественные пустые строки (3+ → 2)
   text = regex_replace(text, "\\n{3,}", "\\n\\n")
-  text = string_trim(text)
-  return text
+  return string_trim(text)
 end
 
 -- ── Каталог (best-rated, постраничный) ────────────────────────────────────────
@@ -40,7 +50,7 @@ function getCatalogList(index)
   if index == 0 then
     url = baseUrl .. "/fictions/best-rated"
   else
-    url = baseUrl .. "/fictions/best-rated?page=" .. tostring(index + 1)
+    url = baseUrl .. "/fictions/best-rated?page=" .. tostring(LIB("catalog").nextIndex(index))
   end
 
   local r = http_get(url)
@@ -72,13 +82,13 @@ function getCatalogList(index)
     end
   end
 
-  return { items = items, hasNext = #items > 0 }
+  return { items = items, hasNext = LIB("catalog").hasNextPage(items) }
 end
 
 -- ── Поиск ─────────────────────────────────────────────────────────────────────
 
 function getCatalogSearch(index, query)
-  local page = index + 1
+  local page = LIB("catalog").nextIndex(index)
   local url = baseUrl .. "/fictions/search?title=" .. url_encode(query) .. "&page=" .. tostring(page)
 
   local r = http_get(url)
@@ -110,7 +120,7 @@ function getCatalogSearch(index, query)
     end
   end
 
-  return { items = items, hasNext = #items > 0 }
+  return { items = items, hasNext = LIB("catalog").hasNextPage(items) }
 end
 
 -- ── Детали книги ──────────────────────────────────────────────────────────────
@@ -187,13 +197,8 @@ function getBookGenres(bookUrl)
   local r = http_get(bookUrl)
   if not r.success then return {} end
 
-  local genres = {}
-  -- span.tags содержит ссылки на жанры/теги
-  for _, a in ipairs(html_select(r.body, "span.tags a")) do
-    local label = string_trim(a.text)
-    if label ~= "" then table.insert(genres, label) end
-  end
-  return genres
+  -- span.tags содержит ссылки на жанры/теги; trim + drop empties — shared meta lib.
+  return LIB("meta").collectGenres(html_select(r.body, "span.tags a"))
 end
 
 -- ── Рейтинг ────────────────────────────────────────────────────────────────
@@ -220,7 +225,7 @@ function getBookStatus(bookUrl)
   for _, span in ipairs(html_select(r.body, "span.label-sm.bg-blue-hoki")) do
     local v = string_clean(span.text)
     if v == "ONGOING" or v == "COMPLETED" or v == "DROPPED" or v == "HIATUS" or v == "STUB" then
-      return v
+      return LIB("meta").status(v)
     end
   end
   return nil
@@ -455,7 +460,7 @@ end
 -- ── Каталог с фильтрами ───────────────────────────────────────────────────────
 
 function getCatalogFiltered(index, filters)
-  local page     = index + 1
+  local page     = LIB("catalog").nextIndex(index)
   local orderBy  = filters["orderBy"]  or "relevance"
   local dir      = filters["dir"]      or "desc"
   local status   = filters["status"]   or "ALL"
@@ -521,5 +526,5 @@ function getCatalogFiltered(index, filters)
     end
   end
 
-  return { items = items, hasNext = #items > 0 }
+  return { items = items, hasNext = LIB("catalog").hasNextPage(items) }
 end

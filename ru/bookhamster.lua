@@ -1,45 +1,33 @@
 -- ── Метаданные ────────────────────────────────────────────────────────────────
 id       = "bookhamster"
 name     = "Bookhamster"
-version  = "1.2.0"
+version  = "1.2.1"
 baseUrl  = "https://bookhamster.ru/"
 language = "ru"
 icon     = "https://raw.githubusercontent.com/HnDK0/external-sources/main/icons/bookhamster.png"
 
 -- ── Хелперы ───────────────────────────────────────────────────────────────────
 
-local function absUrl(href)
-  if not href or href == "" then return "" end
-  if string_starts_with(href, "http") then return href end
-  if string_starts_with(href, "//") then return "https:" .. href end
-  return url_resolve(baseUrl, href)
+-- Old builds ship no require_lib: keep the plugin loadable (a top-level
+-- error would drop it from the source list) and fail with a visible
+-- message on the first call instead. require_lib caches loaded libs.
+local function lib(id)
+  if type(require_lib) ~= "function" then
+    show_error("Требуется обновление NoveLA", "Плагину нужны общие библиотеки")
+    error("Требуется обновление NoveLA (require_lib)", 0)
+  end
+  return require_lib(id)
 end
 
+local function absUrl(href) return lib("urls").absUrl(baseUrl, href) end
+
 local function applyStandardContentTransforms(text)
-  if not text or text == "" then return "" end
-  text = string_normalize(text)
-  local domain = baseUrl:gsub("https?://", ""):gsub("^www%.", ""):gsub("/$", "")
-  text = regex_replace(text, "(?i)" .. domain .. ".*?\\n", "")
-  text = regex_replace(text, "(?i)\\A[\\s\\p{Z}\\uFEFF]*((Глава\\s+\\d+|Chapter\\s+\\d+)[^\\n\\r]*[\\n\\r\\s]*)+", "")
-  text = regex_replace(text, "(?im)^\\s*(Перевод|Переводчик|Редакция|Редактор|Аннотация|Сайт|Источник|Студия)[:\\s][^\\n\\r]{0,70}(\\r?\\n|$)", "")
-  text = regex_replace(text, "(?im)^\\s*(Translator|Editor|Proofreader|Read\\s+(at|on|latest))[:\\s][^\\n\\r]{0,70}(\\r?\\n|$)", "")
-  text = string_trim(text)
-  return text
+  return lib("content").standardTransforms(text, { domain = baseUrl, lang = "ru" })
 end
 
 -- Кэш страницы книги: 4 функции деталей вызываются движком параллельно,
 -- общий fetchPage убирает дублирующие HTTP-запросы.
-local _pageCache = {}
-
-local function fetchPage(url)
-  if _pageCache[url] then return _pageCache[url] end
-  local r = http_get(url)
-  if r.success then
-    _pageCache[url] = r.body
-    return r.body
-  end
-  return nil
-end
+local function fetchPage(url) return lib("fetch").page(url) end
 
 -- Месяцы на русском → номер для формата YYYY-MM-DD
 local MONTHS = {
@@ -82,8 +70,8 @@ end
 -- ── Каталог ───────────────────────────────────────────────────────────────────
 
 function getCatalogList(index)
-  local url = baseUrl .. "vse-knigi/?sort=" .. url_encode("По рейтингу")
-              .. "&bpage=" .. tostring(index + 1)
+  local url = lib("catalog").pageUrl(
+    baseUrl .. "vse-knigi/?sort=" .. url_encode("По рейтингу") .. "&bpage={n}", index)
 
   local r = http_get(url)
   if not r.success then return { items = {}, hasNext = false } end
@@ -102,13 +90,14 @@ function getCatalogList(index)
     end
   end
 
-  return { items = items, hasNext = #items > 0 }
+  return { items = items, hasNext = lib("catalog").hasNextPage(items) }
 end
 
 -- ── Поиск ─────────────────────────────────────────────────────────────────────
 
 function getCatalogSearch(index, query)
-  local url = baseUrl .. "vse-knigi/?searchname=" .. url_encode(query) .. "&bpage=" .. tostring(index + 1)
+  local url = lib("catalog").pageUrl(
+    baseUrl .. "vse-knigi/?searchname=" .. url_encode(query) .. "&bpage={n}", index)
 
   local r = http_get(url)
   if not r.success then return { items = {}, hasNext = false } end
@@ -127,7 +116,7 @@ function getCatalogSearch(index, query)
     end
   end
 
-  return { items = items, hasNext = #items > 0 }
+  return { items = items, hasNext = lib("catalog").hasNextPage(items) }
 end
 
 -- ── Детали книги ──────────────────────────────────────────────────────────────
@@ -168,10 +157,7 @@ function getBookGenres(bookUrl)
     if icon then
       local valueEl = html_select_first(block.html, "div.data-value")
       if valueEl then
-        for _, a in ipairs(html_select(valueEl.html, "a")) do
-          local label = string_trim(a.text)
-          if label ~= "" then table.insert(genres, label) end
-        end
+        genres = lib("meta").collectGenres(html_select(valueEl.html, "a"))
         -- если жанры без ссылок — берём весь текст
         if #genres == 0 then
           local label = string_trim(valueEl.text)
@@ -184,10 +170,7 @@ function getBookGenres(bookUrl)
 
   -- bookhamster: альтернативный селектор через genreslist
   if #genres == 0 then
-    for _, a in ipairs(html_select(html, "div.genreslist a")) do
-      local label = string_trim(a.text)
-      if label ~= "" then table.insert(genres, label) end
-    end
+    genres = lib("meta").collectGenres(html_select(html, "div.genreslist a"))
   end
 
   return genres
@@ -364,7 +347,8 @@ end
 -- ── Каталог с фильтрами ───────────────────────────────────────────────────────
 
 function getCatalogFiltered(index, filters)
-  local page   = index + 1
+  local cat   = lib("catalog")
+  local page  = cat.nextIndex(index)
   local sort   = filters["sort"] or "По рейтингу"
   local status = filters["status_included"] or {}
   local lang   = filters["lang_included"] or {}
@@ -394,5 +378,5 @@ function getCatalogFiltered(index, filters)
     end
   end
 
-  return { items = items, hasNext = #items > 0 }
+  return { items = items, hasNext = cat.hasNextPage(items) }
 end

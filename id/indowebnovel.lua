@@ -99,20 +99,20 @@ end
 -- ── Каталог ───────────────────────────────────────────────────────────────────
 
 function getCatalogList(index)
-  local page = index + 1
+  local page = LIB("catalog").nextIndex(index)
   local url = buildSearchUrl({ page = page })
 
   local r = http_get(url)
   if not r.success then return { items = {}, hasNext = false } end
 
   local items = parseCatalogItems(r.body)
-  return { items = items, hasNext = #items > 0 }
+  return { items = items, hasNext = LIB("catalog").hasNextPage(items) }
 end
 
 -- ── Поиск ─────────────────────────────────────────────────────────────────────
 
 function getCatalogSearch(index, query)
-  local page = index + 1
+  local page = LIB("catalog").nextIndex(index)
   local url = buildSearchUrl({
     page  = page,
     title = query
@@ -124,7 +124,7 @@ function getCatalogSearch(index, query)
   if not r.success then return { items = {}, hasNext = false } end
 
   local items = parseCatalogItems(r.body)
-  return { items = items, hasNext = #items > 0 }
+  return { items = items, hasNext = LIB("catalog").hasNextPage(items) }
 end
 
 -- ── Детали книги ──────────────────────────────────────────────────────────────
@@ -330,7 +330,7 @@ end
 -- ── Каталог с фильтрами ───────────────────────────────────────────────────────
 
 function getCatalogFiltered(index, filters)
-  local page    = index + 1
+  local page    = LIB("catalog").nextIndex(index)
   local order   = filters["order"]  or "popular"
   local status  = filters["status"] or ""
   local typ     = filters["type"]   or ""
@@ -351,5 +351,5 @@ function getCatalogFiltered(index, filters)
   if not r.success then return { items = {}, hasNext = false } end
 
   local items = parseCatalogItems(r.body)
-  return { items = items, hasNext = #items > 0 }
+  return { items = items, hasNext = LIB("catalog").hasNextPage(items) }
 end

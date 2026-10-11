@@ -4,7 +4,7 @@
 
 id           = "hentaila"
 name         = "Hentaila"
-version      = "1.1.0"
+version      = "1.1.1"
 baseUrl      = "https://hentaila.com"
 language     = "es"
 content_type = "video"
@@ -26,6 +26,9 @@ end
 
 local MP4UPLOAD = tryLib("mp4upload")
 local PIXELDRAIN = tryLib("pixeldrain")
+local FETCH = tryLib("fetch")
+local URLS = tryLib("urls")
+local CATLIB = tryLib("catalog")
 
 -- User-facing strings stay in Spanish (plugin language = "es"), like
 -- es/latanime.lua. show_error is async in production, hence error(..., 0).
@@ -34,7 +37,7 @@ local function ensureLibs()
         show_error("Se requiere actualizar NoveLA", "Este complemento usa bibliotecas comunes (require_lib). Actualice la aplicación a la última versión.")
         error("Se requiere la última versión de la aplicación (require_lib)", 0)
     end
-    if not MP4UPLOAD or not PIXELDRAIN then
+    if not MP4UPLOAD or not PIXELDRAIN or not FETCH or not URLS or not CATLIB then
         show_error("Bibliotecas no cargadas", "Abra la pantalla de extensiones y pulse actualizar; después reinicie la aplicación. " .. (libErr or ""))
         error("Bibliotecas comunes no cargadas", 0)
     end
@@ -46,29 +49,15 @@ local CARD_SEL = "div.grid.grid-cols-2 article.group\\/item"
 
 -- ── Helpers ───────────────────────────────────────────────────────────────────
 
-local function absUrl(href)
-    if not href or href == "" then return "" end
-    if string_starts_with(href, "http") then return href end
-    if string_starts_with(href, "//") then return "https:" .. href end
-    return url_resolve(baseUrl, href)
-end
+local function absUrl(href) return URLS.absUrl(baseUrl, href) end
 
 -- Episode URLs look like /media/<slug>/<n>; the book URL is /media/<slug>.
 local function bookUrlOf(url)
     return url:match("^(.-/media/[^/?#]+)") or url
 end
 
-local _pageCache = {}
-local function fetchPage(url)
-    if _pageCache[url] then return _pageCache[url] end
-    local r = http_get(url)
-    if r.success then
-        _pageCache[url] = r.body
-        return r.body
-    end
-    log_error("Hentaila: request failed (HTTP " .. tostring(r.code) .. ") " .. url)
-    return nil
-end
+-- Session cache lives in the shared fetch lib (it also logs failures).
+local function fetchPage(url) return FETCH.page(url) end
 
 local function parseCards(body)
     local items = {}
@@ -99,20 +88,20 @@ local function fetchCatalog(query)
         return { items = {}, hasNext = false }
     end
     local items = parseCards(r.body)
-    return { items = items, hasNext = #items > 0 }
+    return { items = items, hasNext = CATLIB.hasNextPage(items) }
 end
 
 -- ── Catalog / search ──────────────────────────────────────────────────────────
 
 function getCatalogList(index)
     ensureLibs()
-    return fetchCatalog("?order=latest_added&page=" .. (index + 1))
+    return fetchCatalog("?order=latest_added&page=" .. CATLIB.nextIndex(index))
 end
 
 function getCatalogSearch(index, query)
     ensureLibs()
     if not query or query == "" then return { items = {}, hasNext = false } end
-    return fetchCatalog("?search=" .. url_encode(query) .. "&page=" .. (index + 1))
+    return fetchCatalog("?search=" .. CATLIB.urlEncode(query) .. "&page=" .. CATLIB.nextIndex(index))
 end
 
 -- ── Book details ──────────────────────────────────────────────────────────────
@@ -224,11 +213,7 @@ end
 
 -- ── Video resolution ──────────────────────────────────────────────────────────
 
-local function origin(url)
-    local scheme, host = url:match("^(https?)://([^/?#]+)")
-    if not scheme then return nil end
-    return scheme .. "://" .. host .. "/"
-end
+local function origin(url) return URLS.origin(url) end
 
 -- Best-effort extraction of a direct stream from an embed page.
 local function scanEmbedPage(embedUrl)
@@ -442,11 +427,11 @@ function getCatalogFiltered(index, filters)
 
     local order = filters["order"]
     if type(order) ~= "string" or order == "" then order = "latest_added" end
-    local q = "?order=" .. url_encode(order)
+    local q = "?order=" .. CATLIB.urlEncode(order)
 
     local status = filters["status"]
     if type(status) == "string" and status ~= "" and status ~= "all" then
-        q = q .. "&status=" .. url_encode(status)
+        q = q .. "&status=" .. CATLIB.urlEncode(status)
     end
 
     -- Checkbox "genre" arrives as filters["genre_included"] (array of values).
@@ -455,11 +440,11 @@ function getCatalogFiltered(index, filters)
     if type(genres) == "table" then
         for _, g in ipairs(genres) do
             if type(g) == "string" and g ~= "" then
-                q = q .. "&genre=" .. url_encode(g:lower())
+                q = q .. "&genre=" .. CATLIB.urlEncode(g:lower())
             end
         end
     end
 
-    log_info("Hentaila: filtered -> " .. CATALOG .. q .. "&page=" .. (index + 1))
-    return fetchCatalog(q .. "&page=" .. (index + 1))
+    log_info("Hentaila: filtered -> " .. CATALOG .. q .. "&page=" .. CATLIB.nextIndex(index))
+    return fetchCatalog(q .. "&page=" .. CATLIB.nextIndex(index))
 end

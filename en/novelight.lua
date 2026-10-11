@@ -1,46 +1,49 @@
 -- ── Metadata ────────────────────────────────────────────────────────────────
 id       = "novelight"
 name     = "Novelight"
-version  = "1.0.9"
+version  = "1.0.10"
 baseUrl  = "https://novelight.net/"
 language = "en"
 icon     = "https://raw.githubusercontent.com/HnDK0/external-sources/main/icons/novelight.png"
 
 -- ── Helpers ─────────────────────────────────────────────────────────────────
 
-local _pageCache = {}
+-- Old builds ship no require_lib: keep the plugin loadable (a top-level error
+-- would drop it from the source list) and fail with a visible message on the
+-- first call instead. Shared libs load lazily and are cached per session.
+local _libs
+local function LIB(id)
+  if type(require_lib) ~= "function" then
+    show_error("Requires NoveLA update", "This plugin needs the shared libraries")
+    error("Requires NoveLA update (require_lib)", 0)
+  end
+  if not _libs then _libs = {} end
+  if not _libs[id] then _libs[id] = require_lib(id) end
+  return _libs[id]
+end
 
 -- Cache of the book page, shared by the book-details functions and parsePage
 -- (stable metadata only; chapter data always comes from uncached AJAX calls).
+-- The shared fetch lib caches successful responses for the session.
 local function fetchPage(url)
-  if _pageCache[url] then return _pageCache[url] end
-  local r = http_get(url)
-  if r.success then
-    _pageCache[url] = r.body
-    return r.body
-  end
-  return nil
+  return LIB("fetch").page(url)
 end
 
 local function absUrl(href)
-  if not href or href == "" then return "" end
-  if string_starts_with(href, "http") then return href end
-  if string_starts_with(href, "//") then return "https:" .. href end
-  return url_resolve(baseUrl, href)
+  return LIB("urls").absUrl(baseUrl, href)
 end
 
+-- Engine global url_encode delegates to the shared catalog lib.
+local url_encode = function(s) return LIB("catalog").urlEncode(s) end
+
+-- Standard chapter-text cleanup from the shared content lib, plus the site's
+-- own watermark: it is written inside paragraphs with Cyrillic look-alikes
+-- (о/е, U+043O/U+0435), so the domain regex does not catch it: # Nоvеlight #
 local function applyStandardContentTransforms(text)
-  if not text or text == "" then return "" end
-  text = string_normalize(text)
-  local domain = baseUrl:gsub("https?://", ""):gsub("^www%.", ""):gsub("/$", "")
-  text = regex_replace(text, "(?i)" .. domain .. ".*?\\n", "")
-  -- Водяной знак сайта вшит внутрь параграфов кириллицей (о/е, U+043E/U+0435),
-  -- поэтому regex удаления домена его не ловит: # Nоvеlight #
+  text = LIB("content").standardTransforms(text, { domain = baseUrl, lang = "en" })
+  if text == "" then return "" end
   text = regex_replace(text, "(?i)#\\s*N[oо]v[eе]light\\s*#", "")
-  text = regex_replace(text, "(?i)\\A[\\s\\p{Z}\\uFEFF]*((Глава\\s+\\d+|Chapter\\s+\\d+)[^\\n\\r]*[\\n\\r\\s]*)+", "")
-  text = regex_replace(text, "(?im)^\\s*(Translator|Editor|Proofreader|Read\\s+(at|on|latest))[:\\s][^\\n\\r]{0,70}(\\r?\\n|$)", "")
-  text = string_trim(text)
-  return text
+  return string_trim(text)
 end
 
 -- The site's AJAX endpoints reject plain requests without this header.
@@ -70,19 +73,19 @@ local function parseCatalogItems(html)
 end
 
 function getCatalogList(index)
-  local r = http_get(baseUrl .. "catalog/?page=" .. tostring(index + 1))
+  local r = http_get(baseUrl .. "catalog/?page=" .. tostring(LIB("catalog").nextIndex(index)))
   if not r.success then return { items = {}, hasNext = false } end
 
   local items = parseCatalogItems(r.body)
-  return { items = items, hasNext = #items > 0 }
+  return { items = items, hasNext = LIB("catalog").hasNextPage(items) }
 end
 
 function getCatalogSearch(index, query)
-  local r = http_get(baseUrl .. "catalog/?search=" .. url_encode(query) .. "&page=" .. tostring(index + 1))
+  local r = http_get(baseUrl .. "catalog/?search=" .. url_encode(query) .. "&page=" .. tostring(LIB("catalog").nextIndex(index)))
   if not r.success then return { items = {}, hasNext = false } end
 
   local items = parseCatalogItems(r.body)
-  return { items = items, hasNext = #items > 0 }
+  return { items = items, hasNext = LIB("catalog").hasNextPage(items) }
 end
 
 -- ── Catalog filters ───────────────────────────────────────────────────────────
@@ -184,7 +187,7 @@ function getFilterList()
 end
 
 function getCatalogFiltered(index, filters)
-  local page = (index or 0) + 1
+  local page = LIB("catalog").nextIndex(index)
   filters = filters or {}
 
   local qs = {}
@@ -209,7 +212,7 @@ function getCatalogFiltered(index, filters)
   if not r.success then return { items = {}, hasNext = false } end
 
   local items = parseCatalogItems(r.body)
-  return { items = items, hasNext = #items > 0 }
+  return { items = items, hasNext = LIB("catalog").hasNextPage(items) }
 end
 
 -- ── Book details ─────────────────────────────────────────────────────────────
@@ -239,12 +242,8 @@ function getBookGenres(bookUrl)
   local body = fetchPage(bookUrl)
   if not body then return {} end
 
-  local genres = {}
-  for _, a in ipairs(html_select(body, "a[href*='?genres=']")) do
-    local label = string_clean(a.text)
-    if label ~= "" then table.insert(genres, label) end
-  end
-  return genres
+  -- string_clean + drop empties — shared meta lib (site order kept).
+  return LIB("meta").collectGenres(html_select(body, "a[href*='?genres=']"), { clean = true })
 end
 
 -- Рейтинг книги: блок оценки на странице книги, .block.appreciate .text
@@ -269,7 +268,7 @@ function getBookStatus(bookUrl)
     local sub = html_select_first(item.html, ".sub-header")
     if sub and string_clean(sub.text) == "Status" then
       local info = html_select_first(item.html, ".info")
-      return info and string_clean(info.text) or nil
+      return info and LIB("meta").status(info.text) or nil
     end
   end
   return nil

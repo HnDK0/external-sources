@@ -1,38 +1,43 @@
 id       = "novelfull"
 name     = "NovelFull"
-version  = "1.2.0"
+version  = "1.2.1"
 baseUrl  = "https://novelfull.net/"
 language = "en"
 icon     = "https://raw.githubusercontent.com/HnDK0/external-sources/main/icons/novelfull.png"
 
 -- ── Хелперы ───────────────────────────────────────────────────────────────────
 
+-- Old builds ship no require_lib: keep the plugin loadable (a top-level error
+-- would drop it from the source list) and fail with a visible message on the
+-- first call instead. Shared libs load lazily and are cached per session.
+local _libs
+local function LIB(id)
+    if type(require_lib) ~= "function" then
+        show_error("Requires NoveLA update", "This plugin needs the shared libraries")
+        error("Requires NoveLA update (require_lib)", 0)
+    end
+    if not _libs then _libs = {} end
+    if not _libs[id] then _libs[id] = require_lib(id) end
+    return _libs[id]
+end
+
 local function absUrl(href)
-    if not href or href == "" then return "" end
-    if string_starts_with(href, "http") then return href end
-    if string_starts_with(href, "//") then return "https:" .. href end
-    return url_resolve(baseUrl, href)
+    return LIB("urls").absUrl(baseUrl, href)
 end
 
 -- ponytail: кэш страницы книги — движок дёргает 4+ функции деталей параллельно
-local _pageCache = {}
-
+-- (shared fetch lib кэширует успешные ответы на сессию).
 local function fetchBookPage(url)
-    if _pageCache[url] then return _pageCache[url] end
-    local r = http_get(url)
-    if r.success then _pageCache[url] = r.body; return r.body end
-    return nil
+    return LIB("fetch").page(url)
 end
 
+-- Engine global url_encode delegates to the shared catalog lib.
+local url_encode = function(s) return LIB("catalog").urlEncode(s) end
+
+-- Standard chapter-text cleanup (domain lines, leading "Chapter N" heading,
+-- translator/editor credit lines) from the shared content lib.
 local function applyStandardContentTransforms(text)
-    if not text or text == "" then return "" end
-    text = string_normalize(text)
-    local domain = baseUrl:gsub("https?://", ""):gsub("^www%.", ""):gsub("/$", "")
-    text = regex_replace(text, "(?i)" .. domain .. ".*?\\n", "")
-    text = regex_replace(text, "(?i)\\A[\\s\\p{Z}\\uFEFF]*((Глава\\s+\\d+|Chapter\\s+\\d+)[^\\n\\r]*[\\n\\r\\s]*)+", "")
-    text = regex_replace(text, "(?im)^\\s*(Translator|Editor|Proofreader|Read\\s+(at|on|latest))[:\\s][^\\n\\r]{0,70}(\\r?\\n|$)", "")
-    text = string_trim(text)
-    return text
+    return LIB("content").standardTransforms(text, { domain = baseUrl, lang = "en" })
 end
 
 -- ── HD-коверы каталога (novelping CDN) ────────────────────────────────────────
@@ -130,7 +135,7 @@ local function buildCatalogItems(body)
 end
 
 function getCatalogList(index)
-    local page = index + 1
+    local page = LIB("catalog").nextIndex(index)
     local url = baseUrl .. "latest-release-novel"
     if page > 1 then url = url .. "?page=" .. tostring(page) .. "&per-page=22" end
 
@@ -144,7 +149,7 @@ end
 -- ── Поиск ─────────────────────────────────────────────────────────────────────
 
 function getCatalogSearch(index, query)
-    local page = index + 1
+    local page = LIB("catalog").nextIndex(index)
     local url = baseUrl .. "search?keyword=" .. url_encode(query)
     if page > 1 then url = url .. "&page=" .. tostring(page) end
 
@@ -340,12 +345,8 @@ end
 function getBookGenres(bookUrl)
   local html = fetchBookPage(bookUrl)
   if not html then return {} end
-  local genres = {}
-  for _, a in ipairs(html_select(html, ".m-info .item a.a1[href^='/genre/']")) do
-    local g = string_trim(a.text)
-    if g ~= "" then table.insert(genres, g) end
-  end
-  return genres
+  -- trim + drop empties — shared meta lib (site order kept).
+  return LIB("meta").collectGenres(html_select(html, ".m-info .item a.a1[href^='/genre/']"))
 end
 
 -- ── Статус / Дата обновления ───────────────────────────────────────────────────
@@ -358,7 +359,7 @@ function getBookStatus(bookUrl)
     if html_select_first(item.html, "span[title='Status']") then
       local a = html_select_first(item.html, "a")
       if a then
-        local t = string_clean(a.text)
+        local t = LIB("meta").status(a.text)
         if t == "OnGoing" then return "Ongoing" end
         return t
       end
@@ -366,17 +367,6 @@ function getBookStatus(bookUrl)
   end
   return nil
 end
-
--- ponytail: относительные даты вида "5 years ago" / "3 days ago" → YYYY-MM-DD.
--- Ceiling: месяц=30д, год=365д — для апдейтов новелл точность достаточна.
-local unitSecs = {
-  minute = 60, minutes = 60,
-  hour = 3600, hours = 3600,
-  day = 86400, days = 86400,
-  week = 7 * 86400, weeks = 7 * 86400,
-  month = 30 * 86400, months = 30 * 86400,
-  year = 365 * 86400, years = 365 * 86400,
-}
 
 function getBookLastUpdate(bookUrl)
   local html = fetchBookPage(bookUrl)
@@ -386,14 +376,12 @@ function getBookLastUpdate(bookUrl)
   local el = html_select_first(html, ".lastupdate")
   if not el then return nil end
   local raw = string_clean(el.text)
-  local n, unit = string.match(raw, "(%d+)%s+(%w+)%s+ago")
-  if not n and string.match(raw, "just now") then
+  if string.match(raw, "just now") then
     return os.date("%Y-%m-%d")
   end
-  if not n then return nil end
-  local secs = unitSecs[unit]
-  if not secs then return nil end
-  return os.date("%Y-%m-%d", os.time() - tonumber(n) * secs)
+  -- "N minutes/hours/days ago" → YYYY-MM-DD (shared meta lib; месяцы/годы
+  -- приблизительны — 30/365 дней, как и в прежнем локальном парсере).
+  return LIB("meta").normalizeDate(raw)
 end
 
 -- ── Список фильтров ───────────────────────────────────────────────────────────
@@ -458,7 +446,7 @@ end
 -- ── Каталог с фильтрами ───────────────────────────────────────────────────────
 
 function getCatalogFiltered(index, filters)
-  local page   = index + 1
+  local page   = LIB("catalog").nextIndex(index)
   local ftype  = filters["type"] or "most-popular"
   local genres = filters["genre_included"] or {}
   local genre  = genres[1] or ""

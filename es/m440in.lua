@@ -4,19 +4,21 @@
 
 id       = "m440in"
 name     = "M440"
-version  = "1.1.0"
+version  = "1.1.1"
 baseUrl  = "https://m440.in"
 language = "es"
 content_type = "manga"
 icon = "https://raw.githubusercontent.com/HnDK0/external-sources/main/icons/m440in.png"
 
--- GUARD: старые сборки приложения без движковых API (md5/aes_decrypt).
--- Вызывается из каждой публичной функции; show_error в проде асинхронный,
--- поэтому после него идёт error(..., 0) — адаптер отдаёт pending-show-error.
+-- GUARD: старые сборки приложения без движковых API (md5/aes_decrypt) и
+-- без require_lib (общие библиотеки). Вызывается из каждой публичной функции;
+-- show_error в проде асинхронный, поэтому после него идёт error(..., 0) —
+-- адаптер отдаёт pending-show-error.
 local function ensureEngine()
     local missing = {}
     if rawget(_G, "md5") == nil then missing[#missing + 1] = "md5" end
     if rawget(_G, "aes_decrypt") == nil then missing[#missing + 1] = "aes_decrypt" end
+    if type(require_lib) ~= "function" then missing[#missing + 1] = "require_lib" end
     if #missing > 0 then
         show_error("Se requiere actualizar NoveLA",
             "Este complemento necesita funciones nuevas (" .. table.concat(missing, ", ") ..
@@ -27,24 +29,9 @@ end
 
 -- ── Хелперы ──
 
-local function absUrl(href)
-    if not href or href == "" then return "" end
-    if string_starts_with(href, "http") then return href end
-    if string_starts_with(href, "//") then return "https:" .. href end
-    return url_resolve(baseUrl, href)
-end
+local function absUrl(href) return require_lib("urls").absUrl(baseUrl, href) end
 
-local _pageCache = {}
-
-local function fetchPage(url)
-    if _pageCache[url] then return _pageCache[url] end
-    local r = http_get(url)
-    if r.success then
-        _pageCache[url] = r.body
-        return r.body
-    end
-    return nil
-end
+local function fetchPage(url) return require_lib("fetch").page(url) end
 
 local function getSlug(bookUrl)
     return string.match(bookUrl, "/manga/([^/]+)")
@@ -221,7 +208,7 @@ end
 
 function getCatalogList(index)
     ensureEngine()
-    local page = (index or 0) + 1
+    local page = require_lib("catalog").nextIndex(index)
     local r = http_get(baseUrl .. "/manga-list?page=" .. page)
     if not r.success then return { items = {}, hasNext = false } end
     local items = parseCatalogItems(r.body)
@@ -231,7 +218,7 @@ end
 function getCatalogSearch(index, query)
     ensureEngine()
     if index > 0 then return { items = {}, hasNext = false } end
-    local r = http_get(baseUrl .. "/search?q=" .. url_encode(query))
+    local r = http_get(baseUrl .. "/search?q=" .. require_lib("catalog").urlEncode(query))
     if not r.success then return { items = {}, hasNext = false } end
     local data = json_parse(r.body)
     if type(data) ~= "table" then return { items = {}, hasNext = false } end
@@ -298,21 +285,21 @@ end
 
 function getCatalogFiltered(index, filters)
     ensureEngine()
-    local page = (index or 0) + 1
+    local page = require_lib("catalog").nextIndex(index)
     local sortBy = filters["sortBy"] or "name"
     local asc    = filters["sortBy_ascending"] or "true"
 
     local url = baseUrl .. "/filterList?page=" .. page
-        .. "&sortBy=" .. url_encode(sortBy) .. "&asc=" .. asc
+        .. "&sortBy=" .. require_lib("catalog").urlEncode(sortBy) .. "&asc=" .. asc
 
     local cats = filters["cat_included"] or {}
-    for _, v in ipairs(cats) do url = url .. "&cat=" .. url_encode(v) end
+    for _, v in ipairs(cats) do url = url .. "&cat=" .. require_lib("catalog").urlEncode(v) end
 
     local alpha = filters["alpha"] or ""
-    if alpha ~= "" then url = url .. "&alpha=" .. url_encode(alpha) end
+    if alpha ~= "" then url = url .. "&alpha=" .. require_lib("catalog").urlEncode(alpha) end
     for _, k in ipairs({ "author", "tag", "artist" }) do
         local v = filters[k] or ""
-        if v ~= "" then url = url .. "&" .. k .. "=" .. url_encode(v) end
+        if v ~= "" then url = url .. "&" .. k .. "=" .. require_lib("catalog").urlEncode(v) end
     end
 
     local r = http_get(url)
@@ -361,12 +348,8 @@ function getBookGenres(bookUrl)
     ensureEngine()
     local body = fetchPage(bookUrl)
     if not body then return {} end
-    local genres = {}
-    for _, a in ipairs(html_select(body, "a[href*='/manga-list/category/']")) do
-        local label = string_trim(a.text)
-        if label ~= "" then table.insert(genres, label) end
-    end
-    return genres
+    return require_lib("meta").collectGenres(
+        html_select(body, "a[href*='/manga-list/category/']"))
 end
 
 function getBookStatus(bookUrl)
@@ -374,7 +357,7 @@ function getBookStatus(bookUrl)
     local body = fetchPage(bookUrl)
     if not body then return nil end
     local el = html_select_first(body, ".label-danger")
-    return el and string_clean(el.text) or nil
+    return el and require_lib("meta").status(el.text) or nil
 end
 
 function getBookRating(bookUrl)
@@ -393,8 +376,7 @@ function getBookLastUpdate(bookUrl)
     if not chapters or #chapters == 0 then return nil end
     -- Новейшая глава — последняя в хронологическом порядке
     local newest = chapters[#chapters]
-    local y, m, d = string.match(newest.created_at or "", "(%d%d%d%d)%-(%d%d)%-(%d%d)")
-    return y and (y .. "-" .. m .. "-" .. d) or nil
+    return require_lib("meta").normalizeDate(newest.created_at or "")
 end
 
 -- ── Главы ──

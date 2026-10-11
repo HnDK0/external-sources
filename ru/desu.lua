@@ -1,6 +1,6 @@
 id       = "desu"
 name     = "Desu"
-version  = "1.1.3"
+version  = "1.1.4"
 baseUrl  = "https://desu.uno/"
 language = "ru"
 icon     = "https://raw.githubusercontent.com/HnDK0/external-sources/main/icons/desu.png"
@@ -19,12 +19,18 @@ content_type = "manga"
 -- только window.MangaReader с id манги и главы; сами страницы отдаёт
 -- /api/manga/<mid>/chapters/<cid>.
 
-local function absUrl(href)
-    if not href or href == "" then return "" end
-    if string_starts_with(href, "http") then return href end
-    if string_starts_with(href, "//") then return "https:" .. href end
-    return url_resolve(baseUrl, href)
+-- Old builds ship no require_lib: keep the plugin loadable (a top-level
+-- error would drop it from the source list) and fail with a visible
+-- message on the first call instead. require_lib caches loaded libs.
+local function lib(id)
+    if type(require_lib) ~= "function" then
+        show_error("Требуется обновление NoveLA", "Плагину нужны общие библиотеки")
+        error("Требуется обновление NoveLA (require_lib)", 0)
+    end
+    return require_lib(id)
 end
+
+local function absUrl(href) return lib("urls").absUrl(baseUrl, href) end
 
 local function fetch(url)
     local r = http_get(url)
@@ -39,26 +45,23 @@ end
 
 -- ── API: детали книги (кэш на сессию) ──
 -- Все пять функций деталей движок вызывает параллельно с одним URL —
--- кэшируем распарсенный JSON, чтобы не дублировать запросы.
-local _mangaCache = {}
-
+-- fetch.page кэширует тело ответа, чтобы не дублировать запросы.
 local function fetchApiManga(bookUrl)
     local id = mangaId(bookUrl)
     if not id then return nil end
-    if _mangaCache[id] then return _mangaCache[id] end
-    local body = fetch(baseUrl .. "api/manga/" .. id .. "/")
+    local body = lib("fetch").page(baseUrl .. "api/manga/" .. id .. "/")
     if not body then return nil end
     local ok, data = pcall(json_parse, body)
     if not ok or not data or not data.manga then return nil end
-    _mangaCache[id] = data.manga
     return data.manga
 end
 
 -- ── Каталог ──
 
 function getCatalogList(index)
-    local page = index + 1
-    local body = fetch(baseUrl .. "api/manga/catalog/?page=" .. page .. "&limit=20")
+    local url = lib("catalog").pageUrl(
+        baseUrl .. "api/manga/catalog/?page={n}&limit=20", index)
+    local body = fetch(url)
     if not body then return { items = {}, hasNext = false } end
     local ok, data = pcall(json_parse, body)
     if not ok or not data or not data.mangas then
@@ -326,7 +329,7 @@ function getFilterList()
 end
 
 function getCatalogFiltered(index, filters)
-    local page = index + 1
+    local page = lib("catalog").nextIndex(index)
     local sort = filters["sort"] or "updated"
     local kinds = filters["kinds_included"] or {}
     local statuses = filters["status_included"] or {}

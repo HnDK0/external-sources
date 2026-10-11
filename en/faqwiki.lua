@@ -1,31 +1,38 @@
 -- ── Metadata ────────────────────────────────────────────────────────────────
 id       = "faqwiki"
 name     = "FAQ Wiki"
-version  = "1.6.6"
+version  = "1.6.7"
 baseUrl  = "https://faqwiki.us/novel"
 language = "en"
 icon     = "https://raw.githubusercontent.com/HnDK0/external-sources/main/icons/faqwiki.png"
 
 -- ── Helpers ───────────────────────────────────────────────────────────────────
 
-local _pageCache = {}
-
-local function fetchPage(url)
-  if _pageCache[url] then return _pageCache[url] end
-  local r = http_get(url)
-  if r.success then
-    _pageCache[url] = r.body
-    return r.body
+-- Old builds ship no require_lib: keep the plugin loadable (a top-level error
+-- would drop it from the source list) and fail with a visible message on the
+-- first call instead. Shared libs load lazily and are cached per session.
+local _libs
+local function LIB(id)
+  if type(require_lib) ~= "function" then
+    show_error("Requires NoveLA update", "This plugin needs the shared libraries")
+    error("Requires NoveLA update (require_lib)", 0)
   end
-  return nil
+  if not _libs then _libs = {} end
+  if not _libs[id] then _libs[id] = require_lib(id) end
+  return _libs[id]
+end
+
+-- Session-cached page fetch (shared fetch lib, same contract as before).
+local function fetchPage(url)
+  return LIB("fetch").page(url)
 end
 
 local function absUrl(href)
-  if not href or href == "" then return "" end
-  if string_starts_with(href, "http") then return href end
-  if string_starts_with(href, "//") then return "https:" .. href end
-  return url_resolve(baseUrl, href)
+  return LIB("urls").absUrl(baseUrl, href)
 end
+
+-- Engine global url_encode delegates to the shared catalog lib.
+local url_encode = function(s) return LIB("catalog").urlEncode(s) end
 
 local function textAfterLabel(text, label)
   local _, e = string.find(text, label, 1, true)
@@ -33,14 +40,13 @@ local function textAfterLabel(text, label)
   return string_trim(text:sub(e + 1))
 end
 
+-- Standard cleanup (leading "Chapter N" heading, translator credits) from
+-- the shared content lib + the site's own watermark domains (the site lives
+-- on both faqwiki.us and faqwiki.xyz).
 local function applyStandardContentTransforms(text)
-  if not text or text == "" then return "" end
-  text = string_normalize(text)
-  text = regex_replace(text, "(?i)\\A[\\s\\p{Z}\\uFEFF]*((Chapter\\s+\\d+)[^\\n\\r]*[\\n\\r\\s]*)+", "")
-  text = regex_replace(text, "(?im)^\\s*(Translator|Editor|Proofreader|Read\\s+(at|on|latest))[:\\s][^\\n\\r]{0,70}(\\r?\\n|$)", "")
+  text = LIB("content").standardTransforms(text, { lang = "en" })
   text = regex_replace(text, "(?i)faqwiki\\.(xyz|us).*?\\n", "")
-  text = string_trim(text)
-  return text
+  return string_trim(text)
 end
 
 -- ── Catalog ───────────────────────────────────────────────────────────────────
@@ -227,12 +233,11 @@ function getBookLastUpdate(bookUrl)
   local body = fetchPage(bookUrl)
   if not body then return nil end
   -- meta article:modified_time в ISO формате: 2026-06-02T18:41:37+00:00
+  -- (shared meta lib extracts the YYYY-MM-DD prefix).
   local iso = html_attr(body, "meta[property='article:modified_time']", "content")
   if iso and iso ~= "" then
-    local y, m, d = string.match(iso, "(%d%d%d%d)%-(%d%d)%-(%d%d)")
-    if y and m and d then
-      return y .. "-" .. m .. "-" .. d
-    end
+    local d = LIB("meta").normalizeDate(iso)
+    if d then return d end
   end
   -- фоллбэк: JSON-LD dateModified
   local script = html_select_first(body, "script[type='application/ld+json']")

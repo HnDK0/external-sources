@@ -1,19 +1,25 @@
 -- ── Метаданные ────────────────────────────────────────────────────────────────
 id       = "ifreedom"
 name     = "iFreedom"
-version  = "1.1.6"
+version  = "1.1.7"
 baseUrl  = "https://ifreedom.su/"
 language = "ru"
 icon     = "https://raw.githubusercontent.com/HnDK0/external-sources/main/icons/ifreedom.png"
 
 -- ── Хелперы ───────────────────────────────────────────────────────────────────
 
-local function absUrl(href)
-  if not href or href == "" then return "" end
-  if string_starts_with(href, "http") then return href end
-  if string_starts_with(href, "//") then return "https:" .. href end
-  return url_resolve(baseUrl, href)
+-- Old builds ship no require_lib: keep the plugin loadable (a top-level
+-- error would drop it from the source list) and fail with a visible
+-- message on the first call instead. require_lib caches loaded libs.
+local function lib(id)
+  if type(require_lib) ~= "function" then
+    show_error("Требуется обновление NoveLA", "Плагину нужны общие библиотеки")
+    error("Требуется обновление NoveLA (require_lib)", 0)
+  end
+  return require_lib(id)
 end
+
+local function absUrl(href) return lib("urls").absUrl(baseUrl, href) end
 
 local function normalizeNovelUrl(url)
   if not url or url == "" then return "" end
@@ -24,38 +30,20 @@ local function normalizeNovelUrl(url)
   return url
 end
 
-local _pageCache = {}
-
 -- Кэш страницы книги: детальные функции (заголовок, обложка, описание, жанры,
--- статус, дата) вызываются движком параллельно с одним URL — кэш убирает
--- дублирующиеся HTTP-запросы.
-local function fetchPage(url)
-  if _pageCache[url] then return _pageCache[url] end
-  local r = http_get(url)
-  if r.success then
-    _pageCache[url] = r.body
-    return r.body
-  end
-  return nil
-end
+-- статус, дата) вызываются движком параллельно с одним URL — fetch.page
+-- убирает дублирующиеся HTTP-запросы.
+local function fetchPage(url) return lib("fetch").page(url) end
 
 local function applyStandardContentTransforms(text)
-  if not text or text == "" then return "" end
-  text = string_normalize(text)
-  local domain = baseUrl:gsub("https?://", ""):gsub("^www%.", ""):gsub("/$", "")
-  text = regex_replace(text, "(?i)" .. domain .. ".*?\\n", "")
-  text = regex_replace(text, "(?i)\\A[\\s\\p{Z}\\uFEFF]*((Глава\\s+\\d+|Chapter\\s+\\d+)[^\\n\\r]*[\\n\\r\\s]*)+", "")
-  text = regex_replace(text, "(?im)^\\s*(Перевод|Переводчик|Редакция|Редактор|Аннотация|Сайт|Источник|Студия)[:\\s][^\\n\\r]{0,70}(\\r?\\n|$)", "")
-  text = regex_replace(text, "(?im)^\\s*(Translator|Editor|Proofreader|Read\\s+(at|on|latest))[:\\s][^\\n\\r]{0,70}(\\r?\\n|$)", "")
-  text = string_trim(text)
-  return text
+  return lib("content").standardTransforms(text, { domain = baseUrl, lang = "ru" })
 end
 
 -- ── Каталог ───────────────────────────────────────────────────────────────────
 
 function getCatalogList(index)
-  local url = baseUrl .. "vse-knigi/?sort=" .. url_encode("По рейтингу")
-              .. "&bpage=" .. tostring(index + 1)
+  local url = lib("catalog").pageUrl(
+    baseUrl .. "vse-knigi/?sort=" .. url_encode("По рейтингу") .. "&bpage={n}", index)
 
   local r = http_get(url)
   if not r.success then return { items = {}, hasNext = false } end
@@ -74,13 +62,14 @@ function getCatalogList(index)
     end
   end
 
-  return { items = items, hasNext = #items > 0 }
+  return { items = items, hasNext = lib("catalog").hasNextPage(items) }
 end
 
 -- ── Поиск ─────────────────────────────────────────────────────────────────────
 
 function getCatalogSearch(index, query)
-  local url = baseUrl .. "vse-knigi/?searchname=" .. url_encode(query) .. "&bpage=" .. tostring(index + 1)
+  local url = lib("catalog").pageUrl(
+    baseUrl .. "vse-knigi/?searchname=" .. url_encode(query) .. "&bpage={n}", index)
 
   local r = http_get(url)
   if not r.success then return { items = {}, hasNext = false } end
@@ -99,7 +88,7 @@ function getCatalogSearch(index, query)
     end
   end
 
-  return { items = items, hasNext = #items > 0 }
+  return { items = items, hasNext = lib("catalog").hasNextPage(items) }
 end
 
 -- ── Детали книги ──────────────────────────────────────────────────────────────
@@ -144,18 +133,12 @@ function getBookGenres(bookUrl)
   for _, block in ipairs(html_select(html, "div.book-info-list")) do
     local icon = html_select_first(block.html, "svg.icon-tabler-tag")
     if icon then
-      for _, a in ipairs(html_select(block.html, "a")) do
-        local label = string_trim(a.text)
-        if label ~= "" then table.insert(genres, label) end
-      end
+      genres = lib("meta").collectGenres(html_select(block.html, "a"))
     end
   end
 
   if #genres == 0 then
-    for _, a in ipairs(html_select(html, "div.genreslist a")) do
-      local label = string_trim(a.text)
-      if label ~= "" then table.insert(genres, label) end
-    end
+    genres = lib("meta").collectGenres(html_select(html, "div.genreslist a"))
   end
 
   return genres
@@ -207,22 +190,7 @@ function getBookLastUpdate(bookUrl)
   end
 
   -- Запасной вариант: относительная дата «N часов/дней/... назад»
-  local num, unit = string.match(ds, "(%d+)%s*(%a+)%s+назад")
-  if num and unit then
-    local mult = {
-      ["час"]   = 3600,    ["день"]  = 86400,  ["недел"] = 604800,
-      ["месяц"] = 2592000, ["год"]   = 31536000
-    }
-    local secs = nil
-    for k, v in pairs(mult) do
-      if string_starts_with(unit, k) then secs = v; break end
-    end
-    if secs then
-      return os.date("%Y-%m-%d", os.time() - tonumber(num) * secs)
-    end
-  end
-
-  return nil
+  return lib("meta").normalizeDate(ds)
 end
 
 -- ── Список глав ───────────────────────────────────────────────────────────────
@@ -370,7 +338,8 @@ end
 -- ── Каталог с фильтрами ───────────────────────────────────────────────────────
 
 function getCatalogFiltered(index, filters)
-  local page   = index + 1
+  local cat    = lib("catalog")
+  local page   = cat.nextIndex(index)
   local sort   = filters["sort"] or "По рейтингу"
   local status = filters["status_included"] or {}
   local lang   = filters["lang_included"] or {}
@@ -400,5 +369,5 @@ function getCatalogFiltered(index, filters)
     end
   end
 
-  return { items = items, hasNext = #items > 0 }
+  return { items = items, hasNext = cat.hasNextPage(items) }
 end

@@ -1,8 +1,8 @@
 -- ── Метаданные ────────────────────────────────────────────────────────────────
 id           = "mangalik"
 name         = "Mangalik"
--- Version: 1.0.0
-version      = "1.0.0"
+-- Version: 1.0.1
+version      = "1.0.1"
 baseUrl      = "https://mangalik.net/"
 language     = "ar"
 content_type = "manga"
@@ -14,25 +14,22 @@ icon         = "https://raw.githubusercontent.com/HnDK0/external-sources/main/ic
 
 -- ── Хелперы ───────────────────────────────────────────────────────────────────
 
-local function absUrl(href)
-    if not href or href == "" then return "" end
-    if string_starts_with(href, "http") then return href end
-    if string_starts_with(href, "//") then return "https:" .. href end
-    return url_resolve(baseUrl, href)
-end
-
--- Кэш страницы книги на сессию: движок вызывает detail-функции параллельно.
-local _pageCache = {}
-
-local function fetchBookPage(url)
-    if _pageCache[url] then return _pageCache[url] end
-    local r = http_get(url)
-    if r.success then
-        _pageCache[url] = r.body
-        return r.body
+-- Old builds ship no require_lib: keep the plugin loadable (a top-level
+-- error would drop it from the source list) and fail with a visible
+-- message on the first call instead. require_lib caches loaded libs.
+local function lib(id)
+    if type(require_lib) ~= "function" then
+        show_error("Требуется обновление NoveLA", "Плагину нужны общие библиотеки")
+        error("Требуется обновление NoveLA (require_lib)", 0)
     end
-    return nil
+    return require_lib(id)
 end
+
+local function absUrl(href) return lib("urls").absUrl(baseUrl, href) end
+
+-- Кэш страницы книги на сессию ведёт общий fetch lib (ключ — URL):
+-- движок вызывает detail-функции параллельно.
+local function fetchBookPage(url) return lib("fetch").page(url) end
 
 -- Рейтинг: <div class="post-total-rating"><span class="score font-meta total_votes">4.1</span></div>
 -- Шкала Madara 0-5 — голое число понимается приложением как рейтинг.
@@ -75,7 +72,7 @@ end
 -- ── Каталог ───────────────────────────────────────────────────────────────────
 
 function getCatalogList(index)
-    local page = index + 1
+    local page = lib("catalog").nextIndex(index)
     local url = baseUrl .. "manga/"
     if page > 1 then url = baseUrl .. "page/" .. tostring(page) .. "/" end
 
@@ -98,21 +95,21 @@ function getCatalogList(index)
         end
     end
 
-    return { items = items, hasNext = #items > 0 }
+    return { items = items, hasNext = lib("catalog").hasNextPage(items) }
 end
 
 -- ── Поиск ─────────────────────────────────────────────────────────────────────
 
 function getCatalogSearch(index, query)
-    local page = index + 1
-    local url = baseUrl .. "?s=" .. url_encode(query) .. "&post_type=wp-manga"
-    if page > 1 then url = baseUrl .. "page/" .. tostring(page) .. "/?s=" .. url_encode(query) .. "&post_type=wp-manga" end
+    local page = lib("catalog").nextIndex(index)
+    local url = baseUrl .. "?s=" .. lib("catalog").urlEncode(query) .. "&post_type=wp-manga"
+    if page > 1 then url = baseUrl .. "page/" .. tostring(page) .. "/?s=" .. lib("catalog").urlEncode(query) .. "&post_type=wp-manga" end
 
     local r = http_get(url)
     if not r.success then return { items = {}, hasNext = false } end
 
     local items = parseMangaCards(r.body)
-    return { items = items, hasNext = #items > 0 }
+    return { items = items, hasNext = lib("catalog").hasNextPage(items) }
 end
 
 -- ── Детали книги ──────────────────────────────────────────────────────────────
@@ -149,12 +146,7 @@ end
 function getBookGenres(bookUrl)
     local body = fetchBookPage(bookUrl)
     if not body then return {} end
-    local genres = {}
-    for _, a in ipairs(html_select(body, ".genres-content a")) do
-        local g = string_trim(a.text)
-        if g ~= "" then table.insert(genres, g) end
-    end
-    return genres
+    return lib("meta").collectGenres(html_select(body, ".genres-content a"))
 end
 
 function getBookRating(bookUrl)
@@ -187,8 +179,7 @@ function getBookLastUpdate(bookUrl)
     if not body then return nil end
     local v = html_attr(body, "meta[property='article:modified_time']", "content")
     if v == "" then return nil end
-    local y, m, d = string.match(v, "(%d%d%d%d)%-(%d%d)%-(%d%d)")
-    return y and (y .. "-" .. m .. "-" .. d) or nil
+    return lib("meta").normalizeDate(v)
 end
 
 -- ── Список глав ───────────────────────────────────────────────────────────────
@@ -536,24 +527,24 @@ end
 -- Пагинация Madara на query-URL: &paged=N.
 -- Жанры: OR-логика (объединение) — сайт не поддерживает AND (op=1 игнорируется).
 function getCatalogFiltered(index, filters)
-    local page = index + 1
+    local page = lib("catalog").nextIndex(index)
     local orderby = filters["m_orderby"] or ""
     local status  = filters["status"]    or ""
     local adult   = filters["adult"]     or ""
     local genres  = filters["genre_included"] or {}
 
     local url = baseUrl .. "?s=&post_type=wp-manga"
-    if orderby ~= "" then url = url .. "&m_orderby=" .. url_encode(orderby) end
+    if orderby ~= "" then url = url .. "&m_orderby=" .. lib("catalog").urlEncode(orderby) end
     for _, g in ipairs(genres) do
-        url = url .. "&genre%5B%5D=" .. url_encode(g)
+        url = url .. "&genre%5B%5D=" .. lib("catalog").urlEncode(g)
     end
-    if adult ~= "" then url = url .. "&adult=" .. url_encode(adult) end
-    if status ~= "" then url = url .. "&status%5B%5D=" .. url_encode(status) end
+    if adult ~= "" then url = url .. "&adult=" .. lib("catalog").urlEncode(adult) end
+    if status ~= "" then url = url .. "&status%5B%5D=" .. lib("catalog").urlEncode(status) end
     if page > 1 then url = url .. "&paged=" .. tostring(page) end
 
     local r = http_get(url)
     if not r.success then return { items = {}, hasNext = false } end
 
     local items = parseMangaCards(r.body)
-    return { items = items, hasNext = #items > 0 }
+    return { items = items, hasNext = lib("catalog").hasNextPage(items) }
 end

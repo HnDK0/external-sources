@@ -1,6 +1,6 @@
 id       = "lightnovelpub"
 name     = "LightNovelPub"
-version  = "1.0.2"
+version  = "1.0.3"
 baseUrl  = "https://lightnovelpub.org"
 language = "en"
 icon     = "https://raw.githubusercontent.com/HnDK0/external-sources/main/icons/lightnovelpub.png"
@@ -8,34 +8,36 @@ status   = "dead"
 
 -- ── Helpers ──────────────────────────────────────────────────────────────────
 
-local _pageCache = {}
-
-local function fetchPage(url)
-    if _pageCache[url] then return _pageCache[url] end
-    local r = http_get(url)
-    if r.success then
-        _pageCache[url] = r.body
-        return r.body
+-- Old builds ship no require_lib: keep the plugin loadable (a top-level error
+-- would drop it from the source list) and fail with a visible message on the
+-- first call instead. Shared libs load lazily and are cached per session.
+local _libs
+local function LIB(id)
+    if type(require_lib) ~= "function" then
+        show_error("Requires NoveLA update", "This plugin needs the shared libraries")
+        error("Requires NoveLA update (require_lib)", 0)
     end
-    return nil
+    if not _libs then _libs = {} end
+    if not _libs[id] then _libs[id] = require_lib(id) end
+    return _libs[id]
+end
+
+-- Session-cached page fetch (shared fetch lib, same contract as before).
+local function fetchPage(url)
+    return LIB("fetch").page(url)
 end
 
 local function absUrl(href)
-    if not href or href == "" then return "" end
-    if string_starts_with(href, "http") then return href end
-    if string_starts_with(href, "//") then return "https:" .. href end
-    return url_resolve(baseUrl, href)
+    return LIB("urls").absUrl(baseUrl, href)
 end
 
+-- Engine global url_encode delegates to the shared catalog lib.
+local url_encode = function(s) return LIB("catalog").urlEncode(s) end
+
+-- Standard cleanup (domain lines, leading "Chapter N" heading, translator
+-- credits) from the shared content lib.
 local function applyStandardContentTransforms(text)
-    if not text or text == "" then return "" end
-    text = string_normalize(text)
-    local domain = baseUrl:gsub("https?://", ""):gsub("^www%.", ""):gsub("/$", "")
-    text = regex_replace(text, "(?i)" .. domain .. ".*?\\n", "")
-    text = regex_replace(text, "(?i)\\A[\\s\\p{Z}\\uFEFF]*((Chapter\\s+\\d+)[^\\n\\r]*[\\n\\r\\s]*)+", "")
-    text = regex_replace(text, "(?im)^\\s*(Translator|Editor|Proofreader|Read\\s+(at|on|latest))[:\\s][^\\n\\r]{0,70}(\\r?\\n|$)", "")
-    text = string_trim(text)
-    return text
+    return LIB("content").standardTransforms(text, { domain = baseUrl, lang = "en" })
 end
 
 local function parseCatalogCards(body)
@@ -68,12 +70,12 @@ end
 -- ── Catalog ──────────────────────────────────────────────────────────────────
 
 function getCatalogList(index)
-    local page = index + 1
+    local page = LIB("catalog").nextIndex(index)
     local r = http_get(baseUrl .. "/genre-all/?order=popular&page=" .. page)
     if not r.success then return { items = {}, hasNext = false } end
 
     local items = parseCatalogCards(r.body)
-    return { items = items, hasNext = #items > 0 }
+    return { items = items, hasNext = LIB("catalog").hasNextPage(items) }
 end
 
 -- ── Search ───────────────────────────────────────────────────────────────────
@@ -128,12 +130,7 @@ end
 function getBookGenres(bookUrl)
     local body = fetchPage(bookUrl)
     if not body then return {} end
-    local genres = {}
-    for _, el in ipairs(html_select(body, ".genre-tag")) do
-        local label = string_trim(el.text)
-        if label ~= "" then table.insert(genres, label) end
-    end
-    return genres
+    return LIB("meta").collectGenres(html_select(body, ".genre-tag"))
 end
 
 -- ── Rating ───────────────────────────────────────────────────────────────────
@@ -151,30 +148,13 @@ end
 -- ── Статус / Дата обновления ──────────────────────────────────────────────────
 
 -- Относительная дата сайта вида "Updated 1 year ago" (проверено на живой
--- странице книги через Wayback) → YYYY-MM-DD. Месяцы/годы — приблизительно
--- (30/365 дней). Не распозналось → nil.
-local function normalizeUpdateDate(raw)
-    if not raw or raw == "" then return nil end
-    local n, unit = string.match(raw, "Updated%s+(%d+)%s+(%w+)%s+ago")
-    if not n then return nil end
-    local mult = {
-        minute = 60, minutes = 60,
-        hour = 3600, hours = 3600,
-        day = 86400, days = 86400,
-        week = 7 * 86400, weeks = 7 * 86400,
-        month = 30 * 86400, months = 30 * 86400,
-        year = 365 * 86400, years = 365 * 86400,
-    }
-    local secs = mult[unit]
-    if not secs then return nil end
-    return os.date("%Y-%m-%d", os.time() - n * secs)
-end
-
+-- странице книги через Wayback) → YYYY-MM-DD (shared meta lib; месяцы/годы
+-- приблизительны — 30/365 дней). Не распозналось → nil.
 function getBookStatus(bookUrl)
     local body = fetchPage(bookUrl)
     if not body then return nil end
     local el = html_select_first(body, ".status-badge")
-    return el and string_clean(el.text) or nil
+    return el and LIB("meta").status(el.text) or nil
 end
 
 function getBookLastUpdate(bookUrl)
@@ -184,7 +164,7 @@ function getBookLastUpdate(bookUrl)
     if not el then return nil end
     -- string_normalize приводит неразрывный пробел (&nbsp;) к обычному,
     -- чтобы шаблон "Updated N unit ago" отработал корректно.
-    return normalizeUpdateDate(string_normalize(el.text))
+    return LIB("meta").normalizeDate(string_normalize(el.text))
 end
 
 -- ── Chapter list (parsePage) ─────────────────────────────────────────────────
@@ -353,7 +333,7 @@ function getFilterList()
 end
 
 function getCatalogFiltered(index, filters)
-    local page = index + 1
+    local page = LIB("catalog").nextIndex(index)
 
     local genresInc = filters["genres_included"] or {}
     local genresExc = filters["genres_excluded"] or {}
@@ -393,5 +373,5 @@ function getCatalogFiltered(index, filters)
     if not r.success then return { items = {}, hasNext = false } end
 
     local items = parseCatalogCards(r.body)
-    return { items = items, hasNext = #items > 0 }
+    return { items = items, hasNext = LIB("catalog").hasNextPage(items) }
 end

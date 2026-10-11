@@ -1,20 +1,34 @@
 -- ── Метаданные ────────────────────────────────────────────────────────────────
 id       = "wuxia_world_site"
 name     = "WuxiaWorld.site"
--- Version: 1.1.1
-version  = "1.1.1"
+-- Version: 1.1.2
+version  = "1.1.2"
 baseUrl  = "https://wuxiaworld.site/"
 language = "en"
 icon     = "https://raw.githubusercontent.com/HnDK0/external-sources/main/icons/wuxiaworld.site.png"
 
 -- ── Хелперы ───────────────────────────────────────────────────────────────────
 
-local function absUrl(href)
-  if not href or href == "" then return "" end
-  if string_starts_with(href, "http") then return href end
-  if string_starts_with(href, "//") then return "https:" .. href end
-  return url_resolve(baseUrl, href)
+-- Old builds ship no require_lib: keep the plugin loadable (a top-level error
+-- would drop it from the source list) and fail with a visible message on the
+-- first call instead. Shared libs load lazily and are cached per session.
+local _libs
+local function LIB(id)
+  if type(require_lib) ~= "function" then
+    show_error("Requires NoveLA update", "This plugin needs the shared libraries")
+    error("Requires NoveLA update (require_lib)", 0)
+  end
+  if not _libs then _libs = {} end
+  if not _libs[id] then _libs[id] = require_lib(id) end
+  return _libs[id]
 end
+
+local function absUrl(href)
+  return LIB("urls").absUrl(baseUrl, href)
+end
+
+-- Engine global url_encode delegates to the shared catalog lib.
+local url_encode = function(s) return LIB("catalog").urlEncode(s) end
 
 -- Рейтинг из карточки каталога/поиска или со страницы книги:
 -- <div class="post-total-rating allow_vote"><span class="score font-meta total_votes">4.1</span></div>
@@ -31,32 +45,20 @@ end
 
 -- Общая загрузка страницы книги с кэшем в рамках одного вызова движка
 -- (детальные функции вызываются параллельно — кэш убирает лишние запросы).
-local _pageCache = {}
+-- Session-cached book page (shared fetch lib, same contract as before).
 local function fetchBookPage(url)
-  if _pageCache[url] then return _pageCache[url] end
-  local r = http_get(url)
-  if r.success then
-    _pageCache[url] = r.body
-    return r.body
-  end
-  return nil
+  return LIB("fetch").page(url)
 end
 
+-- Standard chapter-text cleanup from the shared content lib.
 local function applyStandardContentTransforms(text)
-  if not text or text == "" then return "" end
-  text = string_normalize(text)
-  local domain = baseUrl:gsub("https?://", ""):gsub("^www%.", ""):gsub("/$", "")
-  text = regex_replace(text, "(?i)" .. domain .. ".*?\\n", "")
-  text = regex_replace(text, "(?i)\\A[\\s\\p{Z}\\uFEFF]*((Глава\\s+\\d+|Chapter\\s+\\d+)[^\\n\\r]*[\\n\\r\\s]*)+", "")
-  text = regex_replace(text, "(?im)^\\s*(Translator|Editor|Proofreader|Read\\s+(at|on|latest))[:\\s][^\\n\\r]{0,70}(\\r?\\n|$)", "")
-  text = string_trim(text)
-  return text
+  return LIB("content").standardTransforms(text, { domain = baseUrl, lang = "en" })
 end
 
 -- ── Каталог ───────────────────────────────────────────────────────────────────
 
 function getCatalogList(index)
-  local page = index + 1
+  local page = LIB("catalog").nextIndex(index)
   local url = baseUrl .. "novel/?m_orderby=trending"
   if page > 1 then url = url .. "&page=" .. tostring(page) end
 
@@ -80,13 +82,13 @@ function getCatalogList(index)
     end
   end
 
-  return { items = items, hasNext = #items > 0 }
+  return { items = items, hasNext = LIB("catalog").hasNextPage(items) }
 end
 
 -- ── Поиск ─────────────────────────────────────────────────────────────────────
 
 function getCatalogSearch(index, query)
-  local page = index + 1
+  local page = LIB("catalog").nextIndex(index)
   local url
   if page == 1 then
     url = baseUrl .. "?s=" .. url_encode(query) .. "&post_type=wp-manga"
@@ -114,7 +116,7 @@ function getCatalogSearch(index, query)
     end
   end
 
-  return { items = items, hasNext = #items > 0 }
+  return { items = items, hasNext = LIB("catalog").hasNextPage(items) }
 end
 
 -- ── Детали книги ──────────────────────────────────────────────────────────────
@@ -209,37 +211,30 @@ end
 function getBookGenres(bookUrl)
   local r = http_get(bookUrl)
   if not r.success then return {} end
-  local genres = {}
-  for _, a in ipairs(html_select(r.body, ".genres-content a")) do
-    local g = string_trim(a.text)
-    if g ~= "" then table.insert(genres, g) end
-  end
-  return genres
+  -- trim + drop empties — shared meta lib (site order kept).
+  return LIB("meta").collectGenres(html_select(r.body, ".genres-content a"))
 end
 
 -- ── Status / Last update ───────────────────────────────────────────────────
 
 -- Статус книги: <div class="post-status"><div class="summary-content">OnGoing</div></div>
--- Текст оставляем как на сайте (без маппинга), через string_clean.
+-- Текст оставляем как на сайте (без маппинга) — shared meta lib.
 function getBookStatus(bookUrl)
   local html = fetchBookPage(bookUrl)
   if not html then return nil end
   local el = html_select_first(html, ".post-status .summary-content")
   if not el then return nil end
-  local v = string_clean(el.text)
-  return v ~= "" and v or nil
+  return LIB("meta").status(el.text)
 end
 
 -- Дата обновления: <meta property="article:modified_time"
--- content="2022-06-29T07:45:21+00:00"/> — сайт отдаёт ISO-дату со временем,
--- оставляем только YYYY-MM-DD (тот же паттерн, что в en/novelarrow.lua).
+-- content="2022-06-29T07:45:21+00:00"/> — ISO-дата, shared meta lib оставит только YYYY-MM-DD.
 function getBookLastUpdate(bookUrl)
   local html = fetchBookPage(bookUrl)
   if not html then return nil end
   local v = html_attr(html, "meta[property='article:modified_time']", "content")
   if v == "" then return nil end
-  local y, m, d = string.match(v, "(%d%d%d%d)%-(%d%d)%-(%d%d)")
-  return y and (y .. "-" .. m .. "-" .. d) or nil
+  return LIB("meta").normalizeDate(v)
 end
 
 -- ── Список фильтров ───────────────────────────────────────────────────────────
@@ -340,7 +335,7 @@ end
 -- ── Каталог с фильтрами ───────────────────────────────────────────────────────
 
 function getCatalogFiltered(index, filters)
-  local page    = index + 1
+  local page    = LIB("catalog").nextIndex(index)
   local orderby = filters["m_orderby"] or "trending"
   local status  = filters["status"]    or ""
   local adult   = filters["adult"]     or ""
@@ -376,5 +371,5 @@ function getCatalogFiltered(index, filters)
     end
   end
 
-  return { items = items, hasNext = #items > 0 }
+  return { items = items, hasNext = LIB("catalog").hasNextPage(items) }
 end

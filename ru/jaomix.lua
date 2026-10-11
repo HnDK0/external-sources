@@ -1,19 +1,25 @@
 -- ── Метаданные ────────────────────────────────────────────────────────────────
 id       = "jaomix"
 name     = "Jaomix"
-version  = "1.0.5"
+version  = "1.0.6"
 baseUrl  = "https://jaomix.ru/"
 language = "ru"
 icon     = "https://raw.githubusercontent.com/HnDK0/external-sources/main/icons/jaomix.png"
 
 -- ── Хелперы ───────────────────────────────────────────────────────────────────
 
-local function absUrl(href)
-  if not href or href == "" then return "" end
-  if string_starts_with(href, "http") then return href end
-  if string_starts_with(href, "//") then return "https:" .. href end
-  return url_resolve(baseUrl, href)
+-- Old builds ship no require_lib: keep the plugin loadable (a top-level
+-- error would drop it from the source list) and fail with a visible
+-- message on the first call instead. require_lib caches loaded libs.
+local function lib(id)
+  if type(require_lib) ~= "function" then
+    show_error("Требуется обновление NoveLA", "Плагину нужны общие библиотеки")
+    error("Требуется обновление NoveLA (require_lib)", 0)
+  end
+  return require_lib(id)
 end
+
+local function absUrl(href) return lib("urls").absUrl(baseUrl, href) end
 
 local function transformCover(url)
   if not url or url == "" then return "" end
@@ -21,18 +27,8 @@ local function transformCover(url)
 end
 
 -- Кэш страниц книги: 4 функции деталей вызываются движком параллельно,
--- общий кэш убирает дублирующие HTTP-запросы к одному и тому же bookUrl.
-local _pageCache = {}
-
-local function fetchPage(url)
-  if _pageCache[url] then return _pageCache[url] end
-  local r = http_get(url)
-  if r.success then
-    _pageCache[url] = r.body
-    return r.body
-  end
-  return nil
-end
+-- fetch.page убирает дублирующие HTTP-запросы к одному и тому же bookUrl.
+local function fetchPage(url) return lib("fetch").page(url) end
 
 -- Парсит дату обновления. На сайте два формата (проверено на живом сайте):
 --  * относительный: «обновлена 53 минуты назад», «2 часа назад» …
@@ -42,42 +38,19 @@ local function parseJaomixDate(s)
   if not s or s == "" then return nil end
   s = string_trim(s)
 
-  -- Относительная дата «N единица назад»
-  local num, unit = string.match(s, "(%d+)%s*([^%d%s]+)%s+назад")
-  if num and unit then
-    local n = tonumber(num)
-    local secs = 0
-    if string.find(unit, "минут", 1, true) then secs = 60
-    elseif string.find(unit, "час", 1, true) then secs = 3600
-    elseif string.find(unit, "день", 1, true) or string.find(unit, "дня", 1, true) or string.find(unit, "дней", 1, true) then secs = 86400
-    elseif string.find(unit, "недел", 1, true) then secs = 604800
-    elseif string.find(unit, "месяц", 1, true) then secs = 2592000
-    elseif string.find(unit, "год", 1, true) or string.find(unit, "лет", 1, true) then secs = 31536000
-    end
-    if secs > 0 then
-      return os.date("%Y-%m-%d", os.time() - n * secs)
-    end
-  end
-
   -- Абсолютная дата ДД.ММ.ГГ / ДД.ММ.ГГГГ
   local d, m, y = string.match(s, "(%d%d)%.(%d%d)%.(%d%d%d?%d?)")
   if d and m and y then
     if #y == 2 then y = "20" .. y end
     return y .. "-" .. m .. "-" .. d
   end
-  return nil
+
+  -- Относительная дата «N единица назад» — общий RU-парсер
+  return lib("meta").normalizeDate(s)
 end
 
 local function applyStandardContentTransforms(text)
-  if not text or text == "" then return "" end
-  text = string_normalize(text)
-  local domain = baseUrl:gsub("https?://", ""):gsub("^www%.", ""):gsub("/$", "")
-  text = regex_replace(text, "(?i)" .. domain .. ".*?\\n", "")
-  text = regex_replace(text, "(?i)\\A[\\s\\p{Z}\\uFEFF]*((Глава\\s+\\d+|Chapter\\s+\\d+)[^\\n\\r]*[\\n\\r\\s]*)+", "")
-  text = regex_replace(text, "(?im)^\\s*(Перевод|Переводчик|Редакция|Редактор|Аннотация|Сайт|Источник|Студия)[:\\s][^\\n\\r]{0,70}(\\r?\\n|$)", "")
-  text = regex_replace(text, "(?im)^\\s*(Translator|Editor|Proofreader|Read\\s+(at|on|latest))[:\\s][^\\n\\r]{0,70}(\\r?\\n|$)", "")
-  text = string_trim(text)
-  return text
+  return lib("content").standardTransforms(text, { domain = baseUrl, lang = "ru" })
 end
 
 local AJAX_HEADERS = {
@@ -100,7 +73,7 @@ function getCatalogList(index)
   if index == 0 then
     url = baseUrl
   else
-    url = baseUrl .. "?gpage=" .. tostring(index + 1)
+    url = baseUrl .. "?gpage=" .. tostring(lib("catalog").nextIndex(index))
   end
 
   local r = http_get(url)
@@ -120,7 +93,7 @@ function getCatalogList(index)
     end
   end
 
-  return { items = items, hasNext = #items > 0 }
+  return { items = items, hasNext = lib("catalog").hasNextPage(items) }
 end
 
 -- ── Поиск ─────────────────────────────────────────────────────────────────────
@@ -130,7 +103,7 @@ function getCatalogSearch(index, query)
   if index == 0 then
     url = baseUrl .. "?searchrn=" .. url_encode(query)
   else
-    url = baseUrl .. "?searchrn=" .. url_encode(query) .. "&gpage=" .. tostring(index + 1)
+    url = baseUrl .. "?searchrn=" .. url_encode(query) .. "&gpage=" .. tostring(lib("catalog").nextIndex(index))
   end
 
   local r = http_get(url)
@@ -150,7 +123,7 @@ function getCatalogSearch(index, query)
     end
   end
 
-  return { items = items, hasNext = #items > 0 }
+  return { items = items, hasNext = lib("catalog").hasNextPage(items) }
 end
 
 -- ── Детали книги ──────────────────────────────────────────────────────────────
@@ -454,7 +427,7 @@ end
 -- ── Каталог с фильтрами ───────────────────────────────────────────────────────
 
 function getCatalogFiltered(index, filters)
-  local page           = index + 1
+  local page           = lib("catalog").nextIndex(index)
   local sortby         = filters["sortby"]         or "topweek"
   local sortdaycreate  = filters["sortdaycreate"]  or "1"
   local sortcountchapt = filters["sortcountchapt"] or "1"
@@ -498,5 +471,5 @@ function getCatalogFiltered(index, filters)
     end
   end
 
-  return { items = items, hasNext = #items > 0 }
+  return { items = items, hasNext = lib("catalog").hasNextPage(items) }
 end

@@ -40,7 +40,7 @@ end
 -- ── Каталог ───────────────────────────────────────────────────────────────────
 
 function getCatalogList(index)
-    local page = index + 1
+    local page = LIB("catalog").nextIndex(index)
     local data, meta = apiGet("/series", { take = 30, page = page, sort = "latest", sortOrder = "desc" })
     if not data then return { items = {}, hasNext = false } end
     local items = {}
@@ -58,7 +58,7 @@ function getCatalogList(index)
 end
 
 function getCatalogSearch(index, query)
-    local page = index + 1
+    local page = LIB("catalog").nextIndex(index)
     local data, meta = apiGet("/series", { take = 30, page = page, sort = "latest", sortOrder = "desc", title = query })
     if not data then return { items = {}, hasNext = false } end
     local items = {}
@@ -162,7 +162,7 @@ function getFilterList()
 end
 
 function getCatalogFiltered(index, filters)
-    local page = index + 1
+    local page = LIB("catalog").nextIndex(index)
     local params = { take = 30, page = page }
 
     -- Сортировка (query params, как в Tachiyomi)

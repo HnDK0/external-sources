@@ -9,32 +9,29 @@
 --              de la descripción y del texto de cada capítulo
 id       = "ranovel"
 name     = "Ranovel"
-version  = "1.0.0"
+version  = "1.0.1"
 baseUrl  = "https://ranovel.com"
 language = "Mtl"
 icon     = "https://raw.githubusercontent.com/HnDK0/external-sources/refs/heads/main/icons/ranovel.png"
 
 -- ── Hélpers ───────────────────────────────────────────────────────────────────
 
-local function absUrl(href)
-    if not href or href == "" then return "" end
-    if string_starts_with(href, "http") then return href end
-    if string_starts_with(href, "//") then return "https:" .. href end
-    return url_resolve(baseUrl, href)
+-- Old builds ship no require_lib: keep the plugin loadable (a top-level
+-- error would drop it from the source list) and fail with a visible
+-- message on the first call instead. require_lib caches loaded libs.
+local function lib(id)
+    if type(require_lib) ~= "function" then
+        show_error("Требуется обновление NoveLA", "Плагину нужны общие библиотеки")
+        error("Требуется обновление NoveLA (require_lib)", 0)
+    end
+    return require_lib(id)
 end
+
+local function absUrl(href) return lib("urls").absUrl(baseUrl, href) end
 
 -- Caché de la ficha (título/portada/descripción/géneros/estado). NUNCA para la lista de
 -- capítulos ni para el hash: esas van siempre en vivo.
-local _pageCache = {}
-local function fetchPage(url)
-    if _pageCache[url] then return _pageCache[url] end
-    local r = http_get(url)
-    if r.success then
-        _pageCache[url] = r.body
-        return r.body
-    end
-    return nil
-end
+local function fetchPage(url) return lib("fetch").page(url) end
 
 -- URL de la ficha sin query, sin fragmento y sin "/" final
 local function cleanBookUrl(u)
@@ -165,7 +162,7 @@ end
 -- ordenada por Latest, que es la misma lista con 10 por página.
 
 function getCatalogList(index)
-    local page = index + 1
+    local page = lib("catalog").nextIndex(index)
     local url = baseUrl .. "/"
     if page > 1 then url = baseUrl .. "/page/" .. page .. "/" end
 
@@ -177,7 +174,7 @@ function getCatalogList(index)
 end
 
 function getCatalogSearch(index, query)
-    return fetchCards(searchUrl(index + 1, query, ""))
+    return fetchCards(searchUrl(lib("catalog").nextIndex(index), query, ""))
 end
 
 -- ── Detalles del libro ────────────────────────────────────────────────────────
@@ -229,13 +226,7 @@ end
 function getBookGenres(bookUrl)
     local body = fetchPage(bookUrl)
     if not body then return {} end
-
-    local genres = {}
-    for _, a in ipairs(html_select(body, ".genres-content a")) do
-        local g = string_clean(a.text)
-        if g ~= "" then table.insert(genres, g) end
-    end
-    return genres
+    return lib("meta").collectGenres(html_select(body, ".genres-content a"), { clean = true })
 end
 
 function getBookRating(bookUrl)
@@ -423,33 +414,17 @@ local MONTHS = {
     July = 7, August = 8, September = 9, October = 10, November = 11, December = 12
 }
 
--- A YYYY-MM-DD. Acepta "N minutes/hours/days ago", "March 30, 2026" y "2026-03-30".
+-- A YYYY-MM-DD. Acepta "March 30, 2026" (formato local del sitio); el resto
+-- ("N minutes/hours/days ago", "2026-03-30") lo resuelve meta.normalizeDate.
 local function normalizeUpdateDate(raw)
     if not raw or raw == "" then return nil end
-
-    local n, unit = string.match(raw, "(%d+)%s+(%a+)%s+ago")
-    if n and unit then
-        n = tonumber(n)
-        local secs = 0
-        if unit:find("^second") then secs = n
-        elseif unit:find("^minute") then secs = n * 60
-        elseif unit:find("^hour") then secs = n * 3600
-        elseif unit:find("^day") then secs = n * 86400
-        elseif unit:find("^week") then secs = n * 604800
-        elseif unit:find("^month") then secs = n * 2592000
-        elseif unit:find("^year") then secs = n * 31536000
-        end
-        if secs > 0 then return os.date("%Y-%m-%d", os.time() - secs) end
-    end
 
     local mon, d, y = string.match(raw, "(%a+)%s+(%d+),?%s+(%d%d%d%d)")
     if mon and MONTHS[mon] and d and y then
         return string.format("%04d-%02d-%02d", tonumber(y), MONTHS[mon], tonumber(d))
     end
 
-    local yy, mm, dd = string.match(raw, "(%d%d%d%d)%-(%d%d)%-(%d%d)")
-    if yy then return yy .. "-" .. mm .. "-" .. dd end
-    return nil
+    return lib("meta").normalizeDate(raw)
 end
 
 function getBookLastUpdate(bookUrl)
@@ -598,5 +573,5 @@ function getCatalogFiltered(index, filters)
     for _, v in ipairs(genres)   do extra = extra .. "&genre[]="  .. url_encode(v) end
     for _, v in ipairs(statuses) do extra = extra .. "&status[]=" .. url_encode(v) end
 
-    return fetchCards(searchUrl(index + 1, "", extra))
+    return fetchCards(searchUrl(lib("catalog").nextIndex(index), "", extra))
 end

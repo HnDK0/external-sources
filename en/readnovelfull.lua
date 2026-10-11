@@ -1,19 +1,33 @@
 -- ── Метаданные ────────────────────────────────────────────────────────────────
 id       = "read_novel_full"
 name     = "ReadNovelFull"
-version  = "1.1.1"
+version  = "1.1.2"
 baseUrl  = "https://readnovelfull.com/"
 language = "en"
 icon     = "https://raw.githubusercontent.com/HnDK0/external-sources/main/icons/readnovelfull.png"
 
 -- ── Хелперы ───────────────────────────────────────────────────────────────────
 
-local function absUrl(href)
-  if not href or href == "" then return "" end
-  if string_starts_with(href, "http") then return href end
-  if string_starts_with(href, "//") then return "https:" .. href end
-  return url_resolve(baseUrl, href)
+-- Old builds ship no require_lib: keep the plugin loadable (a top-level error
+-- would drop it from the source list) and fail with a visible message on the
+-- first call instead. Shared libs load lazily and are cached per session.
+local _libs
+local function LIB(id)
+  if type(require_lib) ~= "function" then
+    show_error("Requires NoveLA update", "This plugin needs the shared libraries")
+    error("Requires NoveLA update (require_lib)", 0)
+  end
+  if not _libs then _libs = {} end
+  if not _libs[id] then _libs[id] = require_lib(id) end
+  return _libs[id]
 end
+
+local function absUrl(href)
+  return LIB("urls").absUrl(baseUrl, href)
+end
+
+-- Engine global url_encode delegates to the shared catalog lib.
+local url_encode = function(s) return LIB("catalog").urlEncode(s) end
 
 local function transformCover(coverUrl)
   if not coverUrl or coverUrl == "" then return "" end
@@ -22,36 +36,21 @@ local function transformCover(coverUrl)
   return coverUrl
 end
 
+-- Standard chapter-text cleanup from the shared content lib.
 local function applyStandardContentTransforms(text)
-  if not text or text == "" then return "" end
-  text = string_normalize(text)
-  local domain = baseUrl:gsub("https?://", ""):gsub("^www%.", ""):gsub("/$", "")
-  text = regex_replace(text, "(?i)" .. domain .. ".*?\\n", "")
-  text = regex_replace(text, "(?i)\\A[\\s\\p{Z}\\uFEFF]*((Chapter\\s+\\d+)[^\\n\\r]*[\\n\\r\\s]*)+", "")
-  text = regex_replace(text, "(?im)^\\s*(Translator|Editor|Proofreader|Read\\s+(at|on|latest))[:\\s][^\\n\\r]{0,70}(\\r?\\n|$)", "")
-  text = string_trim(text)
-  return text
+  return LIB("content").standardTransforms(text, { domain = baseUrl, lang = "en" })
 end
 
--- Кэш страницы книги: движок вызывает функции деталей параллельно,
--- fetchBookPage убирает дублирующиеся HTTP-запросы к одному и тому же URL.
-local _pageCache = {}
-
+-- Session-cached book page (shared fetch lib, same contract as before).
 local function fetchBookPage(url)
-  if _pageCache[url] then return _pageCache[url] end
-  local r = http_get(url)
-  if r.success then
-    _pageCache[url] = r.body
-    return r.body
-  end
-  return nil
+  return LIB("fetch").page(url)
 end
 
 -- ── Каталог ───────────────────────────────────────────────────────────────────
 
 function getCatalogList(index)
   local catalogBase = baseUrl .. "novel-list/most-popular-novel"
-  local url = index == 0 and catalogBase or (catalogBase .. "?page=" .. tostring(index + 1))
+  local url = index == 0 and catalogBase or (catalogBase .. "?page=" .. tostring(LIB("catalog").nextIndex(index)))
 
   local r = http_get(url)
   if not r.success then return { items = {}, hasNext = false } end
@@ -71,14 +70,14 @@ function getCatalogList(index)
     end
   end
 
-  return { items = items, hasNext = #items > 0 }
+  return { items = items, hasNext = LIB("catalog").hasNextPage(items) }
 end
 
 -- ── Поиск ─────────────────────────────────────────────────────────────────────
 
 function getCatalogSearch(index, query)
   local searchBase = baseUrl:gsub("/$", "") .. "/novel-list/search?keyword=" .. url_encode(query)
-  local url = index == 0 and searchBase or (searchBase .. "&page=" .. tostring(index + 1))
+  local url = index == 0 and searchBase or (searchBase .. "&page=" .. tostring(LIB("catalog").nextIndex(index)))
 
   local r = http_get(url)
   if not r.success then return { items = {}, hasNext = false } end
@@ -98,7 +97,7 @@ function getCatalogSearch(index, query)
     end
   end
 
-  return { items = items, hasNext = #items > 0 }
+  return { items = items, hasNext = LIB("catalog").hasNextPage(items) }
 end
 
 -- ── Детали книги ──────────────────────────────────────────────────────────────
@@ -143,7 +142,7 @@ end
 -- ── Статус / Дата обновления ──────────────────────────────────────────────────
 
 -- Статус книги: <li><h3>Status:</h3><a class="text-primary">Ongoing</a></li>
--- (текст как на сайте, string_clean).
+-- (нормализация — shared meta-библиотека).
 function getBookStatus(bookUrl)
   local html = fetchBookPage(bookUrl)
   if not html then return nil end
@@ -151,35 +150,20 @@ function getBookStatus(bookUrl)
     local h3 = html_select_first(li.html, "h3")
     if h3 and string_trim(h3.text) == "Status:" then
       local a = html_select_first(li.html, "a")
-      return a and string_clean(a.text) or nil
+      if a then return LIB("meta").status(a.text) end
     end
   end
   return nil
 end
 
--- ponytail: helper для относительных дат вида "5 years ago" / "3 days ago"
-local unitSecs = {
-  minute = 60, minutes = 60,
-  hour = 3600, hours = 3600,
-  day = 86400, days = 86400,
-  week = 7 * 86400, weeks = 7 * 86400,
-  month = 30 * 86400, months = 30 * 86400,
-  year = 365 * 86400, years = 365 * 86400,
-}
-
 -- Дата обновления: <div class="item-time"> 5 years ago</div> → YYYY-MM-DD.
--- Формат сайта — относительный "N units ago"; вычисляем через os.time().
+-- Относительный формат сайта парсится shared meta-библиотекой.
 function getBookLastUpdate(bookUrl)
   local html = fetchBookPage(bookUrl)
   if not html then return nil end
   local el = html_select_first(html, ".item-time")
   if not el then return nil end
-  local raw = string_clean(el.text)
-  local n, unit = string.match(raw, "(%d+)%s+(%w+)%s+ago")
-  if not n then return nil end
-  local secs = unitSecs[unit]
-  if not secs then return nil end
-  return os.date("%Y-%m-%d", os.time() - n * secs)
+  return LIB("meta").normalizeDate(el.text)
 end
 
 -- ── Список глав (AJAX) ────────────────────────────────────────────────────────
@@ -241,18 +225,14 @@ end
 function getBookGenres(bookUrl)
   local r = http_get(bookUrl)
   if not r.success then return {} end
-  local genres = {}
   for _, li in ipairs(html_select(r.body, "ul.info.info-meta li, ul.info-meta li")) do
     local h3 = html_select_first(li.html, "h3")
     if h3 and string_trim(h3.text) == "Genre:" then
-      for _, a in ipairs(html_select(li.html, "a")) do
-        local g = string_trim(a.text)
-        if g ~= "" then table.insert(genres, g) end
-      end
-      break
+      -- trim + drop empties — shared meta lib (site order kept).
+      return LIB("meta").collectGenres(html_select(li.html, "a"))
     end
   end
-  return genres
+  return {}
 end
 
 -- ── Список фильтров ───────────────────────────────────────────────────────────
@@ -319,7 +299,7 @@ end
 -- ── Каталог с фильтрами ───────────────────────────────────────────────────────
 
 function getCatalogFiltered(index, filters)
-  local page   = index + 1
+  local page   = LIB("catalog").nextIndex(index)
   local ftype  = filters["type"] or "novel-list/most-popular-novel"
   local genres = filters["genre_included"] or {}
   local genre  = genres[1] or ""
@@ -345,5 +325,5 @@ function getCatalogFiltered(index, filters)
       })
     end
   end
-  return { items = items, hasNext = #items > 0 }
+  return { items = items, hasNext = LIB("catalog").hasNextPage(items) }
 end

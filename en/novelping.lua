@@ -1,44 +1,48 @@
 -- ── Метаданные ───────────────────────────────────────────────────────────────
 id        = "NovelPing"
 name      = "Novel Ping"
-version   = "1.0.1"
+version   = "1.0.2"
 baseUrl   = "https://novelping.com/"
 language  = "en"
 icon      = "https://raw.githubusercontent.com/HnDK0/external-sources/main/icons/novelping.png"
 
--- ── Кэш страниц (1 запрос вместо 4–5) ────────────────────────────────────────
-
-local _pageCache = {}
-
-local function fetchPage(url)
-  if _pageCache[url] then return _pageCache[url] end
-  local r = http_get(url)
-  if r.success then
-    _pageCache[url] = r.body
-    return r.body
-  end
-  return nil
-end
-
 -- ── Хелперы ───────────────────────────────────────────────────────────────────
 
-local function absUrl(href)
-  if not href or href == "" then return "" end
-  if string_starts_with(href, "http") then return href end
-  if string_starts_with(href, "//") then return "https:" .. href end
-  return url_resolve(baseUrl, href)
+-- Old builds ship no require_lib: keep the plugin loadable (a top-level error
+-- would drop it from the source list) and fail with a visible message on the
+-- first call instead. Shared libs load lazily and are cached per session.
+local _libs
+local function LIB(id)
+  if type(require_lib) ~= "function" then
+    show_error("Requires NoveLA update", "This plugin needs the shared libraries")
+    error("Requires NoveLA update (require_lib)", 0)
+  end
+  if not _libs then _libs = {} end
+  if not _libs[id] then _libs[id] = require_lib(id) end
+  return _libs[id]
 end
 
+-- ── Кэш страниц (1 запрос вместо 4–5) ────────────────────────────────────────
+-- Session-cached page fetch (shared fetch lib, same contract as before).
+
+local function fetchPage(url)
+  return LIB("fetch").page(url)
+end
+
+local function absUrl(href)
+  return LIB("urls").absUrl(baseUrl, href)
+end
+
+-- Engine global url_encode delegates to the shared catalog lib.
+local url_encode = function(s) return LIB("catalog").urlEncode(s) end
+
+-- Standard chapter-text cleanup from the shared content lib, plus the site's
+-- own "Remove Ads From $N" watermark.
 local function applyStandardContentTransforms(text)
-  if not text or text == "" then return "" end
-  text = string_normalize(text)
-  local domain = baseUrl:gsub("https?://", ""):gsub("^www%.", ""):gsub("/$", "")
-  text = regex_replace(text, "(?i)" .. domain .. ".*?\\n", "")
-  text = regex_replace(text, "(?i)\\A[\\s\\p{Z}\\uFEFF]*((Глава\\s+\\d+|Chapter\\s+\\d+)[^\\n\\r]*[\\n\\r\\s]*)+", "")
-  text = regex_replace(text, "(?im)^\\s*(Translator|Editor|Proofreader|Read\\s+(at|on|latest))[:\\s][^\\n\\r]{0,70}(\\r?\\n|$)", "")
+  text = LIB("content").standardTransforms(text, { domain = baseUrl, lang = "en" })
+  if text == "" then return "" end
   text = regex_replace(text, "(?i)Remove\\s+Ads\\s+From\\s+\\$\\d+", "")
-  text = string_trim(text)
-  return text
+  return string_trim(text)
 end
 
 -- Карточка каталога: div.row → h3.novel-title > a[href][title] + img.cover
@@ -116,7 +120,7 @@ end
 -- ── Каталог ───────────────────────────────────────────────────────────────────
 
 function getCatalogList(index)
-  local page = index + 1
+  local page = LIB("catalog").nextIndex(index)
   local url = baseUrl .. "sort/updates"
   if page > 1 then url = url .. "?page=" .. page end
 
@@ -124,13 +128,13 @@ function getCatalogList(index)
   if not r.success then return { items = {}, hasNext = false } end
 
   local items = parseCatalogItems(r.body, true)
-  return { items = items, hasNext = #items > 0 }
+  return { items = items, hasNext = LIB("catalog").hasNextPage(items) }
 end
 
 -- ── Поиск ─────────────────────────────────────────────────────────────────────
 
 function getCatalogSearch(index, query)
-  local page = index + 1
+  local page = LIB("catalog").nextIndex(index)
   local url = baseUrl .. "search?keyword=" .. url_encode(query)
   if page > 1 then url = url .. "&page=" .. page end
 
@@ -138,7 +142,7 @@ function getCatalogSearch(index, query)
   if not r.success then return { items = {}, hasNext = false } end
 
   local items = parseCatalogItems(r.body, false)
-  return { items = items, hasNext = #items > 0 }
+  return { items = items, hasNext = LIB("catalog").hasNextPage(items) }
 end
 
 -- ── Детали книги (все через кэш — 1 запрос) ──────────────────────────────────
@@ -167,18 +171,14 @@ end
 function getBookGenres(bookUrl)
   local body = fetchPage(bookUrl)
   if not body then return {} end
-  local genres = {}
   for _, li in ipairs(html_select(body, "ul.info.info-meta li, ul.info-meta li")) do
     local h3 = html_select_first(li.html, "h3")
     if h3 and string_trim(h3.text) == "Genre:" then
-      for _, a in ipairs(html_select(li.html, "a")) do
-        local g = string_trim(a.text)
-        if g ~= "" then table.insert(genres, g) end
-      end
-      break
+      -- trim + drop empties — shared meta lib (site order kept).
+      return LIB("meta").collectGenres(html_select(li.html, "a"))
     end
   end
-  return genres
+  return {}
 end
 
 function getBookRating(bookUrl)
@@ -195,7 +195,7 @@ function getBookStatus(bookUrl)
     local h3 = html_select_first(li.html, "h3")
     if h3 and string_trim(h3.text) == "Status:" then
       local a = html_select_first(li.html, "a")
-      if a then return string_trim(a.text) end
+      if a then return LIB("meta").status(a.text) end
     end
   end
   return nil
@@ -488,7 +488,7 @@ end
 -- ── Каталог с фильтрами (advanced search) ─────────────────────────────────────
 
 function getCatalogFiltered(index, filters)
-  local page       = index + 1
+  local page       = LIB("catalog").nextIndex(index)
   local sort       = filters["sort"]       or ""
   local status     = filters["status"]     or "all"
   local language   = filters["language"]   or "ALL"
@@ -544,5 +544,5 @@ function getCatalogFiltered(index, filters)
   if not r.success then return { items = {}, hasNext = false } end
 
   local items = parseCatalogItems(r.body, false)
-  return { items = items, hasNext = #items > 0 }
+  return { items = items, hasNext = LIB("catalog").hasNextPage(items) }
 end

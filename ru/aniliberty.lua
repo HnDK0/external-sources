@@ -5,7 +5,7 @@
 content_type = "video"
 id          = "aniliberty"
 name        = "AniLiberty"
-version     = "1.0.0"
+version     = "1.0.1"
 baseUrl     = "https://aniliberty.top"
 language    = "ru"
 icon        = "https://raw.githubusercontent.com/HnDK0/external-sources/refs/heads/main/icons/aniliberty.png"
@@ -14,19 +14,25 @@ local API = baseUrl .. "/api/v1"
 -- Максимум, который принимает каталог (100 → HTTP 422)
 local CATALOG_LIMIT = 50
 
--- Кэш detail-ответов (паттерн fetchPage, живёт в рамках сеанса плагина)
-local _detailCache = {}
+-- Old builds ship no require_lib: keep the plugin loadable (a top-level
+-- error would drop it from the source list) and fail with a visible
+-- message on the first call instead. require_lib caches loaded libs.
+local function lib(id)
+    if type(require_lib) ~= "function" then
+        show_error("Требуется обновление NoveLA", "Плагину нужны общие библиотеки")
+        error("Требуется обновление NoveLA (require_lib)", 0)
+    end
+    return require_lib(id)
+end
 
+-- Сессионный кэш detail-ответов — fetch.page (кэш по URL живёт в либе)
 local function fetchDetail(bookUrl)
     local alias = bookUrl:match("/release/([^/]+)/")
     if not alias then return nil end
-    local cached = _detailCache[alias]
-    if cached then return cached end
-    local r = http_get(API .. "/anime/releases/" .. alias)
-    if not r.success then return nil end
-    local data = json_parse(r.body)
+    local body = lib("fetch").page(API .. "/anime/releases/" .. alias)
+    if not body then return nil end
+    local data = json_parse(body)
     if type(data) ~= "table" then return nil end
-    _detailCache[alias] = data
     return data
 end
 
@@ -364,22 +370,17 @@ local PRODUCTION_STATUS_OPTIONS = {
 }
 
 function getFilterList()
+    local f = lib("filters")
     return {
-        {
-            type         = "select",
-            key          = "sorting",
-            label        = "Сортировка",
-            defaultValue = "FRESH_AT_DESC",
-            options      = SORTING_OPTIONS,
-        },
-        { type = "checkbox", key = "types",             label = "Тип",             options = TYPE_OPTIONS },
-        { type = "checkbox", key = "genres",            label = "Жанры",           options = GENRE_OPTIONS },
-        { type = "checkbox", key = "seasons",           label = "Сезон",           options = SEASON_OPTIONS },
-        { type = "checkbox", key = "age_ratings",       label = "Возраст",         options = AGE_RATING_OPTIONS },
-        { type = "checkbox", key = "publish_statuses",  label = "Статус выхода",   options = PUBLISH_STATUS_OPTIONS },
-        { type = "checkbox", key = "production_statuses", label = "Озвучка",        options = PRODUCTION_STATUS_OPTIONS },
-        { type = "text", key = "year_from", label = "Год с", defaultValue = "" },
-        { type = "text", key = "year_to",   label = "Год по", defaultValue = "" },
+        f.select("sorting", "Сортировка", SORTING_OPTIONS, "FRESH_AT_DESC"),
+        f.checkbox("types",             "Тип",             TYPE_OPTIONS),
+        f.checkbox("genres",            "Жанры",           GENRE_OPTIONS),
+        f.checkbox("seasons",           "Сезон",           SEASON_OPTIONS),
+        f.checkbox("age_ratings",       "Возраст",         AGE_RATING_OPTIONS),
+        f.checkbox("publish_statuses",  "Статус выхода",   PUBLISH_STATUS_OPTIONS),
+        f.checkbox("production_statuses", "Озвучка",        PRODUCTION_STATUS_OPTIONS),
+        f.text("year_from", "Год с"),
+        f.text("year_to",   "Год по"),
     }
 end
 

@@ -1,29 +1,39 @@
 -- ── Метаданные ────────────────────────────────────────────────────────────────
 id       = "empirenovel"
 name     = "Empire Novel"
-version  = "2.4.1"
+version  = "2.4.2"
 baseUrl  = "https://www.empirenovel.com/"
 language = "en"
 icon     = "https://raw.githubusercontent.com/HnDK0/external-sources/main/icons/empirenovel.png"
 
 -- ── Хелперы ───────────────────────────────────────────────────────────────────
 
-local function absUrl(href)
-  if not href or href == "" then return "" end
-  if string_starts_with(href, "http") then return href end
-  if string_starts_with(href, "//") then return "https:" .. href end
-  return url_resolve(baseUrl, href)
+-- Old builds ship no require_lib: keep the plugin loadable (a top-level error
+-- would drop it from the source list) and fail with a visible message on the
+-- first call instead. Shared libs load lazily and are cached per session.
+local _libs
+local function LIB(id)
+  if type(require_lib) ~= "function" then
+    show_error("Requires NoveLA update", "This plugin needs the shared libraries")
+    error("Requires NoveLA update (require_lib)", 0)
+  end
+  if not _libs then _libs = {} end
+  if not _libs[id] then _libs[id] = require_lib(id) end
+  return _libs[id]
 end
 
--- Стандартная очистка текста главы: домен, дублирующийся заголовок главы,
--- строки переводчика, маркер [Chapter N End], ссылки next/previous.
+local function absUrl(href)
+  return LIB("urls").absUrl(baseUrl, href)
+end
+
+-- Engine global url_encode delegates to the shared catalog lib.
+local url_encode = function(s) return LIB("catalog").urlEncode(s) end
+
+-- Стандартная очистка текста главы (домен, дублирующийся заголовок главы,
+-- строки переводчика) + site-специфичные правила: маркер [Chapter N End],
+-- ссылки next/previous и схлопывание пустых строк.
 local function applyStandardContentTransforms(text)
-  if not text or text == "" then return "" end
-  text = string_normalize(text)
-  local domain = baseUrl:gsub("https?://", ""):gsub("^www%.", ""):gsub("/$", "")
-  text = regex_replace(text, "(?i)" .. domain .. ".*?\\n", "")
-  text = regex_replace(text, "(?i)\\A[\\s\\p{Z}\\uFEFF]*((Chapter\\s+\\d+[^\\n\\r]*)[\\n\\r\\s]*)+", "")
-  text = regex_replace(text, "(?im)^\\s*(Translator|Editor|Proofreader|Read\\s+(at|on|latest))[:\\s][^\\n\\r]{0,70}(\\r?\\n|$)", "")
+  text = LIB("content").standardTransforms(text, { domain = baseUrl, lang = "en" })
   text = regex_replace(text, "(?im)^\\s*\\[[^\\]\\n]*[Ee]nd[^\\]\\n]*\\]\\s*(\\r?\\n|$)", "")
   text = regex_replace(text, "(?i)^\\s*(next|previous)\\s+chapter\\s*$", "")
   text = string_trim(text)
@@ -69,12 +79,12 @@ local function parseCatalog(body)
 end
 
 function getCatalogList(index)
-  local page = (index or 0) + 1
+  local page = LIB("catalog").nextIndex(index)
   local r = http_get(baseUrl .. "novels-list?page=" .. page)
   if not r.success then return { items = {}, hasNext = false } end
 
   local res = parseCatalog(r.body)
-  return { items = res.items, hasNext = page < res.lastPage and #res.items > 0 }
+  return { items = res.items, hasNext = page < res.lastPage and LIB("catalog").hasNextPage(res.items) }
 end
 
 -- ── Поиск ─────────────────────────────────────────────────────────────────────
@@ -178,7 +188,7 @@ function getFilterList()
 end
 
 function getCatalogFiltered(index, filters)
-  local page = (index or 0) + 1
+  local page = LIB("catalog").nextIndex(index)
 
   local qs = {}
   local status   = filters["status"]   or ""
@@ -194,33 +204,33 @@ function getCatalogFiltered(index, filters)
   if not r.success then return { items = {}, hasNext = false } end
 
   local res = parseCatalog(r.body)
-  return { items = res.items, hasNext = page < res.lastPage and #res.items > 0 }
+  return { items = res.items, hasNext = page < res.lastPage and LIB("catalog").hasNextPage(res.items) }
 end
 
 -- ── Детали книги ──────────────────────────────────────────────────────────────
 
 function getBookTitle(bookUrl)
-  local r = http_get(bookUrl)
-  if not r.success then return nil end
-  local el = html_select_first(r.body, "h1")
+  local body = LIB("fetch").page(bookUrl)
+  if not body then return nil end
+  local el = html_select_first(body, "h1")
   if el then return string_clean(el.text) end
   return nil
 end
 
 function getBookCoverImageUrl(bookUrl)
-  local r = http_get(bookUrl)
-  if not r.success then return nil end
-  local cover = html_attr(r.body, "meta[property='og:image']", "content")
+  local body = LIB("fetch").page(bookUrl)
+  if not body then return nil end
+  local cover = html_attr(body, "meta[property='og:image']", "content")
   if cover ~= "" then return absUrl(cover) end
-  cover = string_trim(html_attr(r.body, "img.rounded-3.lazyload[data-src]", "data-src"))
+  cover = string_trim(html_attr(body, "img.rounded-3.lazyload[data-src]", "data-src"))
   if cover ~= "" then return absUrl(cover) end
   return nil
 end
 
 function getBookDescription(bookUrl)
-  local r = http_get(bookUrl)
-  if not r.success then return "" end
-  local meta = html_attr(r.body, "meta[name='description']", "content")
+  local body = LIB("fetch").page(bookUrl)
+  if not body then return "" end
+  local meta = html_attr(body, "meta[name='description']", "content")
   if meta == "" then return "" end
   local desc = regex_replace(meta, "(?i)^(Read\\s+(translated\\s+)?version\\s+of\\s+|Read\\s+)", "")
   desc = regex_replace(desc, "(?i)\\s+for\\s+free\\.?\\s*$", "")
@@ -233,16 +243,9 @@ end
 -- (например <a class="category px-2 py-1 rounded text-uppercase" itemprop="genre">).
 
 function getBookGenres(bookUrl)
-  local r = http_get(bookUrl)
-  if not r.success then return {} end
-  local genres = {}
-  for _, a in ipairs(html_select(r.body, "a.category[itemprop='genre']")) do
-    local g = string_clean(a.text)
-    if g ~= "" then
-      table.insert(genres, g)
-    end
-  end
-  return genres
+  local body = LIB("fetch").page(bookUrl)
+  if not body then return {} end
+  return LIB("meta").collectGenres(html_select(body, "a.category[itemprop='genre']"), { clean = true })
 end
 
 -- ── Статус / Дата обновления ───────────────────────────────────────────────────
@@ -276,9 +279,9 @@ local function parseFrDate(s)
 end
 
 function getBookStatus(bookUrl)
-  local r = http_get(bookUrl)
-  if not r.success then return nil end
-  for _, row in ipairs(html_select(r.body, "div.show_details div.d-flex.justify-content-between")) do
+  local body = LIB("fetch").page(bookUrl)
+  if not body then return nil end
+  for _, row in ipairs(html_select(body, "div.show_details div.d-flex.justify-content-between")) do
     local t = row.text
     if t and string_starts_with(t, "Status") then
       local s = string_trim(string.gsub(t, "^Status", ""))
@@ -289,9 +292,9 @@ function getBookStatus(bookUrl)
 end
 
 function getBookLastUpdate(bookUrl)
-  local r = http_get(bookUrl)
-  if not r.success then return nil end
-  local first = html_select_first(r.body, "div.small.fst-italic")
+  local body = LIB("fetch").page(bookUrl)
+  if not body then return nil end
+  local first = html_select_first(body, "div.small.fst-italic")
   if not first then return nil end
   return parseFrDate(first.text)
 end

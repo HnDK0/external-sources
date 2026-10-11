@@ -5,7 +5,7 @@
 -- ── Metadata ───────────────────────────────────────────────────────────────
 id = "tomatomtl"
 name = "TomatoMTL"
-version = "1.1.0"
+version = "1.1.1"
 baseUrl = "https://tomatomtl.com"
 language = "MTL"
 icon = "https://raw.githubusercontent.com/HnDK0/external-sources/main/icons/tomatomtl.png"
@@ -30,19 +30,19 @@ local PREF_MODE = "tomatomtl_mode" -- "raw" | "google" | "cina"
 
 -- ── Helpers ────────────────────────────────────────────────────────────────
 
-local _pageCache = {} -- кэш HTML страниц книг
-
-local function fetchPage(url)
-    if _pageCache[url] then
-        return _pageCache[url]
+-- Old builds ship no require_lib: keep the plugin loadable (a top-level
+-- error would drop it from the source list) and fail with a visible
+-- message on the first call instead. require_lib caches loaded libs.
+local function lib(id)
+    if type(require_lib) ~= "function" then
+        show_error("Требуется обновление NoveLA", "Плагину нужны общие библиотеки")
+        error("Требуется обновление NoveLA (require_lib)", 0)
     end
-    local r = http_get(url)
-    if r.success then
-        _pageCache[url] = r.body
-        return r.body
-    end
-    return nil
+    return require_lib(id)
 end
+
+-- кэш HTML страниц книг — fetch.page (сессионный кэш по URL)
+local function fetchPage(url) return lib("fetch").page(url) end
 
 -- Упрощённый стандартный прогон контента: нормализация → вырезание строк
 -- с доменом сайта (водяные знаки/реклама) → trim.
@@ -729,14 +729,7 @@ function getBookGenres(bookUrl)
     ensureEngine()
     local body = fetchPage(bookUrl)
     if not body then return nil end
-    local genres = {}
-    for _, el in ipairs(html_select(body, "a[href*='categories']")) do
-        local g = string_clean(el.text)
-        if g ~= "" then
-            table.insert(genres, g)
-        end
-    end
-    return genres
+    return lib("meta").collectGenres(html_select(body, "a[href*='categories']"), { clean = true })
 end
 
 function getBookStatus(bookUrl)

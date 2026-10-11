@@ -3,7 +3,7 @@
 
 id = "doujinhentai"
 name = "DoujinHentai"
-version = "1.0.1"
+version = "1.0.2"
 baseUrl = "https://doujinhentai.net/"
 icon = "https://raw.githubusercontent.com/HnDK0/external-sources/main/icons/doujinhentai.png"
 language = "es"
@@ -11,27 +11,28 @@ content_type = "manga"
 
 -- ── Хелперы ──
 
-local function absUrl(href)
-    if not href or href == "" then return "" end
-    if string_starts_with(href, "http") then return href end
-    if string_starts_with(href, "//") then return "https:" .. href end
-    return url_resolve(baseUrl, href)
+-- Old builds ship no require_lib: keep the plugin loadable (a top-level
+-- error would drop it from the source list) and fail with a visible
+-- message on the first call instead. require_lib caches loaded libs.
+local function lib(id)
+    if type(require_lib) ~= "function" then
+        show_error("Se requiere actualizar NoveLA",
+            "Este plugin necesita las bibliotecas compartidas")
+        error("Se requiere actualizar NoveLA (require_lib)", 0)
+    end
+    return require_lib(id)
 end
 
-local _pageCache = {}
+local function absUrl(href) return lib("urls").absUrl(baseUrl, href) end
 
+-- Кэш ответа ведёт общий fetch lib; ретрай с паузой — специфика сайта.
 local function fetchPage(url)
-    if _pageCache[url] then
-        return _pageCache[url]
-    end
-    local r = http_get(url)
-    if not r.success then
+    local body = lib("fetch").page(url)
+    if not body then
         sleep(500)
-        r = http_get(url)
+        body = lib("fetch").page(url)
     end
-    if not r.success then return nil end
-    _pageCache[url] = r.body
-    return r.body
+    return body
 end
 
 local function getSlug(bookUrl)
@@ -50,7 +51,7 @@ end
 -- ── Каталог ──
 
 function getCatalogList(index)
-    local page = (index or 0) + 1
+    local page = lib("catalog").nextIndex(index)
     local url = baseUrl .. "lista-manga-hentai/?orderby=last&page=" .. page
     local html = fetchPage(url)
     if not html then return { items = {}, hasNext = false } end
@@ -78,7 +79,7 @@ function getCatalogList(index)
 end
 
 function getCatalogSearch(index, query)
-    local url = baseUrl .. "search-live?query=" .. url_encode(query or "")
+    local url = baseUrl .. "search-live?query=" .. lib("catalog").urlEncode(query or "")
     local r = http_get(url)
     if not r.success then
         sleep(500)
@@ -170,7 +171,7 @@ function getFilterList()
 end
 
 function getCatalogFiltered(index, filters)
-    local page = (index or 0) + 1
+    local page = lib("catalog").nextIndex(index)
     local genreValue = (filters and filters["genre"]) or ""
     local sortValue = (filters and filters["sort"]) or "last"
 
@@ -269,7 +270,7 @@ function getBookGenres(bookUrl)
         local ok, data = pcall(json_parse, jsonStr)
         if ok and data and data.genre then
             if type(data.genre) == "table" then
-                return data.genre
+                return lib("meta").collectGenres(data.genre, { clean = true })
             elseif type(data.genre) == "string" then
                 return { data.genre }
             end
@@ -284,7 +285,7 @@ function getBookStatus(bookUrl)
 
     local el = html_select_first(html, "span[aria-label*='Estado']")
     if el then
-        return string_clean(html_text(el))
+        return lib("meta").status(html_text(el))
     end
     return ""
 end
@@ -299,7 +300,7 @@ function getBookRating(bookUrl)
         if ok and data and data.aggregateRating then
             local rating = data.aggregateRating.ratingValue
             if rating then
-                return tostring(rating)
+                return lib("meta").rating(tostring(rating))
             end
         end
     end

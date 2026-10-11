@@ -80,7 +80,7 @@ end
 -- ── Каталог ───────────────────────────────────────────────────────────────────
 
 function getCatalogList(index)
-    local page = index + 1
+    local page = LIB("catalog").nextIndex(index)
     local url = baseUrl .. "/page/" .. page .. "/?s&post_type=wp-manga&m_orderby=rating"
 
     local r = http_get(url)
@@ -93,7 +93,7 @@ end
 -- ── Поиск ─────────────────────────────────────────────────────────────────────
 
 function getCatalogSearch(index, query)
-    local page = index + 1
+    local page = LIB("catalog").nextIndex(index)
     local url = baseUrl .. "/page/" .. page .. "/?s=" .. url_encode(query) .. "&post_type=wp-manga"
 
     local r = http_get(url)
@@ -369,7 +369,7 @@ end
 -- ── Каталог с фильтрами ───────────────────────────────────────────────────────
 
 function getCatalogFiltered(index, filters)
-    local page    = index + 1
+    local page    = LIB("catalog").nextIndex(index)
     local orderby = filters["m_orderby"] or "rating"
     local op      = filters["op"] or ""
     local adult   = filters["adult"] or ""

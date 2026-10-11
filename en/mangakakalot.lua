@@ -1,7 +1,7 @@
 -- ── Метаданные ────────────────────────────────────────────────────────────────
 id           = "mangakakalot"
 name         = "MangaKakalot"
-version      = "1.0.1"
+version      = "1.0.2"
 baseUrl      = "https://www.mangakakalot.gg"
 language     = "en"
 icon         = "https://raw.githubusercontent.com/HnDK0/external-sources/refs/heads/main/icons/mangakakalot.png"
@@ -9,12 +9,26 @@ content_type = "manga"
 
 -- ── Хелперы ───────────────────────────────────────────────────────────────────
 
-local function absUrl(href)
-    if not href or href == "" then return "" end
-    if string_starts_with(href, "http") then return href end
-    if string_starts_with(href, "//") then return "https:" .. href end
-    return url_resolve(baseUrl, href)
+-- Old builds ship no require_lib: keep the plugin loadable (a top-level error
+-- would drop it from the source list) and fail with a visible message on the
+-- first call instead. Shared libs load lazily and are cached per session.
+local _libs
+local function LIB(id)
+    if type(require_lib) ~= "function" then
+        show_error("Requires NoveLA update", "This plugin needs the shared libraries")
+        error("Requires NoveLA update (require_lib)", 0)
+    end
+    if not _libs then _libs = {} end
+    if not _libs[id] then _libs[id] = require_lib(id) end
+    return _libs[id]
 end
+
+local function absUrl(href)
+    return LIB("urls").absUrl(baseUrl, href)
+end
+
+-- Engine global url_encode delegates to the shared catalog lib.
+local url_encode = function(s) return LIB("catalog").urlEncode(s) end
 
 -- Нормализуем ссылку на серию к baseUrl (на сайте бывают зеркала/без www).
 -- Возвращает nil, если это не страница серии (например, ссылка на главу).
@@ -32,18 +46,11 @@ end
 local MONTHS = { Jan = "01", Feb = "02", Mar = "03", Apr = "04", May = "05", Jun = "06",
                  Jul = "07", Aug = "08", Sep = "09", Oct = "10", Nov = "11", Dec = "12" }
 
--- Кэш страницы книги (движок зовёт detail-функции параллельно).
+-- Кэш страницы книги (движок зовёт detail-функции параллельно) — shared fetch
+-- lib кэширует успешные ответы на сессию.
 -- getChapterListHash его НЕ использует — ему нужен свежий ответ.
-local _pageCache = {}
-
 local function fetchPage(url)
-    if _pageCache[url] then return _pageCache[url] end
-    local r = http_get(url)
-    if r.success then
-        _pageCache[url] = r.body
-        return r.body
-    end
-    return nil
+    return LIB("fetch").page(url)
 end
 
 -- Значение поля из строки инфо-блока вида "Status: Ongoing".
@@ -164,17 +171,17 @@ local function fetchCatalog(url)
     end
     local items = parseCatalog(r.body)
     -- Страница за последней пустая → пагинация останавливается.
-    return { items = items, hasNext = #items > 0 }
+    return { items = items, hasNext = LIB("catalog").hasNextPage(items) }
 end
 
 function getCatalogList(index)
-    local page = index + 1
+    local page = LIB("catalog").nextIndex(index)
     return fetchCatalog(baseUrl .. "/genre/all?type=latest&state=all&page=" .. tostring(page))
 end
 
 -- Поиск: /search/story/<запрос с подчёркиваниями>?page=N  (проверено 2026-10-02)
 function getCatalogSearch(index, query)
-    local page = index + 1
+    local page = LIB("catalog").nextIndex(index)
     local q = string.lower(string_clean(query or ""))
     q = regex_replace(q, "[^\\p{L}\\p{N}\\s]", "")
     q = regex_replace(q, "\\s+", "_")
@@ -235,7 +242,7 @@ function getFilterList()
 end
 
 function getCatalogFiltered(index, filters)
-    local page  = index + 1
+    local page  = LIB("catalog").nextIndex(index)
     local typ   = filters["type"] or "latest"
     local state = filters["state"] or "all"
     local genre = filters["genre"] or "all"
@@ -291,15 +298,8 @@ end
 function getBookGenres(bookUrl)
     local body = fetchPage(bookUrl)
     if not body then return {} end
-    local genres, seen = {}, {}
-    for _, a in ipairs(html_select(body, "div.genre-list a")) do
-        local t = string_clean(a.text)
-        if t ~= "" and not seen[t] then
-            seen[t] = true
-            table.insert(genres, t)
-        end
-    end
-    return genres
+    -- string_clean + dedup (site order kept) — shared meta lib.
+    return LIB("meta").collectGenres(html_select(body, "div.genre-list a"), { clean = true })
 end
 
 -- "Rating: ... 4.90 / 5 - 47 votes" → "4.90" (шкала 0-5).

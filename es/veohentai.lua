@@ -20,7 +20,7 @@
 
 id           = "veohentai"
 name         = "Veohentai"
-version      = "1.0.1"
+version      = "1.0.2"
 baseUrl      = "https://veohentai.com"
 language     = "es"
 content_type = "video"
@@ -34,27 +34,25 @@ local EP_SEL    = 'a[href*="/ver/"]'
 local PAGE_TIMEOUT   = 15000
 local PLAYER_TIMEOUT = 12000
 
-local _pageCache = {}
-
-local function absUrl(href)
-    if type(href) ~= "string" or href == "" then return "" end
-    if string_starts_with(href, "http") then return href end
-    if string_starts_with(href, "//") then return "https:" .. href end
-    return url_resolve(baseUrl, href)
+-- Old builds ship no require_lib: keep the plugin loadable (a top-level
+-- error would drop it from the source list) and fail with a visible
+-- message on the first call instead. require_lib caches loaded libs.
+local function lib(id)
+    if type(require_lib) ~= "function" then
+        show_error("Se requiere actualizar NoveLA",
+            "Este plugin necesita las bibliotecas compartidas")
+        error("Se requiere actualizar NoveLA (require_lib)", 0)
+    end
+    return require_lib(id)
 end
 
+local function absUrl(href) return lib("urls").absUrl(baseUrl, href) end
+
 -- Страница сериала: тайтл, обложка, жанры, описание и список эпизодов — всё
--- в одном HTML, поэтому кэшируем его на сеанс.
+-- в одном HTML, поэтому кэш на сеанс ведёт общий fetch lib (он же логирует
+-- ошибку сети); таймаут остаётся нашим.
 local function fetchPage(url)
-    local cached = _pageCache[url]
-    if cached ~= nil then return cached end
-    local r = http_get(url, { timeout = PAGE_TIMEOUT })
-    if not r.success then
-        log_error("Veohentai: page request failed (HTTP " .. tostring(r.code) .. "): " .. url)
-        return nil
-    end
-    _pageCache[url] = r.body
-    return r.body
+    return lib("fetch").page(url, { timeout = PAGE_TIMEOUT })
 end
 
 -- Постер карточки — первый <img> с непустым alt: у баннера каталога alt="".
@@ -127,7 +125,7 @@ local function episodeCards(body)
 end
 
 function getCatalogList(index)
-    local url = baseUrl .. "/directorio-hentai/?view=grid&pagina=" .. tostring(index + 1)
+    local url = baseUrl .. "/directorio-hentai/?view=grid&pagina=" .. tostring(lib("catalog").nextIndex(index))
     local body = fetchPage(url)
     if not body then return { items = {}, hasNext = false } end
     local items, seen = {}, {}
@@ -148,7 +146,7 @@ function getCatalogList(index)
             end
         end
     end    -- pagina=89 уже пуст — каталог сам отдаёт признак конца.
-    return { items = items, hasNext = #items > 0 }
+    return { items = items, hasNext = lib("catalog").hasNextPage(items) }
 end
 
 function getCatalogSearch(index, query)
@@ -156,7 +154,7 @@ function getCatalogSearch(index, query)
     if index > 0 or type(query) ~= "string" or query == "" then
         return { items = {}, hasNext = false }
     end
-    local body = fetchPage(baseUrl .. "/buscar/?q=" .. url_encode(query))
+    local body = fetchPage(baseUrl .. "/buscar/?q=" .. lib("catalog").urlEncode(query))
     if not body then return { items = {}, hasNext = false } end
     return { items = episodeCards(body), hasNext = false }
 end
@@ -240,7 +238,7 @@ end
 function getCatalogFiltered(index, filters)
     if type(filters) ~= "table" then filters = {} end
     index = tonumber(index) or 0
-    local page = index + 1
+    local page = lib("catalog").nextIndex(index)
 
     local params = { "pagina=" .. page }
     local genres = filters["genre_included"]
@@ -252,19 +250,19 @@ function getCatalogFiltered(index, filters)
             end
         end
         if #joined > 0 then
-            params[#params + 1] = "genero=" .. url_encode(table.concat(joined, ","))
+            params[#params + 1] = "genero=" .. lib("catalog").urlEncode(table.concat(joined, ","))
         end
     end
     local orden = filters["orden"]
     if type(orden) == "string" and orden ~= "" then
-        params[#params + 1] = "orden=" .. url_encode(orden)
+        params[#params + 1] = "orden=" .. lib("catalog").urlEncode(orden)
     end
 
     local url = baseUrl .. "/explorar/?" .. table.concat(params, "&")
     local body = fetchPage(url)
     if not body then return { items = {}, hasNext = false } end
     local items = episodeCards(body)
-    return { items = items, hasNext = #items > 0 }
+    return { items = items, hasNext = lib("catalog").hasNextPage(items) }
 end
 
 function getBookTitle(bookUrl)
@@ -517,11 +515,11 @@ local function resolveServer(host, dataId, label)
     -- Отпечаток: сервер проверяет только t >= 2000, детали устройства не важны.
     local fp = base64_encode('{"t":5000,"b":{"sw":1440,"sh":900}}')
     local url = host .. "/get-video-url-v2.php"
-        .. "?vid=" .. url_encode(queryParam(dataId, "vid") or "")
+        .. "?vid=" .. lib("catalog").urlEncode(queryParam(dataId, "vid") or "")
         .. "&p1=" .. p1 .. "&p2=" .. p2 .. "&p3=" .. p3 .. "&p4=" .. p4
         .. "&t=" .. ts
         .. "&sc=" .. sc .. "&rid=" .. rid
-        .. "&fp=" .. url_encode(fp)
+        .. "&fp=" .. lib("catalog").urlEncode(fp)
         .. "&df=&pow="
     local rr = http_get(url, { timeout = PLAYER_TIMEOUT, headers = XHR_HEADERS })
     if not rr.success then

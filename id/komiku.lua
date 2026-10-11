@@ -72,7 +72,7 @@ end
 -- ── Каталог ──
 
 function getCatalogList(index)
-    local page = index + 1
+    local page = LIB("catalog").nextIndex(index)
     local url = API_BASE .. "/manga/"
     if page > 1 then url = url .. "page/" .. page .. "/" end
     url = url .. "?orderby=modified"
@@ -85,7 +85,7 @@ function getCatalogList(index)
 end
 
 function getCatalogSearch(index, query)
-    local page = index + 1
+    local page = LIB("catalog").nextIndex(index)
     local url = API_BASE .. "/manga/"
     if page > 1 then url = url .. "page/" .. page .. "/" end
     url = url .. "?s=" .. url_encode(query) .. "&orderby=modified"
@@ -218,7 +218,7 @@ function getFilterList()
 end
 
 function getCatalogFiltered(index, filters)
-    local page = index + 1
+    local page = LIB("catalog").nextIndex(index)
     local url = API_BASE .. "/manga/"
     if page > 1 then url = url .. "page/" .. page .. "/" end
 

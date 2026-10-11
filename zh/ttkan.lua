@@ -1,7 +1,7 @@
 -- ── Metadata ────────────────────────────────────────────────────────────────
 id       = "ttkan"
 name     = "TTKan"
-version  = "1.1.1"
+version  = "1.1.2"
 baseUrl  = "https://www.ttkan.co/"
 language = "zh"
 icon     = "https://raw.githubusercontent.com/HnDK0/external-sources/main/icons/ttkan.png"
@@ -23,60 +23,51 @@ icon     = "https://raw.githubusercontent.com/HnDK0/external-sources/main/icons/
 
 -- ── Helpers ─────────────────────────────────────────────────────────────────
 
-local function absUrl(href)
-  if not href or href == "" then return "" end
-  if string_starts_with(href, "http") then return href end
-  if string_starts_with(href, "//") then return "https:" .. href end
-  return url_resolve(baseUrl, href)
+-- Old builds ship no require_lib: keep the plugin loadable (a top-level error
+-- would drop it from the source list) and fail with a visible message on the
+-- first call instead. Shared libs load lazily and are cached per session.
+local _libs
+local function LIB(id)
+  if type(require_lib) ~= "function" then
+    show_error("Requires NoveLA update", "This plugin needs the shared libraries")
+    error("Requires NoveLA update (require_lib)", 0)
+  end
+  if not _libs then _libs = {} end
+  if not _libs[id] then _libs[id] = require_lib(id) end
+  return _libs[id]
 end
 
+local function absUrl(href)
+  return LIB("urls").absUrl(baseUrl, href)
+end
+
+-- Session-cached book page (shared fetch lib): the book page is read by the
+-- title/description/status functions in one adapter run.
+-- getChapterListHash stays on a direct http_get — the hash must see a fresh
+-- page.
+local function fetchPage(url)
+  return LIB("fetch").page(url)
+end
+
+-- Engine global url_encode delegates to the shared catalog lib.
+local url_encode = function(s) return LIB("catalog").urlEncode(s) end
+
 -- Apply standard content transforms.
--- Lifted from the novel_extractor.py audit: strip site domain refs, collapse
--- a duplicated chapter-title prefix that some sites accidentally inject
--- (e.g. "Chapter 1: Chapter 1: ..."), drop translator/editor notes, and
--- strip the trailing "chapter report / share with friends" UI tail that
--- ttkan leaves inside .content.
+-- Shared lib covers the domain lines, the leading chapter title (the
+-- duplicated "第N章：第N章" prefix collapses into the same strip) and the
+-- translator/editor attribution lines. The trailing "chapter report / share
+-- with friends" UI tail that ttkan leaves inside .content is site-specific
+-- and stays here.
 local function applyStandardContentTransforms(text)
-  if not text or text == "" then return "" end
-  text = string_normalize(text)
+  text = LIB("content").standardTransforms(text, { domain = baseUrl, lang = "zh" })
+  if text == "" then return "" end
 
-  -- Strip site domain references ("www.ttkan.co ..." etc.)
-  local domain = baseUrl:gsub("https?://", ""):gsub("^www%.", ""):gsub("/$", "")
-  text = regex_replace(text, "(?i)" .. domain .. ".*?\\n", "")
-
-  -- Collapse a duplicated chapter-title prefix at the start of the text.
-  -- Pattern: "第N章[:：. -— ]第N章[:：. -— ]rest" → "第N章[:：. -— ]rest"
-  -- Also handles "Chapter N: Chapter N: ..." (English) and the case where
-  -- the separator is just whitespace.
-  text = regex_replace(text,
-    "(?i)\\A[\\s\\p{Z}\\uFEFF]*" ..
-    "((?:第[\\d〇零一二三四五六七八九十百千两\\d]+[章节卷回部集篇]|Chapter\\s+\\d+|Глава\\s+\\d+)" ..
-    "(?:\\s*[:：.\\-—]\\s*|\\s+))" ..
-    "\\1" ..
-    "(?:[\\s\\p{Z}\\uFEFF]*[\\n\\r]+|[\\s\\p{Z}\\uFEFF]+)",
-    "")
-
-  -- Strip a single leading chapter title (it duplicates the chapter title
-  -- field that the engine already displays above the body).
-  text = regex_replace(text,
-    "(?i)\\A[\\s\\p{Z}\\uFEFF]*" ..
-    "(?:(?:第[\\d一二三四五六七八九十百]+[章节]|Chapter\\s+\\d+|Глава\\s+\\d+)" ..
-    "[^\\n\\r]*[\\n\\r\\s]*)+", "")
-
-  -- Strip translator / editor / proofreader attribution lines.
-  text = regex_replace(text,
-    "(?im)^\\s*(翻译|譯者|译者|編輯|编辑|校對|校对|更新|閱讀|阅读|最新閱讀|最新阅读)" ..
-    "[:\\s：][^\\n\\r]{0,70}(\\r?\\n|$)", "")
-
-  -- Strip the trailing UI tail that ttkan leaves inside .content:
   -- "章節報錯" (chapter report) and "分享給朋友：" (share with friends).
-  -- These appear after the chapter body and are not prose.
   text = regex_replace(text, "(?im)\\n\\s*章節報錯\\s*$", "")
   text = regex_replace(text, "(?im)\\n\\s*分享給朋友[：:].*$", "")
   text = regex_replace(text, "(?im)\\n\\s*上一頁.*下一頁\\s*$", "")
 
-  text = string_trim(text)
-  return text
+  return string_trim(text)
 end
 
 -- Extract the novel_id (slug) from a book URL like
@@ -218,9 +209,9 @@ end
 -- ── Book details ────────────────────────────────────────────────────────────
 
 function getBookTitle(bookUrl)
-  local r = http_get(bookUrl)
-  if not r.success then return nil end
-  local el = html_select_first(r.body, "h1")
+  local body = fetchPage(bookUrl)
+  if not body then return nil end
+  local el = html_select_first(body, "h1")
   if el then return string_clean(el.text) end
   return nil
 end
@@ -233,9 +224,9 @@ function getBookCoverImageUrl(bookUrl)
 end
 
 function getBookDescription(bookUrl)
-  local r = http_get(bookUrl)
-  if not r.success then return nil end
-  local el = html_select_first(r.body, ".description")
+  local body = fetchPage(bookUrl)
+  if not body then return nil end
+  local el = html_select_first(body, ".description")
   if el then return string_trim(el.text) end
   return nil
 end
@@ -333,9 +324,9 @@ end
 
 -- Статус книги — мета-тег og:novel:status (напр. «完結»).
 function getBookStatus(bookUrl)
-  local r = http_get(bookUrl)
-  if not r.success then return nil end
-  local s = html_attr(r.body, "meta[name='og:novel:status']", "content")
+  local body = fetchPage(bookUrl)
+  if not body then return nil end
+  local s = html_attr(body, "meta[name='og:novel:status']", "content")
   if s and s ~= "" then return s end
   return nil
 end

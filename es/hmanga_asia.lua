@@ -11,10 +11,11 @@
 -- 1.2.0: filtro de géneros (se extraen de /catalogo/ en runtime) + avif.
 -- 1.2.1: índice de géneros corregido a /etiquetas/ (archivos /tags/{slug}/).
 -- 1.2.2: getBookGenres quita el contador del final ("Ahegao 2515" → "Ahegao").
+-- 1.2.3: helpers compartidos (urls/fetch/catalog/meta) vía require_lib.
 
 id       = "hmanga_asia"
 name     = "HManga"
-version  = "1.2.2"
+version  = "1.2.3"
 baseUrl  = "https://hmanga.asia"
 language = "es"
 content_type = "manga"
@@ -23,25 +24,29 @@ icon     = "https://raw.githubusercontent.com/HnDK0/external-sources/main/icons/
 
 -- ── Helpers ──────────────────────────────────────────────────────────────
 
-local function absUrl(href)
-    if not href or href == "" then return "" end
-    if string_starts_with(href, "http") then return href end
-    if string_starts_with(href, "//") then return "https:" .. href end
-    return url_resolve(baseUrl, href)
+-- Old builds ship no require_lib: keep the plugin loadable (a top-level
+-- error would drop it from the source list) and fail with a visible
+-- message on the first call instead. require_lib caches loaded libs.
+local function lib(id)
+    if type(require_lib) ~= "function" then
+        show_error("Se requiere actualizar NoveLA",
+            "Este plugin necesita las bibliotecas compartidas")
+        error("Se requiere actualizar NoveLA (require_lib)", 0)
+    end
+    return require_lib(id)
 end
 
-local _pageCache = {}
+local function absUrl(href) return lib("urls").absUrl(baseUrl, href) end
 
+-- Session cache in the shared fetch lib; the extra sleep+retry is the
+-- site's own rate-limit workaround and stays here.
 local function fetchPage(url)
-    if _pageCache[url] then return _pageCache[url] end
-    local r = http_get(url)
-    if not r.success then
+    local body = lib("fetch").page(url)
+    if not body then
         sleep(400)
-        r = http_get(url)
+        body = lib("fetch").page(url)
     end
-    if not r.success then return nil end
-    _pageCache[url] = r.body
-    return r.body
+    return body
 end
 
 -- URL real de una imagen (los temas WP cargan con lazy-load)
@@ -106,11 +111,11 @@ local function urlsFromText(text)
     local found, seen = {}, {}
     if not text or text == "" then return found end
     for u in string.gmatch(text, "https?://[^\"'<>%s%)%]]+%.%a+") do
-        u = string.gsub(u, "&amp;", "&")
-        u = absUrl(u)
-        if imageExtOk(u) and not isBadImage(u) and not seen[u] then
-            seen[u] = true
-            table.insert(found, u)
+        local clean = (string.gsub(u, "&amp;", "&"))
+        local abs = absUrl(clean)
+        if imageExtOk(abs) and not isBadImage(abs) and not seen[abs] then
+            seen[abs] = true
+            table.insert(found, abs)
         end
     end
     return found
@@ -219,18 +224,18 @@ local function parseCatalog(html)
 end
 
 function getCatalogList(index)
-    local page = (index or 0) + 1
+    local page = lib("catalog").nextIndex(index)
     local url = baseUrl
     if page > 1 then url = baseUrl .. "/page/" .. page .. "/" end
     local html = fetchPage(url)
     if not html then return { items = {}, hasNext = false } end
     local items = parseCatalog(html)
-    return { items = items, hasNext = #items > 0 }
+    return { items = items, hasNext = lib("catalog").hasNextPage(items) }
 end
 
 function getCatalogSearch(index, query)
-    local page = (index or 0) + 1
-    local q = url_encode(query or "")
+    local page = lib("catalog").nextIndex(index)
+    local q = lib("catalog").urlEncode(query or "")
     local url
     if page <= 1 then
         url = baseUrl .. "/?s=" .. q
@@ -240,7 +245,7 @@ function getCatalogSearch(index, query)
     local html = fetchPage(url)
     if not html then return { items = {}, hasNext = false } end
     local items = parseCatalog(html)
-    return { items = items, hasNext = #items > 0 }
+    return { items = items, hasNext = lib("catalog").hasNextPage(items) }
 end
 
 -- ── Filtro por género (índice: /etiquetas/ → /tags/{slug}/) ───────────────
@@ -293,7 +298,7 @@ function getCatalogFiltered(index, filters)
     local genreUrl = filters and filters["genre"] or ""
     if genreUrl == "" then return getCatalogList(index) end
 
-    local page = (index or 0) + 1
+    local page = lib("catalog").nextIndex(index)
     local url = tostring(genreUrl)
     if page > 1 then
         -- WP: /tags/milf/page/2/
@@ -303,7 +308,7 @@ function getCatalogFiltered(index, filters)
     local html = fetchPage(url)
     if not html then return { items = {}, hasNext = false } end
     local items = parseCatalog(html)
-    return { items = items, hasNext = #items > 0 }
+    return { items = items, hasNext = lib("catalog").hasNextPage(items) }
 end
 
 -- ── Lista de capítulos ────────────────────────────────────────────────────
@@ -319,7 +324,7 @@ function getChapterList(bookUrl)
             local sHtml = fetchPage(seriesA.href)
             if sHtml then
                 local items = parseCatalog(sHtml)
-                if #items > 0 then
+                if lib("catalog").hasNextPage(items) then
                     -- La lista del sitio es de más nuevo a más antiguo;
                     -- se invierte para orden de lectura
                     local chapters = {}
@@ -399,6 +404,5 @@ function getBookLastUpdate(bookUrl)
         local t = html_select_first(html, "time[datetime]")
         if t then v = t:attr("datetime") or "" end
     end
-    local y, m, d = string.match(v or "", "(%d%d%d%d)%-(%d%d)%-(%d%d)")
-    return y and (y .. "-" .. m .. "-" .. d) or nil
+    return lib("meta").normalizeDate(v or "")
 end

@@ -1,7 +1,7 @@
 -- ── Метаданные ──
 id       = "fictionzone"
 name     = "Fiction Zone"
-version  = "1.1.0"
+version  = "1.1.1"
 baseUrl  = "https://fictionzone.net/"
 language = "en"
 icon     = "https://raw.githubusercontent.com/HnDK0/external-sources/main/icons/fictionzone.png"
@@ -17,13 +17,27 @@ local PROXY = baseUrl .. "api/__api_party/fictionzone"
 -- bookUrl, а все вызовы одного плагина сериализованы через Mutex — кэш безопасен.
 local _detailsCache = {}
 
--- absUrl: относительные ссылки -> абсолютные (требование AGENTS.md)
-local function absUrl(href)
-  if not href or href == "" then return "" end
-  if href:match("^https?://") then return href end
-  if href:match("^//") then return "https:" .. href end
-  return url_resolve(baseUrl, href)
+-- Old builds ship no require_lib: keep the plugin loadable (a top-level error
+-- would drop it from the source list) and fail with a visible message on the
+-- first call instead. Shared libs load lazily and are cached per session.
+local _libs
+local function LIB(id)
+  if type(require_lib) ~= "function" then
+    show_error("Requires NoveLA update", "This plugin needs the shared libraries")
+    error("Requires NoveLA update (require_lib)", 0)
+  end
+  if not _libs then _libs = {} end
+  if not _libs[id] then _libs[id] = require_lib(id) end
+  return _libs[id]
 end
+
+-- absUrl: относительные ссылки -> абсолютные (shared urls lib)
+local function absUrl(href)
+  return LIB("urls").absUrl(baseUrl, href)
+end
+
+-- Engine global url_encode delegates to the shared catalog lib.
+local url_encode = function(s) return LIB("catalog").urlEncode(s) end
 
 -- Универсальный GET к API через прокси. Возвращает payload (.data) или nil.
 -- Полный текст главы сайт отдаёт только авторизованному пользователю: анонимный
@@ -84,7 +98,7 @@ end
 -- ── Каталог ──
 
 function getCatalogList(index)
-  local page = index + 1
+  local page = LIB("catalog").nextIndex(index)
   local data = apiGet("/platform/browse?page=" .. page
     .. "&page_size=20&sort_by=bookmark_count&sort_order=desc&include_genres=true")
   if not data then return { items = {}, hasNext = false } end
@@ -102,7 +116,7 @@ function getCatalogList(index)
 end
 
 function getCatalogSearch(index, query)
-  local page = index + 1
+  local page = LIB("catalog").nextIndex(index)
   local data = apiGet("/platform/browse?search=" .. url_encode(query)
     .. "&page=" .. page
     .. "&page_size=20&search_in_synopsis=true&sort_by=bookmark_count&sort_order=desc&include_genres=true")
@@ -201,7 +215,7 @@ function getFilterList()
 end
 
 function getCatalogFiltered(index, filters)
-  local page = index + 1
+  local page = LIB("catalog").nextIndex(index)
   local sort = filters["sort"] or "bookmark_count"
   local path = "/platform/browse?page=" .. page
     .. "&page_size=20&sort_by=" .. sort .. "&sort_order=desc&include_genres=true"

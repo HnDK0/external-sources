@@ -1,7 +1,7 @@
 -- ── Метаданные ───────────────────────────────────────────────────────────────
 id       = "syosetu"
 name     = "Syosetu"
-version  = "1.1.0"
+version  = "1.1.1"
 baseUrl  = "https://ncode.syosetu.com/"
 language = "ja"
 icon     = "https://raw.githubusercontent.com/HnDK0/external-sources/main/icons/narou.png"
@@ -11,12 +11,34 @@ local HEADERS = {
 }
 
 -- ── Хелперы ──────────────────────────────────────────────────────────────────
-local function absUrl(href)
-    if not href or href == "" then return "" end
-    if href:sub(1, 4) == "http" then return href end
-    if href:sub(1, 2) == "//"   then return "https:" .. href end
-    return url_resolve("https://ncode.syosetu.com/", href)
+
+-- Old builds ship no require_lib: keep the plugin loadable (a top-level error
+-- would drop it from the source list) and fail with a visible message on the
+-- first call instead. Shared libs load lazily and are cached per session.
+local _libs
+local function LIB(id)
+    if type(require_lib) ~= "function" then
+        show_error("Requires NoveLA update", "This plugin needs the shared libraries")
+        error("Requires NoveLA update (require_lib)", 0)
+    end
+    if not _libs then _libs = {} end
+    if not _libs[id] then _libs[id] = require_lib(id) end
+    return _libs[id]
 end
+
+local function absUrl(href)
+    return LIB("urls").absUrl(baseUrl, href)
+end
+
+-- Session-cached GET with the site's desktop UA (shared fetch lib); the same
+-- book page is requested by several book-detail functions in one adapter run.
+-- getChapterListHash stays on a direct http_get: the hash must see a fresh page.
+local function fetchPage(url)
+    return LIB("fetch").page(url, { headers = HEADERS })
+end
+
+-- Engine global url_encode delegates to the shared catalog lib.
+local url_encode = function(s) return LIB("catalog").urlEncode(s) end
 
 -- ── Каталог (Ранкинг) ────────────────────────────────────────────────────────
 function getCatalogList(index)
@@ -24,7 +46,7 @@ function getCatalogList(index)
 end
 
 function getCatalogFiltered(index, filters)
-    local page     = index + 1
+    local page     = LIB("catalog").nextIndex(index)
     local period   = filters["period"]   or "total"
     local modifier = filters["modifier"] or "total"
     local genre    = filters["genre"]    or ""
@@ -59,7 +81,7 @@ end
 
 -- ── Поиск ────────────────────────────────────────────────────────────────────
 function getCatalogSearch(index, query)
-    local page = index + 1
+    local page = LIB("catalog").nextIndex(index)
     local url = "https://yomou.syosetu.com/search.php?order=hyoka&p=" .. tostring(page) .. "&word=" .. url_encode(query)
     
     log_info("syosetu search: fetching " .. url)
@@ -100,9 +122,9 @@ end
 
 -- ── Детали книги ─────────────────────────────────────────────────────────────
 function getBookTitle(bookUrl)
-    local r = http_get(bookUrl, { headers = HEADERS })
-    if not r.success then return nil end
-    local el = html_select_first(r.body, ".p-novel__title")
+    local body = fetchPage(bookUrl)
+    if not body then return nil end
+    local el = html_select_first(body, ".p-novel__title")
     return el and string_trim(el.text) or nil
 end
 
@@ -111,11 +133,11 @@ function getBookCoverImageUrl(bookUrl)
 end
 
 function getBookDescription(bookUrl)
-    local r = http_get(bookUrl, { headers = HEADERS })
-    if not r.success then return nil end
-    local el = html_select_first(r.body, "#novel_ex")
+    local body = fetchPage(bookUrl)
+    if not body then return nil end
+    local el = html_select_first(body, "#novel_ex")
     if el and string_trim(el.text) ~= "" then return string_trim(el.text) end
-    el = html_select_first(r.body, ".p-novel__summary")
+    el = html_select_first(body, ".p-novel__summary")
     return el and string_trim(el.text) or nil
 end
 
@@ -123,18 +145,18 @@ end
 function getChapterList(bookUrl)
     bookUrl = bookUrl:gsub("/+$", "") .. "/"
     local chapters = {}
-    local r = http_get(bookUrl, { headers = HEADERS })
-    if not r.success then
+    local body = fetchPage(bookUrl)
+    if not body then
         log_error("syosetu getChapterList failed: " .. bookUrl)
         return {}
     end
 
     -- Проверка на однотомник
-    local hasText = html_select_first(r.body, ".p-novel__text")
-    local hasEplist = html_select_first(r.body, ".p-eplist")
+    local hasText = html_select_first(body, ".p-novel__text")
+    local hasEplist = html_select_first(body, ".p-eplist")
     
     if hasText and not hasEplist then
-        local titleEl = html_select_first(r.body, ".p-novel__title")
+        local titleEl = html_select_first(body, ".p-novel__title")
         local title = titleEl and string_trim(titleEl.text) or "Chapter 1"
         log_info("syosetu getChapterList: single-chapter novel")
         table.insert(chapters, { title = title, url = bookUrl })
@@ -143,7 +165,7 @@ function getChapterList(bookUrl)
 
     -- Пагинация
     local totalPages = 1
-    local lastLink = html_select_first(r.body, ".c-pager__item--last")
+    local lastLink = html_select_first(body, ".c-pager__item--last")
     if lastLink and lastLink.href then
         local p = string.match(lastLink.href, "p=(%d+)")
         if p then totalPages = tonumber(p) end
@@ -161,7 +183,7 @@ function getChapterList(bookUrl)
         end
     end
 
-    parsePage(r.body)
+    parsePage(body)
 
     for p = 2, totalPages do
         sleep(300)

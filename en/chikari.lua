@@ -1,7 +1,7 @@
 -- ── Метаданные ────────────────────────────────────────────────────────────────
 id       = "chikari"
 name     = "Chikari"
-version  = "1.0.9"
+version  = "1.0.10"
 baseUrl  = "https://chikari.moe/"
 language = "en"
 icon     = "https://raw.githubusercontent.com/HnDK0/external-sources/main/icons/chikari.png"
@@ -13,12 +13,26 @@ icon     = "https://raw.githubusercontent.com/HnDK0/external-sources/main/icons/
 
 -- ── Хелперы ───────────────────────────────────────────────────────────────────
 
-local function absUrl(href)
-  if not href or href == "" then return "" end
-  if string_starts_with(href, "http") then return href end
-  if string_starts_with(href, "//") then return "https:" .. href end
-  return url_resolve(baseUrl, href)
+-- Old builds ship no require_lib: keep the plugin loadable (a top-level error
+-- would drop it from the source list) and fail with a visible message on the
+-- first call instead. Shared libs load lazily and are cached per session.
+local _libs
+local function LIB(id)
+  if type(require_lib) ~= "function" then
+    show_error("Requires NoveLA update", "This plugin needs the shared libraries")
+    error("Requires NoveLA update (require_lib)", 0)
+  end
+  if not _libs then _libs = {} end
+  if not _libs[id] then _libs[id] = require_lib(id) end
+  return _libs[id]
 end
+
+local function absUrl(href)
+  return LIB("urls").absUrl(baseUrl, href)
+end
+
+-- Engine global url_encode delegates to the shared catalog lib.
+local url_encode = function(s) return LIB("catalog").urlEncode(s) end
 
 -- Chikari — SPA на SvelteKit; все /api/* — AJAX-эндпоинты. Чтобы Cloudflare и
 -- сервер трактовали запрос как легитимный браузерный fetch (а не бот-запрос,
@@ -279,9 +293,8 @@ end
 function getBookLastUpdate(bookUrl)
   local d = getDetail(bookUrl)
   if not d or not d.last_chapter_at then return nil end
-  local y, m, day = string.match(d.last_chapter_at, "(%d%d%d%d)%-(%d%d)%-(%d%d)")
-  if not y then return nil end
-  return y .. "-" .. m .. "-" .. day
+  -- ISO date from the API -> "YYYY-MM-DD" via the shared meta lib.
+  return LIB("meta").normalizeDate(d.last_chapter_at)
 end
 
 -- ── Список глав ────────────────────────────────────────────────────────────────

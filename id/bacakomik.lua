@@ -125,7 +125,7 @@ end
 -- ── Каталог ──
 
 function getCatalogList(index)
-    local page = index + 1
+    local page = LIB("catalog").nextIndex(index)
     local url
     if page == 1 then
         url = baseUrl .. "daftar-komik/"
@@ -210,7 +210,7 @@ function getFilterList()
 end
 
 function getCatalogFiltered(index, filters)
-    local page = index + 1
+    local page = LIB("catalog").nextIndex(index)
     local url
     if page == 1 then
         url = baseUrl .. "daftar-komik/?"

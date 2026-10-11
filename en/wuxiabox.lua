@@ -1,29 +1,37 @@
 id       = "wuxiabox"
 name     = "WuxiaBox"
-version  = "1.0.1"
+version  = "1.0.2"
 baseUrl  = "https://www.wuxiabox.com/"
 language = "en"
 icon     = "https://raw.githubusercontent.com/HnDK0/external-sources/main/icons/wuxiabox.png"
 
 -- ── Хелперы ──
 
--- Абсолютный URL из относительного (href из HTML).
-local function absUrl(href)
-	if href == "" then return "" end
-	if string_starts_with(href, "http") then return href end
-	if string_starts_with(href, "//") then return "https:" .. href end
-	return url_resolve(baseUrl, href)
+-- Old builds ship no require_lib: keep the plugin loadable (a top-level error
+-- would drop it from the source list) and fail with a visible message on the
+-- first call instead. Shared libs load lazily and are cached per session.
+local _libs
+local function LIB(id)
+	if type(require_lib) ~= "function" then
+		show_error("Requires NoveLA update", "This plugin needs the shared libraries")
+		error("Requires NoveLA update (require_lib)", 0)
+	end
+	if not _libs then _libs = {} end
+	if not _libs[id] then _libs[id] = require_lib(id) end
+	return _libs[id]
 end
 
--- Кэш страниц книги: движок вызывает функции деталей параллельно с одним URL,
--- поэтому хватает одну страницу и переиспользуем её.
-local _pageCache = {}
+-- Абсолютный URL из относительного (href из HTML) — shared urls lib.
+local function absUrl(href)
+	return LIB("urls").absUrl(baseUrl, href)
+end
 
+-- Engine global url_encode delegates to the shared catalog lib.
+local url_encode = function(s) return LIB("catalog").urlEncode(s) end
+
+-- Session-cached book page (shared fetch lib, same contract as before).
 local function fetchPage(url)
-	if _pageCache[url] then return _pageCache[url] end
-	local r = http_get(url)
-	if r.success then _pageCache[url] = r.body return r.body end
-	return nil
+	return LIB("fetch").page(url)
 end
 
 -- Стандартная очистка текста главы: нормализация, домен, дубль заголовка,
@@ -34,24 +42,6 @@ local function applyStandardContentTransforms(str)
 	str = regex_replace(str, "(?m)(?i)^\\s*(Chapter|Глава)\\s+\\d+[^\\n]*\\s*$", "")
 	str = regex_replace(str, "(?m)(?i)(\\n|^)\\s*(Translator|Editor|T/N|E/N|Перевод|Редакция)\\s*:\\s*[^\\n]*", "")
 	return string_trim(str)
-end
-
--- Относительная дата ("N days ago") -> YYYY-MM-DD (текущая дата минус N).
-local function normalizeUpdateDate(relative)
-	if not relative or relative == "" then return nil end
-	local n, unit = string.match(relative, "(%d+)%s+(%w+)%s+ago")
-	if not n then return nil end
-	local mult = {
-		minute = 60, minutes = 60,
-		hour = 3600, hours = 3600,
-		day = 86400, days = 86400,
-		week = 7 * 86400, weeks = 7 * 86400,
-		month = 30 * 86400, months = 30 * 86400,
-		year = 365 * 86400, years = 365 * 86400,
-	}
-	local secs = mult[unit]
-	if not secs then return nil end
-	return os.date("%Y-%m-%d", os.time() - n * secs)
 end
 
 -- Slug книги из bookUrl: имя файла без расширения .html.
@@ -84,7 +74,7 @@ end
 -- Есть ли следующая страница каталога (index с 0): ссылка на страницу index+2.
 local function hasNextCatalog(html, index)
 	local pageLinks = html_select(html, "ul.pagination a[href]")
-	local target = "-" .. tostring(index + 1) .. ".html"
+	local target = "-" .. tostring(LIB("catalog").nextIndex(index)) .. ".html"
 	for _, l in ipairs(pageLinks) do
 		if string_ends_with(l.href or "", target) then
 			return true
@@ -151,11 +141,9 @@ end
 function getBookGenres(bookUrl)
 	local html = fetchPage(bookUrl)
 	if not html then return nil end
+	-- trim + drop empties — shared meta lib; nil instead of {} as before.
 	local tags = html_select(html, ".categories ul li a.property-item")
-	local genres = {}
-	for _, t in ipairs(tags) do
-		table.insert(genres, string_clean(html_text(t.html)))
-	end
+	local genres = LIB("meta").collectGenres(tags)
 	return #genres > 0 and genres or nil
 end
 
@@ -176,8 +164,8 @@ function getBookLastUpdate(bookUrl)
 	local times = html_select(html, "ul.chapter-list time.chapter-update")
 	if #times == 0 then return nil end
 	local last = times[#times]
-	local rel = html_text(last.html)
-	return normalizeUpdateDate(rel)
+	-- Относительный формат "N days ago" парсится shared meta-библиотекой.
+	return LIB("meta").normalizeDate(html_text(last.html))
 end
 
 -- ── Список глав (parsePage, AJAX fy.php) ──

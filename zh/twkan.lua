@@ -1,35 +1,51 @@
 -- ── Метаданные ────────────────────────────────────────────────────────────────
 id       = "twkan"
 name     = "TWKan"
-version  = "1.0.1"
+version  = "1.0.2"
 baseUrl  = "https://twkan.com/"
 language = "zh"
 icon     = "https://raw.githubusercontent.com/HnDK0/external-sources/main/icons/twkan.png"
 
 -- ── Хелперы ───────────────────────────────────────────────────────────────────
 
-local function absUrl(href)
-  if not href or href == "" then return "" end
-  if string_starts_with(href, "http") then return href end
-  if string_starts_with(href, "//") then return "https:" .. href end
-  return url_resolve(baseUrl, href)
+-- Old builds ship no require_lib: keep the plugin loadable (a top-level error
+-- would drop it from the source list) and fail with a visible message on the
+-- first call instead. Shared libs load lazily and are cached per session.
+local _libs
+local function LIB(id)
+  if type(require_lib) ~= "function" then
+    show_error("Requires NoveLA update", "This plugin needs the shared libraries")
+    error("Requires NoveLA update (require_lib)", 0)
+  end
+  if not _libs then _libs = {} end
+  if not _libs[id] then _libs[id] = require_lib(id) end
+  return _libs[id]
 end
 
-local function applyStandardContentTransforms(text)
-  if not text or text == "" then return "" end
-  text = string_normalize(text)
-  local domain = baseUrl:gsub("https?://", ""):gsub("^www%.", ""):gsub("/$", "")
-  text = regex_replace(text, "(?i)" .. domain .. ".*?\\n", "")
-  text = regex_replace(text, "(?i)\\A[\\s\\p{Z}\\uFEFF]*((第[\\d一二三四五六七八九十百]+[章节]|Chapter\\s+\\d+|Глава\\s+\\d+)[^\\n\\r]*[\\n\\r\\s]*)+", "")
-  text = regex_replace(text, "(?im)^\\s*(翻译|译者|编辑|校对|更新|阅读|最新阅读)[:\\s：][^\\n\\r]{0,70}(\\r?\\n|$)", "")
-  text = string_trim(text)
-  return text
+local function absUrl(href)
+  return LIB("urls").absUrl(baseUrl, href)
 end
+
+-- Session-cached book page (shared fetch lib): the book details are read by
+-- several functions in one adapter run. getChapterListHash stays on a direct
+-- http_get — the hash must see a fresh page.
+local function fetchPage(url)
+  return LIB("fetch").page(url)
+end
+
+-- Standard chapter-text cleanup (domain lines, leading "第N章" heading,
+-- translator/editor credit lines) from the shared content lib.
+local function applyStandardContentTransforms(text)
+  return LIB("content").standardTransforms(text, { domain = baseUrl, lang = "zh" })
+end
+
+-- Engine global url_encode delegates to the shared catalog lib.
+local url_encode = function(s) return LIB("catalog").urlEncode(s) end
 
 -- ── Каталог ───────────────────────────────────────────────────────────────────
 
 function getCatalogList(index)
-  local page = index + 1
+  local page = LIB("catalog").nextIndex(index)
   local url
   if page == 1 then
     url = "https://twkan.com/novels/newhot_2_0_1.html"
@@ -53,13 +69,13 @@ function getCatalogList(index)
     end
   end
 
-  return { items = items, hasNext = #items > 0 }
+  return { items = items, hasNext = LIB("catalog").hasNextPage(items) }
 end
 
 -- ── Поиск ─────────────────────────────────────────────────────────────────────
 
 function getCatalogSearch(index, query)
-  local page = index + 1
+  local page = LIB("catalog").nextIndex(index)
   local encoded = url_encode(query)
   local url = "https://twkan.com/search/" .. encoded .. "/" .. tostring(page) .. ".html"
 
@@ -80,31 +96,31 @@ function getCatalogSearch(index, query)
     end
   end
 
-  return { items = items, hasNext = #items > 0 }
+  return { items = items, hasNext = LIB("catalog").hasNextPage(items) }
 end
 
 -- ── Детали книги ──────────────────────────────────────────────────────────────
 
 function getBookTitle(bookUrl)
-  local r = http_get(bookUrl)
-  if not r.success then return nil end
-  local el = html_select_first(r.body, "h1 a")
+  local body = fetchPage(bookUrl)
+  if not body then return nil end
+  local el = html_select_first(body, "h1 a")
   if el then return string_clean(el.text) end
   return nil
 end
 
 function getBookCoverImageUrl(bookUrl)
-  local r = http_get(bookUrl)
-  if not r.success then return nil end
-  local src = html_attr(r.body, ".bookimg2 img", "src")
+  local body = fetchPage(bookUrl)
+  if not body then return nil end
+  local src = html_attr(body, ".bookimg2 img", "src")
   if src ~= "" then return absUrl(src) end
   return nil
 end
 
 function getBookDescription(bookUrl)
-  local r = http_get(bookUrl)
-  if not r.success then return nil end
-  local el = html_select_first(r.body, "#tab_info .navtxt p")
+  local body = fetchPage(bookUrl)
+  if not body then return nil end
+  local el = html_select_first(body, "#tab_info .navtxt p")
   if el then return string_trim(el.text) end
   return nil
 end
@@ -113,9 +129,9 @@ end
 
 -- Статус книги — мета-тег og:novel:status (напр. «連載»).
 function getBookStatus(bookUrl)
-  local r = http_get(bookUrl)
-  if not r.success then return nil end
-  local s = html_attr(r.body, "meta[property='og:novel:status']", "content")
+  local body = fetchPage(bookUrl)
+  if not body then return nil end
+  local s = html_attr(body, "meta[property='og:novel:status']", "content")
   if s and s ~= "" then return s end
   return nil
 end
@@ -123,11 +139,11 @@ end
 -- Дата обновления — мета-тег og:novel:update_time (формат «YYYY-MM-DD» или
 -- «YYYY-MM-DD HH:MM:SS»). Берём только часть YYYY-MM-DD.
 function getBookLastUpdate(bookUrl)
-  local r = http_get(bookUrl)
-  if not r.success then return nil end
-  local dt = html_attr(r.body, "meta[property='og:novel:update_time']", "content")
+  local body = fetchPage(bookUrl)
+  if not body then return nil end
+  local dt = html_attr(body, "meta[property='og:novel:update_time']", "content")
   if dt and dt ~= "" then
-    local d = string.match(dt, "(%d%d%d%d%-%d%d%-%d%d)")
+    local d = LIB("meta").normalizeDate(dt)
     if d then return d end
   end
   return nil

@@ -3,7 +3,7 @@
 content_type = "video"
 id           = "anime4up"
 name         = "Anime4Up"
-version      = "1.1.0"
+version      = "1.1.1"
 baseUrl      = "https://w1.anime4up.rest"
 language     = "ar"
 icon         = "https://raw.githubusercontent.com/HnDK0/external-sources/refs/heads/main/icons/anime4up.png"
@@ -26,6 +26,9 @@ local function tryLib(name)
 end
 
 local URLS = tryLib("urls")
+local FETCH = tryLib("fetch")
+local CATALOG = tryLib("catalog")
+local SOURCES = tryLib("sources")
 local HLS = tryLib("hls")
 local OKRU = tryLib("okru")
 local DM = tryLib("dailymotion")
@@ -61,7 +64,8 @@ local function ensureEngine()
             "This plugin needs shared libraries (require_lib). Update the app to the latest version.")
         error("A newer version of the app is required: require_lib", 0)
     end
-    if not URLS or not HLS or not OKRU or not DM or not DOOD or not VOE or not SHARED
+    if not URLS or not FETCH or not CATALOG or not SOURCES
+        or not HLS or not OKRU or not DM or not DOOD or not VOE or not SHARED
         or not VIDBOM or not VIDEA or not UQLOAD or not MAILRU or not HGCLOUD or not SEEK then
         show_error("Libraries not loaded",
             "Open the extensions screen and tap update, then restart the app. " .. (libErr or ""))
@@ -72,15 +76,9 @@ end
 -- Путь каталога — байты из ссылок самого сайта (сегмент на арабском).
 local CATALOG_PATH = "/%d9%82%d8%a7%d8%a6%d9%85%d8%a9-%d8%a7%d9%84%d8%a7%d9%86%d9%85%d9%8a/"
 
--- Кэш страниц тайтлов (title/cover/description/genres — 4 вызова на одну загрузку).
-local _detailCache = {}
+-- Кэш страниц тайтлов ведёт общий fetch lib (4 detail-вызова на одну загрузку).
 
-local function absUrl(href)
-    if not href or href == "" then return "" end
-    if string_starts_with(href, "http") then return href end
-    if string_starts_with(href, "//") then return "https:" .. href end
-    return url_resolve(baseUrl, href)
-end
+local function absUrl(href) return URLS.absUrl(baseUrl, href) end
 
 local function catalogUrl(page)
     local url = baseUrl .. CATALOG_PATH
@@ -121,13 +119,13 @@ end
 
 function getCatalogList(index)
     ensureEngine()
-    return fetchList(catalogUrl(index + 1))
+    return fetchList(catalogUrl(CATALOG.nextIndex(index)))
 end
 
 function getCatalogSearch(index, query)
     ensureEngine()
     if index > 0 then return { items = {}, hasNext = false } end
-    return fetchList(baseUrl .. "/?search_param=animes&s=" .. url_encode(query))
+    return fetchList(baseUrl .. "/?search_param=animes&s=" .. CATALOG.urlEncode(query))
 end
 
 -- ============ Фильтры ============
@@ -235,7 +233,7 @@ end
 
 function getCatalogFiltered(index, filters)
     ensureEngine()
-    local page = index + 1
+    local page = CATALOG.nextIndex(index)
     -- Сайт умеет только один фильтр-путь за раз: берём первый выбранный.
     local path, slug
     for _, key in ipairs(FILTER_ORDER) do
@@ -249,7 +247,7 @@ function getCatalogFiltered(index, filters)
 
     local url
     if path then
-        url = baseUrl .. "/" .. path .. "/" .. url_encode(slug) .. "/"
+        url = baseUrl .. "/" .. path .. "/" .. CATALOG.urlEncode(slug) .. "/"
         -- Таксономии листаются query-параметром, не /page/N/.
         if page > 1 then url = url .. "?page=" .. page end
     else
@@ -261,13 +259,9 @@ end
 -- ============ Карточка тайтла ============
 
 local function fetchDetail(bookUrl)
-    local cached = _detailCache[bookUrl]
-    if cached then return cached end
-    local r = http_get(bookUrl)
-    if not r.success then return nil end
-    local detail = { body = r.body }
-    _detailCache[bookUrl] = detail
-    return detail
+    local body = FETCH.page(bookUrl)
+    if not body then return nil end
+    return { body = body }
 end
 
 function getBookTitle(bookUrl)
@@ -354,12 +348,9 @@ end
 
 -- ============ Потоки: резолверы хостов ============
 
+-- Дедупликация потоков по URL — общий sources lib.
 local function pushSource(list, seen, src)
-    if type(src) ~= "table" then return end
-    local url = src.url
-    if type(url) ~= "string" or url == "" or seen[url] then return end
-    seen[url] = true
-    list[#list + 1] = src
+    SOURCES.push(list, seen, src)
 end
 
 -- Хосты, которые никогда не дают прямую ссылку чистым HTTP либо висят до полного
@@ -426,10 +417,8 @@ local function directLinks(body)
     return out
 end
 
-local function hostLabel(link)
-    local host = link:match("^https?://([^/]+)") or link
-    return host:gsub("^www%.", "")
-end
+-- Имя хостера для UI — общий sources lib (host без "www.").
+local function hostLabel(link) return SOURCES.hostLabel(link) end
 
 -- ============ VOE (порт lib/voeextractor VoeExtractor.kt) ============
 -- Расшифровка и сбор кандидатов — общая либа voe (decodeJson: rot13 →

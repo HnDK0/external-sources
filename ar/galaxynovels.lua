@@ -1,26 +1,26 @@
 id       = "galaxynovels"
 name     = "Galaxy Novels"
-version  = "1.0.0"
+version  = "1.0.1"
 baseUrl  = "https://galaxynovels.com/"
 language = "ar"
 icon     = "https://raw.githubusercontent.com/HnDK0/external-sources/main/icons/galaxynovels.png"
 
 -- ── Хелперы ───────────────────────────────────────────────────────────────
 
-local _pageCache = {}
-local function fetchPage(url)
-    if _pageCache[url] then return _pageCache[url] end
-    local r = http_get(url)
-    if r.success then _pageCache[url] = r.body end
-    return r.success and r.body or nil
+-- Old builds ship no require_lib: keep the plugin loadable (a top-level
+-- error would drop it from the source list) and fail with a visible
+-- message on the first call instead. require_lib caches loaded libs.
+local function lib(id)
+    if type(require_lib) ~= "function" then
+        show_error("Требуется обновление NoveLA", "Плагину нужны общие библиотеки")
+        error("Требуется обновление NoveLA (require_lib)", 0)
+    end
+    return require_lib(id)
 end
 
-local function absUrl(href)
-    if not href or href == "" then return "" end
-    if string_starts_with(href, "http") then return href end
-    if string_starts_with(href, "//") then return "https:" .. href end
-    return url_resolve(baseUrl, href)
-end
+local function fetchPage(url) return lib("fetch").page(url) end
+
+local function absUrl(href) return lib("urls").absUrl(baseUrl, href) end
 
 -- Обложка: data-src (ленивая загрузка) или src.
 -- Атрибуты с дефисом (data-*) недоступны как поля элемента — берём через html_attr.
@@ -141,14 +141,14 @@ local function parseCatalog(html, page)
 end
 
 function getCatalogList(index)
-    local page = index + 1
+    local page = lib("catalog").nextIndex(index)
     local r = http_get(browseUrl(page, "popular", "month"))
     if not r.success then return { items = {}, hasNext = false } end
     return parseCatalog(r.body, page)
 end
 
 function getCatalogFiltered(index, filters)
-    local page = index + 1
+    local page = lib("catalog").nextIndex(index)
     local sort = filters and filters["sort"] or "popular"
     local period = filters and filters["period"] or "month"
     local r = http_get(browseUrl(page, sort, period))
@@ -161,7 +161,7 @@ end
 -- Фильтруем локально по заголовку/оригинальному названию/описанию.
 function getCatalogSearch(index, query)
     query = string_clean(query or ""):lower()
-    local page = index + 1
+    local page = lib("catalog").nextIndex(index)
     local manifestUrl = baseUrl .. "wp-content/uploads/wor-reader-cache/search/manifest.json"
     local rm = http_get(manifestUrl)
     if not rm.success then return { items = {}, hasNext = false } end
@@ -232,20 +232,16 @@ end
 function getBookGenres(bookUrl)
     local body = bookSelectors(bookUrl)
     if not body then return nil end
-    local genres = {}
-    for _, a in ipairs(html_select(body, "a.wor-tag-pill")) do
-        local g = string_clean(a.text)
-        if g ~= "" then table.insert(genres, g) end
-    end
-    return genres
+    return lib("meta").collectGenres(
+        html_select(body, "a.wor-tag-pill"), { clean = true })
 end
 
 function getBookRating(bookUrl)
     local body = bookSelectors(bookUrl)
     if not body then return nil end
     for _, el in ipairs(html_select(body, "[class*='rating']")) do
-        local m = el.text:match("(%d+%.?%d*)")
-        if m then return m end
+        local r = lib("meta").rating(el.text)
+        if r then return r end
     end
     return nil
 end
@@ -273,7 +269,8 @@ function getChapterList(bookUrl)
 end
 
 function getChapterListHash(bookUrl)
-    -- Прямой http_get (не fetchPage): хеш должен отражать актуальное состояние.
+    -- Манифест грузим напрямую (http_get, без кэша): хеш должен отражать
+    -- актуальное состояние. Кэшируемая страница книги на хеш не влияет.
     local body = fetchPage(bookUrl)
     if not body then return nil end
     local manifestUrl = html_attr(body, "[data-wor-chapters-container]", "data-manifest-url")

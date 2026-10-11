@@ -14,7 +14,7 @@
 
 id           = "tmohentai"
 name         = "TMOHentai"
-version      = "5.1.0"
+version      = "5.1.1"
 baseUrl      = "https://tmohentai.app"
 language     = "es"
 content_type = "manga"
@@ -25,24 +25,22 @@ referer      = "https://tmohentai.app/"
 -- FUNCIONES DE AYUDA (HELPERS)
 -- =====================================================================
 
-local function absUrl(href)
-    if not href or href == "" then return "" end
-    if string_starts_with(href, "http") then return href end
-    if string_starts_with(href, "//") then return "https:" .. href end
-    return url_resolve(baseUrl, href)
+-- Old builds ship no require_lib: keep the plugin loadable (a top-level
+-- error would drop it from the source list) and fail with a visible
+-- message on the first call instead. require_lib caches loaded libs.
+local function lib(id)
+    if type(require_lib) ~= "function" then
+        show_error("Se requiere actualizar NoveLA",
+            "Este plugin necesita las bibliotecas compartidas")
+        error("Se requiere actualizar NoveLA (require_lib)", 0)
+    end
+    return require_lib(id)
 end
 
-local _pageCache = {}
-local function fetchPage(url)
-    if _pageCache[url] then return _pageCache[url] end
-    local r = http_get(url)
-    if r.success then
-        _pageCache[url] = r.body
-        return r.body
-    end
-    log_error("TMOHentai: Error de red (HTTP " .. tostring(r.code) .. ") en " .. url)
-    return nil
-end
+local function absUrl(href) return lib("urls").absUrl(baseUrl, href) end
+
+-- Session cache in the shared fetch lib (it also logs the HTTP failure).
+local function fetchPage(url) return lib("fetch").page(url) end
 
 local function extractId(url)
     return url:match("/library/[^/]+/(%d+)") or url:match("/view_uploads/(%d+)")
@@ -83,19 +81,19 @@ local function parseCards(body)
 end
 
 function getCatalogList(index)
-    local page = index + 1
+    local page = lib("catalog").nextIndex(index)
     local url = baseUrl .. "/biblioteca?page=" .. page
     local r = http_get(url)
     if not r.success then return { items = {}, hasNext = false } end
 
     local items = parseCards(r.body)
-    local hasNext = #items > 0
+    local hasNext = lib("catalog").hasNextPage(items)
     return { items = items, hasNext = hasNext }
 end
 
 function getCatalogSearch(index, query)
     if index > 0 or not query or query == "" then return { items = {}, hasNext = false } end
-    local url = baseUrl .. "/biblioteca?search=" .. url_encode(query)
+    local url = baseUrl .. "/biblioteca?search=" .. lib("catalog").urlEncode(query)
     local r = http_get(url)
     if not r.success then return { items = {}, hasNext = false } end
     return { items = parseCards(r.body), hasNext = false }
@@ -353,7 +351,7 @@ local function followRedirect(doc, pageUrl)
         if action and obj then
             local parts = {}
             for k, val in obj:gmatch([=[([%w_]+)%s*:%s*"([^"]*)"]=]) do
-                table.insert(parts, k .. "=" .. url_encode(val))
+                table.insert(parts, k .. "=" .. lib("catalog").urlEncode(val))
             end
             if #parts > 0 then
                 local r = http_post(absUrl(action), table.concat(parts, "&"), opts)
@@ -551,24 +549,24 @@ end
 function getCatalogFiltered(index, filters)
     if type(filters) ~= "table" then filters = {} end
 
-    local page = index + 1
+    local page = lib("catalog").nextIndex(index)
     local query = "?page=" .. page
 
     local order = filters["order"]
     if type(order) == "string" and order ~= "" and order ~= "latest" then
-        query = query .. "&order=" .. url_encode(order)
+        query = query .. "&order=" .. lib("catalog").urlEncode(order)
     end
 
     local typeFilter = filters["type"]
     if type(typeFilter) == "string" and typeFilter ~= "" and typeFilter ~= "all" then
-        query = query .. "&type=" .. url_encode(typeFilter)
+        query = query .. "&type=" .. lib("catalog").urlEncode(typeFilter)
     end
 
     local genres = filters["genre_included"]
     if type(genres) == "table" then
         for _, g in ipairs(genres) do
             if type(g) == "string" and g ~= "" then
-                query = query .. "&tag=" .. url_encode(g:lower())
+                query = query .. "&tag=" .. lib("catalog").urlEncode(g:lower())
             end
         end
     end
@@ -580,6 +578,6 @@ function getCatalogFiltered(index, filters)
     if not r.success then return { items = {}, hasNext = false } end
 
     local items = parseCards(r.body)
-    local hasNext = #items > 0
+    local hasNext = lib("catalog").hasNextPage(items)
     return { items = items, hasNext = hasNext }
 end

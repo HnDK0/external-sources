@@ -1,7 +1,7 @@
 -- ── Метаданные ────────────────────────────────────────────────────────────────
 id       = "piaotia"
 name     = "PiaoTia"
-version = "1.0.2"
+version = "1.0.3"
 baseUrl  = "https://www.piaotia.com"
 language = "zh"
 charset  = "GBK"
@@ -9,11 +9,29 @@ icon     = "https://raw.githubusercontent.com/HnDK0/external-sources/main/icons/
 
 -- ── Хелперы ───────────────────────────────────────────────────────────────────
 
+-- Old builds ship no require_lib: keep the plugin loadable (a top-level error
+-- would drop it from the source list) and fail with a visible message on the
+-- first call instead. Shared libs load lazily and are cached per session.
+local _libs
+local function LIB(id)
+  if type(require_lib) ~= "function" then
+    show_error("Requires NoveLA update", "This plugin needs the shared libraries")
+    error("Requires NoveLA update (require_lib)", 0)
+  end
+  if not _libs then _libs = {} end
+  if not _libs[id] then _libs[id] = require_lib(id) end
+  return _libs[id]
+end
+
 local function absUrl(href)
-  if not href or href == "" then return "" end
-  if string_starts_with(href, "http") then return href end
-  if string_starts_with(href, "//") then return "https:" .. href end
-  return url_resolve(baseUrl, href)
+  return LIB("urls").absUrl(baseUrl, href)
+end
+
+-- Session-cached book page in GBK (shared fetch lib): the book details are
+-- read by several functions in one adapter run. getChapterListHash stays on a
+-- direct http_get — the hash must see a fresh page.
+local function fetchPage(url)
+  return LIB("fetch").page(url, { charset = "GBK" })
 end
 
 -- Строит URL обложки по паттерну: /FOLDERID/BOOKID/ или /FOLDERID/BOOKID.html
@@ -42,20 +60,20 @@ local function chapterListUrl(bookUrl)
   return bookUrl:gsub("/?$", "/")
 end
 
+-- Standard chapter-text cleanup (domain lines, leading "第N章" heading,
+-- translator/editor credit lines) from the shared content lib, plus the
+-- site-specific numeric "第N" heading that has no 章/节 suffix.
 local function applyStandardContentTransforms(text)
-  if not text or text == "" then return "" end
-  text = string_normalize(text)
-  local domain = baseUrl:gsub("https?://", ""):gsub("^www%.", ""):gsub("/$", "")
-  text = regex_replace(text, "(?i)" .. domain .. ".*?\\n", "")
+  text = LIB("content").standardTransforms(text, { domain = baseUrl, lang = "zh" })
+  if text == "" then return "" end
   text = regex_replace(text, "(?i)\\A[\\s\\p{Z}\\uFEFF]*((第\\s*\\d+|Chapter\\s+\\d+)[^\\n\\r]*[\\n\\r\\s]*)+", "")
-  text = string_trim(text)
-  return text
+  return string_trim(text)
 end
 
 -- ── Каталог ───────────────────────────────────────────────────────────────────
 
 function getCatalogList(index)
-  local page = index + 1
+  local page = LIB("catalog").nextIndex(index)
   local url = baseUrl .. "/modules/article/index.php?fullflag=1&page=" .. tostring(page)
 
   local r = http_get(url, { charset = "GBK" })
@@ -82,7 +100,7 @@ end
 -- ── Поиск (GET, GBK, редирект на книгу при единственном результате) ───────────
 
 function getCatalogSearch(index, query)
-  local page = index + 1
+  local page = LIB("catalog").nextIndex(index)
   local encoded = url_encode_charset(query, "GBK")
   -- %CB%D1+%CB%F7 = "搜 索" (кнопка Submit) в GBK
   local url = baseUrl .. "/modules/article/search.php?searchtype=articlename&searchkey=" .. encoded .. "&Submit=%CB%D1+%CB%F7&page=" .. tostring(page)
@@ -141,9 +159,9 @@ end
 -- ── Детали книги ──────────────────────────────────────────────────────────────
 
 function getBookTitle(bookUrl)
-  local r = http_get(bookUrl, { charset = "GBK" })
-  if not r.success then return nil end
-  local el = html_select_first(r.body, "div#content h1")
+  local body = fetchPage(bookUrl)
+  if not body then return nil end
+  local el = html_select_first(body, "div#content h1")
   if el then return string_clean(el.text) end
   return nil
 end
@@ -151,17 +169,17 @@ end
 function getBookCoverImageUrl(bookUrl)
   local cover = buildCoverUrl(bookUrl)
   if cover ~= "" then return cover end
-  local r = http_get(bookUrl, { charset = "GBK" })
-  if not r.success then return nil end
-  local src = html_attr(r.body, "div#content img", "src")
+  local body = fetchPage(bookUrl)
+  if not body then return nil end
+  local src = html_attr(body, "div#content img", "src")
   if src ~= "" then return absUrl(src) end
   return nil
 end
 
 function getBookDescription(bookUrl)
-  local r = http_get(bookUrl, { charset = "GBK" })
-  if not r.success then return nil end
-  local el = html_select_first(r.body, "div[style*='float:left']")
+  local body = fetchPage(bookUrl)
+  if not body then return nil end
+  local el = html_select_first(body, "div[style*='float:left']")
   if el then return string_trim(el.text) end
   return nil
 end
@@ -171,9 +189,9 @@ end
 -- Статус книги — текст ячейки <td>, содержащей «文章状态：...» (напр. «已完成»).
 -- Сайт в кодировке GBK — http_get с charset='GBK'. Проверено на живом сайте.
 function getBookStatus(bookUrl)
-  local r = http_get(bookUrl, { charset = 'GBK' })
-  if not r.success then return nil end
-  for _, td in ipairs(html_select(r.body, "td")) do
+  local body = fetchPage(bookUrl)
+  if not body then return nil end
+  for _, td in ipairs(html_select(body, "td")) do
     local t = string_clean(td.text)
     if string.find(t, "文章状态", 1, true) then
       local s = string.match(t, "文章状态[：:]%s*(%S+)")
@@ -185,12 +203,12 @@ end
 
 -- Дата обновления — ячейка <td> «最后更新：YYYY-MM-DD». Берём часть YYYY-MM-DD.
 function getBookLastUpdate(bookUrl)
-  local r = http_get(bookUrl, { charset = 'GBK' })
-  if not r.success then return nil end
-  for _, td in ipairs(html_select(r.body, "td")) do
+  local body = fetchPage(bookUrl)
+  if not body then return nil end
+  for _, td in ipairs(html_select(body, "td")) do
     local t = string_clean(td.text)
     if string.find(t, "最后更新", 1, true) then
-      local d = string.match(t, "(%d%d%d%d%-%d%d%-%d%d)")
+      local d = LIB("meta").normalizeDate(t)
       if d then return d end
     end
   end
@@ -210,15 +228,8 @@ function getChapterList(bookUrl)
 
   local chapters = {}
   for _, a in ipairs(html_select(r.body, "div.centent ul li a, div#content ul li a")) do
-    local href = a.href
-    local chUrl
-    if string_starts_with(href, "http") then
-      chUrl = href
-    elseif string_starts_with(href, "/") then
-      chUrl = baseUrl .. href
-    else
-      chUrl = url_resolve(listUrl, href)
-    end
+    -- http / protocol-relative / root-relative / relative — shared urls lib.
+    local chUrl = LIB("urls").absUrl(listUrl, a.href)
     if chUrl ~= "" then
       table.insert(chapters, {
         title = string_trim(a.text),

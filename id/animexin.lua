@@ -217,7 +217,7 @@ end
 function getCatalogFiltered(index, filters)
     ensureEngine()
     index = tonumber(index) or 0
-    local page = index + 1
+    local page = LIB("catalog").nextIndex(index)
     local params = { "page=" .. page }
     local genres = filters and filters["genre_included"] or {}
     if type(genres) == "table" then
@@ -253,7 +253,7 @@ function getCatalogSearch(index, query)
     local hasNext = string.find(body, 'class="next page-numbers"', 1, true) ~= nil
     -- На первой странице блок пагинации может отсутствовать (10 результатов
     -- ровно на страницу) — тогда пустой следующий запрос просто остановит цикл.
-    if not hasNext and index == 0 then hasNext = #items > 0 end
+    if not hasNext and index == 0 then hasNext = LIB("catalog").hasNextPage(items) end
     return { items = items, hasNext = hasNext }
 end
 

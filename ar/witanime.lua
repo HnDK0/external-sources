@@ -4,7 +4,7 @@
 content_type = "video"
 id           = "witanime"
 name         = "WitAnime"
-version      = "1.1.0"
+version      = "1.1.1"
 baseUrl      = "https://witanime.site"
 language     = "ar"
 icon         = "https://raw.githubusercontent.com/HnDK0/external-sources/refs/heads/main/icons/witanime.png"
@@ -28,6 +28,10 @@ local function tryLib(name)
 end
 
 local URLS = tryLib("urls")
+local FETCH = tryLib("fetch")
+local CATALOG = tryLib("catalog")
+local SOURCES = tryLib("sources")
+local META = tryLib("meta")
 local HLS = tryLib("hls")
 local OKRU = tryLib("okru")
 local DM = tryLib("dailymotion")
@@ -62,7 +66,8 @@ local function ensureEngine()
             "This plugin needs shared libraries (require_lib). Update the app to the latest version.")
         error("A newer version of the app is required: require_lib", 0)
     end
-    if not URLS or not HLS or not OKRU or not DM or not DOOD
+    if not URLS or not FETCH or not CATALOG or not SOURCES or not META
+        or not HLS or not OKRU or not DM or not DOOD
         or not VIDEA or not VIDBOM or not MAILRU or not HGCLOUD
         or not SORAPLAY or not DOTPLAY or not DROPBOX or not VIDEAS then
         show_error("Libraries not loaded",
@@ -73,12 +78,7 @@ end
 
 -- ============ Каталог ============
 
-local function absUrl(href)
-    if not href or href == "" then return "" end
-    if string_starts_with(href, "http") then return href end
-    if string_starts_with(href, "//") then return "https:" .. href end
-    return url_resolve(baseUrl, href)
-end
+local function absUrl(href) return URLS.absUrl(baseUrl, href) end
 
 local function headerValue(headers, name)
     local v = headers and (headers[name] or headers[string_lower(name)])
@@ -124,13 +124,13 @@ end
 
 function getCatalogList(index)
     ensureEngine()
-    return fetchList(browseUrl(index + 1))
+    return fetchList(browseUrl(CATALOG.nextIndex(index)))
 end
 
 function getCatalogSearch(index, query)
     ensureEngine()
     if not query or query == "" then return { items = {}, hasNext = false } end
-    return fetchList(browseUrl(index + 1, "search=" .. url_encode(query)))
+    return fetchList(browseUrl(CATALOG.nextIndex(index), "search=" .. CATALOG.urlEncode(query)))
 end
 
 -- ============ Фильтры ============
@@ -626,7 +626,7 @@ local function buildQuery(filters)
     for _, key in ipairs(FILTER_KEYS) do
         local v = filters[key]
         if type(v) == "string" and v ~= "" then
-            parts[#parts + 1] = key .. "=" .. url_encode(v)
+            parts[#parts + 1] = key .. "=" .. CATALOG.urlEncode(v)
         end
     end
     local genres = filters["genres_included"]
@@ -634,7 +634,7 @@ local function buildQuery(filters)
         for _, v in ipairs(genres) do
             if type(v) == "string" and v ~= "" then
                 -- сайт читает именно genres[]=value
-                parts[#parts + 1] = "genres%5B%5D=" .. url_encode(v)
+                parts[#parts + 1] = "genres%5B%5D=" .. CATALOG.urlEncode(v)
             end
         end
     end
@@ -643,21 +643,16 @@ end
 
 function getCatalogFiltered(index, filters)
     ensureEngine()
-    return fetchList(browseUrl(index + 1, buildQuery(filters)))
+    return fetchList(browseUrl(CATALOG.nextIndex(index), buildQuery(filters)))
 end
 
 -- ============ Карточка тайтла ============
 
-local _detailCache = {}
-
+-- Кэш страницы тайтла ведёт общий fetch lib (ключ — URL).
 local function fetchDetail(bookUrl)
-    local cached = _detailCache[bookUrl]
-    if cached then return cached end
-    local r = http_get(bookUrl)
-    if not r.success then return nil end
-    local detail = { body = r.body }
-    _detailCache[bookUrl] = detail
-    return detail
+    local body = FETCH.page(bookUrl)
+    if not body then return nil end
+    return { body = body }
 end
 
 -- Первый блок JSON-LD — TVSeries, второй — BreadcrumbList (его не берём).
@@ -722,15 +717,9 @@ function getBookGenres(bookUrl)
     local d = fetchDetail(bookUrl)
     if not d then return {} end
     local j = jsonLd(d)
-    local genres = {}
     local list = j and j.genre
-    if type(list) == "table" then
-        for _, g in ipairs(list) do
-            local t = string_clean(g)
-            if t ~= "" then genres[#genres + 1] = t end
-        end
-    end
-    return genres
+    if type(list) ~= "table" then return {} end
+    return META.collectGenres(list, { clean = true })
 end
 
 -- Рейтинг на сайте дан по шкале 10 — отдаём в формате "6.80/10".
@@ -1328,12 +1317,9 @@ end
 
 -- ============ Список потоков серии ============
 
+-- Дедупликация потоков по URL — общий sources lib.
 local function pushSource(list, seen, src)
-    if type(src) ~= "table" then return end
-    local url = src.url
-    if type(url) ~= "string" or url == "" or seen[url] then return end
-    seen[url] = true
-    list[#list + 1] = src
+    SOURCES.push(list, seen, src)
 end
 
 local function gateUrl(token, episodeUrl)

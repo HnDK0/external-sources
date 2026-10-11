@@ -1,6 +1,6 @@
 id       = "rewayatclub"
 name     = "Rewayat Club"
-version  = "1.0.0"
+version  = "1.0.1"
 baseUrl  = "https://api.rewayat.club/"
 language = "ar"
 icon     = "https://raw.githubusercontent.com/HnDK0/external-sources/main/icons/rewayatclub.png"
@@ -20,33 +20,34 @@ icon     = "https://raw.githubusercontent.com/HnDK0/external-sources/main/icons/
 
 local _api = "https://api.rewayat.club/api/"
 
--- Кэш деталей книги (движок вызывает функции деталей параллельно с одним URL).
-local _bookCache = {}
-
 -- ── Хелперы ───────────────────────────────────────────────────────────────────
 
-local function absUrl(href)
-    if not href or href == "" then return "" end
-    if string_starts_with(href, "http") then return href end
-    if string_starts_with(href, "//") then return "https:" .. href end
-    return url_resolve(baseUrl, href)
+-- Old builds ship no require_lib: keep the plugin loadable (a top-level
+-- error would drop it from the source list) and fail with a visible
+-- message on the first call instead. require_lib caches loaded libs.
+local function lib(id)
+    if type(require_lib) ~= "function" then
+        show_error("Требуется обновление NoveLA", "Плагину нужны общие библиотеки")
+        error("Требуется обновление NoveLA (require_lib)", 0)
+    end
+    return require_lib(id)
 end
 
 -- Обложка приходит относительной (/media/...), префиксим её полным хостом API.
 local function coverUrl(poster)
     if not poster or poster == "" then return nil end
-    if string_starts_with(poster, "http") then return poster end
-    return "https://api.rewayat.club" .. poster
+    return lib("urls").absUrl(baseUrl, poster)
 end
 
 -- GET JSON-эндпоинт, возвращает распарсенную таблицу или nil.
+-- Кэш ответов ведёт общий fetch lib (ключ — URL).
 local function apiGet(url)
-    local r = http_get(url)
-    if not r.success then
-        log_error("rewayatclub: http_get failed " .. url)
+    local body = lib("fetch").page(url)
+    if not body then
+        log_error("rewayatclub: fetch failed " .. url)
         return nil
     end
-    local ok, data = pcall(json_parse, r.body)
+    local ok, data = pcall(json_parse, body)
     if not ok or not data then
         log_error("rewayatclub: json_parse failed " .. url)
         return nil
@@ -54,12 +55,9 @@ local function apiGet(url)
     return data
 end
 
--- Детали книги с кэшем (ключ — сам URL API-детали = bookUrl).
+-- Детали книги (bookUrl = URL API-детали, кэш — на стороне fetch lib).
 local function bookDetails(bookUrl)
-    if _bookCache[bookUrl] then return _bookCache[bookUrl] end
-    local data = apiGet(bookUrl)
-    if data then _bookCache[bookUrl] = data end
-    return data
+    return apiGet(bookUrl)
 end
 
 -- Строит запрос списка новелл с фильтрами.
@@ -68,7 +66,7 @@ local function browseUrl(page, sort, ftype, query)
         .. "&ordering=" .. (sort or "-num_chapters")
         .. "&page=" .. page
     if query and query ~= "" then
-        url = url .. "&search=" .. url_encode(query)
+        url = url .. "&search=" .. lib("catalog").urlEncode(query)
     end
     return url
 end
@@ -98,11 +96,11 @@ end
 -- ── Каталог ───────────────────────────────────────────────────────────────────
 
 function getCatalogList(index)
-    return parseNovels(browseUrl(index + 1, "-num_chapters", "0", nil))
+    return parseNovels(browseUrl(lib("catalog").nextIndex(index), "-num_chapters", "0", nil))
 end
 
 function getCatalogSearch(index, query)
-    return parseNovels(browseUrl(index + 1, "-num_chapters", "0", query))
+    return parseNovels(browseUrl(lib("catalog").nextIndex(index), "-num_chapters", "0", query))
 end
 
 -- ── Фильтры ───────────────────────────────────────────────────────────────────
@@ -137,7 +135,7 @@ function getFilterList()
 end
 
 function getCatalogFiltered(index, filters)
-    local page  = index + 1
+    local page  = lib("catalog").nextIndex(index)
     local ftype = filters["type"] or "0"
     local sort  = filters["sort"] or "-num_chapters"
     return parseNovels(browseUrl(page, sort, ftype, nil))

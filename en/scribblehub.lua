@@ -1,35 +1,47 @@
 -- ── Метаданные ────────────────────────────────────────────────────────────────
 id       = "scribblehub"
 name     = "ScribbleHub"
-version  = "1.0.5"
+version  = "1.0.6"
 baseUrl  = "https://www.scribblehub.com/"
 language = "en"
 icon     = "https://raw.githubusercontent.com/HnDK0/external-sources/main/icons/scribblehub.png"
 
 -- ── Хелперы ───────────────────────────────────────────────────────────────────
 
-local function absUrl(href)
-  if not href or href == "" then return "" end
-  if string_starts_with(href, "http") then return href end
-  if string_starts_with(href, "//") then return "https:" .. href end
-  return url_resolve(baseUrl, href)
+-- Old builds ship no require_lib: keep the plugin loadable (a top-level error
+-- would drop it from the source list) and fail with a visible message on the
+-- first call instead. Shared libs load lazily and are cached per session.
+local _libs
+local function LIB(id)
+  if type(require_lib) ~= "function" then
+    show_error("Requires NoveLA update", "This plugin needs the shared libraries")
+    error("Requires NoveLA update (require_lib)", 0)
+  end
+  if not _libs then _libs = {} end
+  if not _libs[id] then _libs[id] = require_lib(id) end
+  return _libs[id]
 end
 
+local function absUrl(href)
+  return LIB("urls").absUrl(baseUrl, href)
+end
+
+-- Engine global url_encode delegates to the shared catalog lib.
+local url_encode = function(s) return LIB("catalog").urlEncode(s) end
+
+-- Standard chapter-text cleanup from the shared content lib; the local copy
+-- also stripped leading "Глава N" headers — kept as a site-specific extra.
 local function applyStandardContentTransforms(text)
-  if not text or text == "" then return "" end
-  text = string_normalize(text)
-  local domain = baseUrl:gsub("https?://", ""):gsub("^www%.", ""):gsub("/$", "")
-  text = regex_replace(text, "(?i)" .. domain .. ".*?\\n", "")
-  text = regex_replace(text, "(?i)\\A[\\s\\p{Z}\\uFEFF]*((Глава\\s+\\d+|Chapter\\s+\\d+)[^\\n\\r]*[\\n\\r\\s]*)+", "")
-  text = regex_replace(text, "(?im)^\\s*(Translator|Editor|Proofreader|Read\\s+(at|on|latest))[:\\s][^\\n\\r]{0,70}(\\r?\\n|$)", "")
-  text = string_trim(text)
-  return text
+  text = LIB("content").standardTransforms(text, { domain = baseUrl, lang = "en" })
+  if text == "" then return "" end
+  text = regex_replace(text, "(?i)\\A[\\s\\p{Z}\\uFEFF]*((Глава\\s+\\d+)[^\\n\\r]*[\\n\\r\\s]*)+", "")
+  return string_trim(text)
 end
 
 -- ── Каталог ───────────────────────────────────────────────────────────────────
 
 function getCatalogList(index)
-  local page = index + 1
+  local page = LIB("catalog").nextIndex(index)
   local url = baseUrl .. "series-ranking/?sort=1&order=2&pg=" .. tostring(page)
 
   local r = http_get(url)
@@ -48,7 +60,7 @@ function getCatalogList(index)
     end
   end
 
-  return { items = items, hasNext = #items > 0 }
+  return { items = items, hasNext = LIB("catalog").hasNextPage(items) }
 end
 
 -- ── Поиск ─────────────────────────────────────────────────────────────────────
@@ -59,7 +71,7 @@ end
 -- серий на страницу, пагинация через pg=).
 
 function getCatalogSearch(index, query)
-  local page = index + 1
+  local page = LIB("catalog").nextIndex(index)
   local url = baseUrl .. "series-finder/?sf=1&sh=" .. url_encode(query) ..
               "&sort=ratings&order=desc&pg=" .. tostring(page)
 
@@ -79,7 +91,7 @@ function getCatalogSearch(index, query)
     end
   end
 
-  return { items = items, hasNext = #items > 0 }
+  return { items = items, hasNext = LIB("catalog").hasNextPage(items) }
 end
 
 -- ── Детали книги ──────────────────────────────────────────────────────────────
@@ -176,12 +188,8 @@ function getBookGenres(bookUrl)
   local r = http_get(bookUrl)
   if not r.success then return {} end
 
-  local genres = {}
-  for _, a in ipairs(html_select(r.body, ".fic_genre")) do
-    local label = string_trim(a.text)
-    if label ~= "" then table.insert(genres, label) end
-  end
-  return genres
+  -- trim + drop empties — shared meta lib (site order kept).
+  return LIB("meta").collectGenres(html_select(r.body, ".fic_genre"))
 end
 
 -- ── Статус и дата обновления ──────────────────────────────────────────────────
@@ -216,7 +224,7 @@ function getBookStatus(bookUrl)
   local txt = string_clean(el.text)
   local status = string.match(txt, "^(.-)%s*%-%s*Updated")
   if not status then return nil end
-  return string_clean(status)
+  return LIB("meta").status(status)
 end
 
 -- Дата обновления живёт в том же внешнем <span>, что и статус (сосед
@@ -354,7 +362,7 @@ end
 -- ── Каталог с фильтрами ───────────────────────────────────────────────────────
 
 function getCatalogFiltered(index, filters)
-  local page    = index + 1
+  local page    = LIB("catalog").nextIndex(index)
   local sort    = filters["sort"]          or "ratings"
   local order   = filters["order"]         or "desc"
   local status  = filters["storyStatus"]   or "all"
@@ -405,5 +413,5 @@ function getCatalogFiltered(index, filters)
     end
   end
 
-  return { items = items, hasNext = #items > 0 }
+  return { items = items, hasNext = LIB("catalog").hasNextPage(items) }
 end

@@ -10,19 +10,25 @@
 content_type = "video"
 id           = "anime3rb"
 name         = "Anime3rb"
-version      = "1.1.0"
+version      = "1.1.1"
 baseUrl      = "https://anime3rb.com"
 language     = "ar"
 icon         = "https://raw.githubusercontent.com/HnDK0/external-sources/refs/heads/main/icons/anime3rb.png"
 
+-- Old builds ship no require_lib: keep the plugin loadable (a top-level
+-- error would drop it from the source list) and fail with a visible
+-- message on the first call instead. require_lib caches loaded libs.
+local function lib(id)
+    if type(require_lib) ~= "function" then
+        show_error("Требуется обновление NoveLA", "Плагину нужны общие библиотеки")
+        error("Требуется обновление NoveLA (require_lib)", 0)
+    end
+    return require_lib(id)
+end
+
 -- ============ Каталог ============
 
-local function absUrl(href)
-    if not href or href == "" then return "" end
-    if string_starts_with(href, "http") then return href end
-    if string_starts_with(href, "//") then return "https:" .. href end
-    return url_resolve(baseUrl, href)
-end
+local function absUrl(href) return lib("urls").absUrl(baseUrl, href) end
 
 -- Рейтинг карточки лежит в span.badge.gap-1 рядом с sr-only «التقييم»;
 -- шкала сайта — 10, отдаём в формате, понятном приложению.
@@ -67,18 +73,18 @@ local function fetchList(url)
         return { items = {}, hasNext = false }
     end
     local items = parseCards(r.body)
-    return { items = items, hasNext = #items > 0 }
+    return { items = items, hasNext = lib("catalog").hasNextPage(items) }
 end
 
 -- Серверная постраничка: 20 карточек на страницу, 321 страница.
 function getCatalogList(index)
-    return fetchList(baseUrl .. "/titles/list?page=" .. (index + 1))
+    return fetchList(baseUrl .. "/titles/list?page=" .. (lib("catalog").nextIndex(index)))
 end
 
 -- Поиск пагинируется тем же ?page=N (сверено живьём: страницы 1 и 2 не пересекаются).
 function getCatalogSearch(index, query)
-    local url = baseUrl .. "/search?q=" .. url_encode(query)
-    if index > 0 then url = url .. "&page=" .. (index + 1) end
+    local url = baseUrl .. "/search?q=" .. lib("catalog").urlEncode(query)
+    if index > 0 then url = url .. "&page=" .. (lib("catalog").nextIndex(index)) end
     return fetchList(url)
 end
 
@@ -203,11 +209,11 @@ end
 -- videos=12-13 → только 12-13 серий); ?page=N с фильтрами работает;
 -- неизвестный слаг age даёт пустую выдачу (фильтр применяется строго).
 function getCatalogFiltered(index, filters)
-    local url = baseUrl .. "/titles/list?page=" .. (index + 1)
+    local url = baseUrl .. "/titles/list?page=" .. (lib("catalog").nextIndex(index))
 
     local function add(key, value)
         if value and value ~= "" then
-            url = url .. "&" .. key .. "=" .. url_encode(value)
+            url = url .. "&" .. key .. "=" .. lib("catalog").urlEncode(value)
         end
     end
 
@@ -230,20 +236,10 @@ end
 -- ============ Карточка тайтла ============
 
 -- Страницу /titles/{slug}/ читают title/cover/description/genres/status/rating —
--- один HTTP-запрос на сеанс (см. гайд «Кэширование страниц»).
+-- один HTTP-запрос на сеанс (кэш в общем fetch lib).
 -- getChapterList и getChapterListHash ей НЕ пользуются: свои запросы должны
 -- оставаться свежими.
-local _pageCache = {}
-
-local function fetchPage(url)
-    if _pageCache[url] then return _pageCache[url] end
-    local r = http_get(url)
-    if r.success then
-        _pageCache[url] = r.body
-        return r.body
-    end
-    return nil
-end
+local function fetchPage(url) return lib("fetch").page(url) end
 
 function getBookTitle(bookUrl)
     local body = fetchPage(bookUrl)
@@ -399,12 +395,10 @@ end
 -- SKIP_HOSTS/список хостов не нужен: эмбед-хостов на сайте нет, легальный
 -- путь один (video.vid3rb.com), лишние URL отсекает сам regex.
 
+-- Дедупликация потоков по URL — общий sources lib (без SKIP-списка:
+-- эмбед-хостов на сайте нет, легальный путь один — video.vid3rb.com).
 local function pushSource(list, seen, src)
-    if type(src) ~= "table" then return end
-    local url = src.url
-    if type(url) ~= "string" or url == "" or seen[url] then return end
-    seen[url] = true
-    list[#list + 1] = src
+    lib("sources").push(list, seen, src)
 end
 
 -- wire:snapshot — это JSON, HTML-экранированный (&quot;) плюс экранирование

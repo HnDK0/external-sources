@@ -186,7 +186,7 @@
 -- collides with this one because sources resolve by baseUrl.
 id       = "novel543"
 name     = "Novel543"
-version  = "1.0.4"
+version  = "1.0.5"
 baseUrl  = "https://www.novel543.com/"
 language = "zh"
 icon     = "https://raw.githubusercontent.com/HnDK0/external-sources/main/icons/novel543.png"
@@ -197,6 +197,20 @@ local PREF_TLANG   = "novel543_tlang"    -- target language code, default "en"
 local PREF_TR_CH   = "novel543_tr_chapters" -- "1" | "0" (translate chapter titles)
 
 local SITE = "https://www.novel543.com"
+
+-- Old builds ship no require_lib: keep the plugin loadable (a top-level error
+-- would drop it from the source list) and fail with a visible message on the
+-- first call instead. Shared libs load lazily and are cached per session.
+local _libs
+local function LIB(id)
+  if type(require_lib) ~= "function" then
+    show_error("Requires NoveLA update", "This plugin needs the shared libraries")
+    error("Requires NoveLA update (require_lib)", 0)
+  end
+  if not _libs then _libs = {} end
+  if not _libs[id] then _libs[id] = require_lib(id) end
+  return _libs[id]
+end
 
 -- ── Site taxonomy (all verified live 2026-08-28) ────────────────────────────
 
@@ -403,11 +417,11 @@ local STATIC_EN = {
 -- ── Generic helpers ──────────────────────────────────────────────────────────
 
 local function absUrl(href)
-  if not href or href == "" then return "" end
-  if string_starts_with(href, "http") then return href end
-  if string_starts_with(href, "//") then return "https:" .. href end
-  return url_resolve(baseUrl, href)
+  return LIB("urls").absUrl(baseUrl, href)
 end
+
+-- Engine global url_encode delegates to the shared catalog lib.
+local url_encode = function(s) return LIB("catalog").urlEncode(s) end
 
 -- True when the string contains CJK ideographs (UTF-8 lead bytes E4-E9 cover
 -- U+3000–U+9FFF). Used to decide whether a search query needs translating.
@@ -996,7 +1010,7 @@ function getCatalogList(index)
   -- Fresh unfiltered session → the sheet must mirror the bookstack page it
   -- is about to show (page-scoped filters).
   currentSurface = "bookstack"
-  local url = SITE .. "/bookstack/?page=" .. tostring(index + 1)
+  local url = SITE .. "/bookstack/?page=" .. tostring(LIB("catalog").nextIndex(index))
   local res = parseListPage(httpGetFollow(url))
   translateCatalogItems(res.items)
   return res
@@ -1037,7 +1051,7 @@ end
 --   shudan:    /shudan/[boy|girl/][new|fav|commend/]?page=N
 function getCatalogFiltered(index, filters)
   filters = filters or {}
-  local page   = index + 1
+  local page   = LIB("catalog").nextIndex(index)
   local browse = filters["browse"] or "bookstack"
   if browse ~= "bookstack" and browse ~= "ranking" and browse ~= "shudan" and browse ~= "selftest" then
     browse = "bookstack"
@@ -1370,7 +1384,7 @@ function getBookLastUpdate(bookUrl)
   if isShudanUrl(bookUrl) then
     local meta = html_select_first(r.body, "p.meta")
     if meta then
-      local dt = string.match(meta.text or "", "(%d%d%d%d%-%d%d%-%d%d)")
+      local dt = LIB("meta").normalizeDate(meta.text or "")
       if dt then return dt end
     end
     return nil
@@ -1378,7 +1392,7 @@ function getBookLastUpdate(bookUrl)
 
   local dt = html_attr(r.body, "meta[name='og:novel:update_time']", "content")
   if dt and dt ~= "" then
-    local d = string.match(dt, "(%d%d%d%d%-%d%d%-%d%d)")
+    local d = LIB("meta").normalizeDate(dt)
     if d then return d end
   end
   return nil

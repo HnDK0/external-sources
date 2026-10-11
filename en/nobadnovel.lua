@@ -1,29 +1,38 @@
 -- ── Метаданные ────────────────────────────────────────────────────────────────
 id       = "nobadnovel"
 name     = "NoBadNovel"
-version  = "1.0.1"
+version  = "1.0.2"
 baseUrl  = "https://www.nobadnovel.com/"
 language = "en"
 icon     = "https://raw.githubusercontent.com/HnDK0/external-sources/main/icons/nobadnovel.png"
 
 -- ── Хелперы ───────────────────────────────────────────────────────────────────
 
-local function absUrl(href)
-  if not href or href == "" then return "" end
-  if string_starts_with(href, "http") then return href end
-  if string_starts_with(href, "//") then return "https:" .. href end
-  return url_resolve(baseUrl, href)
+-- Old builds ship no require_lib: keep the plugin loadable (a top-level error
+-- would drop it from the source list) and fail with a visible message on the
+-- first call instead. Shared libs load lazily and are cached per session.
+local _libs
+local function LIB(id)
+  if type(require_lib) ~= "function" then
+    show_error("Requires NoveLA update", "This plugin needs the shared libraries")
+    error("Requires NoveLA update (require_lib)", 0)
+  end
+  if not _libs then _libs = {} end
+  if not _libs[id] then _libs[id] = require_lib(id) end
+  return _libs[id]
 end
 
+local function absUrl(href)
+  return LIB("urls").absUrl(baseUrl, href)
+end
+
+-- Engine global url_encode delegates to the shared catalog lib.
+local url_encode = function(s) return LIB("catalog").urlEncode(s) end
+
+-- Standard chapter-text cleanup (domain lines, leading "Chapter N" heading,
+-- translator/editor credit lines) from the shared content lib.
 local function applyStandardContentTransforms(text)
-  if not text or text == "" then return "" end
-  text = string_normalize(text)
-  local domain = baseUrl:gsub("https?://", ""):gsub("^www%.", ""):gsub("/$", "")
-  text = regex_replace(text, "(?i)" .. domain .. ".*?\\n", "")
-  text = regex_replace(text, "(?i)\\A[\\s\\p{Z}\\uFEFF]*((Глава\\s+\\d+|Chapter\\s+\\d+)[^\\n\\r]*[\\n\\r\\s]*)+", "")
-  text = regex_replace(text, "(?im)^\\s*(Translator|Editor|Proofreader|Read\\s+(at|on|latest))[:\\s][^\\n\\r]{0,70}(\\r?\\n|$)", "")
-  text = string_trim(text)
-  return text
+  return LIB("content").standardTransforms(text, { domain = baseUrl, lang = "en" })
 end
 
 -- ── Каталог ───────────────────────────────────────────────────────────────────
@@ -33,7 +42,7 @@ function getCatalogList(index)
   if index == 0 then
     url = baseUrl .. "series"
   else
-    url = baseUrl .. "series/page/" .. tostring(index + 1)
+    url = baseUrl .. "series/page/" .. tostring(LIB("catalog").nextIndex(index))
   end
 
   local r = http_get(url)
@@ -53,7 +62,7 @@ function getCatalogList(index)
     end
   end
 
-  return { items = items, hasNext = #items > 0 }
+  return { items = items, hasNext = LIB("catalog").hasNextPage(items) }
 end
 
 -- ── Поиск ─────────────────────────────────────────────────────────────────────
@@ -63,7 +72,7 @@ function getCatalogSearch(index, query)
   if index == 0 then
     url = baseUrl:gsub("/$", "") .. "/series?keyword=" .. url_encode(query)
   else
-    url = baseUrl:gsub("/$", "") .. "/series/page/" .. tostring(index + 1) .. "?keyword=" .. url_encode(query)
+    url = baseUrl:gsub("/$", "") .. "/series/page/" .. tostring(LIB("catalog").nextIndex(index)) .. "?keyword=" .. url_encode(query)
   end
 
   local r = http_get(url)
@@ -83,31 +92,38 @@ function getCatalogSearch(index, query)
     end
   end
 
-  return { items = items, hasNext = #items > 0 }
+  return { items = items, hasNext = LIB("catalog").hasNextPage(items) }
 end
 
 -- ── Детали книги ──────────────────────────────────────────────────────────────
+-- Session-cached page fetch (shared fetch lib): the engine calls the detail
+-- functions in parallel with the same bookUrl. getChapterList /
+-- getChapterListHash stay on a direct http_get — they must see fresh HTML.
+
+local function fetchPage(url)
+  return LIB("fetch").page(url)
+end
 
 function getBookTitle(bookUrl)
-  local r = http_get(bookUrl)
-  if not r.success then return nil end
-  local el = html_select_first(r.body, "h1")
+  local body = fetchPage(bookUrl)
+  if not body then return nil end
+  local el = html_select_first(body, "h1")
   if el then return string_clean(el.text) end
   return nil
 end
 
 function getBookCoverImageUrl(bookUrl)
-  local r = http_get(bookUrl)
-  if not r.success then return nil end
-  local el = html_select_first(r.body, "img[src*=cdn.nobadnovel]")
+  local body = fetchPage(bookUrl)
+  if not body then return nil end
+  local el = html_select_first(body, "img[src*=cdn.nobadnovel]")
   if el then return absUrl(el.src) end
   return nil
 end
 
 function getBookDescription(bookUrl)
-  local r = http_get(bookUrl)
-  if not r.success then return nil end
-  local el = html_select_first(r.body, "#intro .content")
+  local body = fetchPage(bookUrl)
+  if not body then return nil end
+  local el = html_select_first(body, "#intro .content")
   if el then return string_trim(el.text) end
   return nil
 end
@@ -115,10 +131,10 @@ end
 -- ── Статус ─────────────────────────────────────────────────────────────────────
 
 function getBookStatus(bookUrl)
-  local r = http_get(bookUrl)
-  if not r.success then return nil end
-  local el = html_select_first(r.body, "div.badge")
-  if el then return string_clean(el.text) end
+  local body = fetchPage(bookUrl)
+  if not body then return nil end
+  local el = html_select_first(body, "div.badge")
+  if el then return LIB("meta").status(el.text) end
   return nil
 end
 

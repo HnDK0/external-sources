@@ -26,11 +26,11 @@
 
 id           = "latanime"
 name         = "Latanime"
-version      = "2.3.1"
+version      = "2.3.2"
 baseUrl      = "https://latanime.org"
 language     = "es"
 content_type = "video"
-libs         = { "urls", "embeds" }
+libs         = { "urls", "embeds", "fetch", "catalog", "meta" }
 icon         = "https://raw.githubusercontent.com/HnDK0/external-sources/main/icons/latanime.png"
 
 -- Таймауты: страницы сайта и эмбеды (сеть в эмуляторе без таймаута зависала).
@@ -63,6 +63,9 @@ end
 
 local COMMON   = tryLib("urls")
 local EMBS     = tryLib("embeds")
+local FETCH    = tryLib("fetch")
+local CATLIB   = tryLib("catalog")
+local META     = tryLib("meta")
 
 local function ensureLibs()
     if not HAS_LIBS then
@@ -81,7 +84,7 @@ local function ensureLibs()
         show_error("Se requiere actualizar NoveLA", "Este complemento necesita funciones nuevas (unpack_packed). Actualice la aplicación a la última versión.")
         error("Se requiere una versión más reciente de la aplicación: unpack_packed", 0)
     end
-    if not COMMON or not EMBS then
+    if not COMMON or not EMBS or not FETCH or not CATLIB or not META then
         show_error("Bibliotecas no cargadas", "Abra la pantalla de extensiones y pulse actualizar; después reinicie la aplicación. " .. (libErr or ""))
         error("Bibliotecas comunes no cargadas", 0)
     end
@@ -91,13 +94,7 @@ end
 -- FUNCIONES DE AYUDA (HELPERS)
 -- =====================================================================
 
-local function absUrl(href)
-    if not href or href == "" then return "" end
-    if href:sub(1, 2) == "//" then return "https:" .. href end
-    if href:find("^https?://") then return href end
-    if href:sub(1, 1) == "/" then return baseUrl .. href end
-    return baseUrl .. "/" .. href
-end
+local function absUrl(href) return COMMON.absUrl(baseUrl, href) end
 
 local function cleanText(text)
     if not text then return "" end
@@ -119,16 +116,10 @@ local function urlEncode(str)
 end
 local url_encode = urlEncode
 
-local _pageCache = {}
+-- Session cache in the shared fetch lib (it also logs the HTTP failure);
+-- the site timeout stays here.
 local function fetchPage(url)
-    if _pageCache[url] then return _pageCache[url] end
-    local r = http_get(url, { timeout = PAGE_TIMEOUT })
-    if r.success then
-        _pageCache[url] = r.body
-        return r.body
-    end
-    log_error("Latanime: Error de red (HTTP " .. tostring(r.code) .. ") en " .. url)
-    return nil
+    return FETCH.page(url, { timeout = PAGE_TIMEOUT })
 end
 
 -- =====================================================================
@@ -159,7 +150,7 @@ end
 
 function getCatalogList(index)
     ensureLibs()
-    local page = index + 1
+    local page = CATLIB.nextIndex(index)
     local url = baseUrl .. "/animes?p=" .. page
     local r = http_get(url, { timeout = PAGE_TIMEOUT })
     if not r.success then return { items = {}, hasNext = false } end
@@ -215,15 +206,12 @@ function getBookGenres(bookUrl)
     ensureLibs()
     local body = fetchPage(bookUrl)
     if not body then return {} end
-    local genres = {}
+    local divs = {}
     for _, a in ipairs(html_select(body, 'a[href*="/genero/"]')) do
         local div = html_select_first(a.html, "div.btn")
-        if div then
-            local g = string_clean(div.text)
-            if g ~= "" then table.insert(genres, g) end
-        end
+        if div then divs[#divs + 1] = div end
     end
-    return genres
+    return META.collectGenres(divs, { clean = true })
 end
 
 function getBookStatus(bookUrl)
@@ -231,7 +219,7 @@ function getBookStatus(bookUrl)
     local body = fetchPage(bookUrl)
     if not body then return nil end
     local el = html_select_first(body, "span.btn-estado")
-    return el and string_clean(el.text) or nil
+    return el and META.status(el.text) or nil
 end
 
 -- =====================================================================
@@ -462,7 +450,7 @@ function getCatalogFiltered(index, filters)
         query = query .. "&genero=false"
     end
 
-    local page = index + 1
+    local page = CATLIB.nextIndex(index)
     local url = baseUrl .. "/animes" .. query .. "&p=" .. page
     local r = http_get(url, { timeout = PAGE_TIMEOUT })
     if not r.success then return { items = {}, hasNext = false } end

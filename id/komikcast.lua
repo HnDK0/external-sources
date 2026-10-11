@@ -50,7 +50,7 @@ end
 -- ── Каталог ──
 
 function getCatalogList(index)
-    local page = index + 1
+    local page = LIB("catalog").nextIndex(index)
     local url = baseUrl .. "explore?page=" .. page
 
     local r = http_get(url)
@@ -184,7 +184,7 @@ function getFilterList()
 end
 
 function getCatalogFiltered(index, filters)
-    local page = index + 1
+    local page = LIB("catalog").nextIndex(index)
     local url = baseUrl .. "explore?page=" .. page
 
     local params = {}

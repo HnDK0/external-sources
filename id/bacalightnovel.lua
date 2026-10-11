@@ -73,7 +73,7 @@ function getCatalogList(index)
   if not r.success then return { items = {}, hasNext = false } end
 
   local items = parseCatalogItems(r.body, true)
-  return { items = items, hasNext = #items > 0 }
+  return { items = items, hasNext = LIB("catalog").hasNextPage(items) }
 end
 
 -- ── Поиск ─────────────────────────────────────────────────────────────────────
@@ -90,7 +90,7 @@ function getCatalogSearch(index, query)
   if not r.success then return { items = {}, hasNext = false } end
 
   local items = parseCatalogItems(r.body, false)
-  return { items = items, hasNext = #items > 0 }
+  return { items = items, hasNext = LIB("catalog").hasNextPage(items) }
 end
 
 -- ── Детали книги ──────────────────────────────────────────────────────────────
@@ -270,7 +270,7 @@ end
 -- ── Каталог с фильтрами ───────────────────────────────────────────────────────
 
 function getCatalogFiltered(index, filters)
-  local page   = index + 1
+  local page   = LIB("catalog").nextIndex(index)
   local order  = filters["order"]  or ""
   local status = filters["status"] or ""
   local genres = filters["genre_included"] or {}
@@ -304,5 +304,5 @@ function getCatalogFiltered(index, filters)
     end
   end
 
-  return { items = items, hasNext = #items > 0 }
+  return { items = items, hasNext = LIB("catalog").hasNextPage(items) }
 end

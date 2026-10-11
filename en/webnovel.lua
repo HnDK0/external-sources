@@ -1,7 +1,7 @@
 -- ── Metadatos ─────────────────────────────────────────────────────────────────
 id       = "webnovel"
 name     = "WebNovel"
-version  = "2.0.0"
+version  = "2.0.1"
 baseUrl  = "https://www.webnovel.com/"
 language = "en"
 icon     = "https://raw.githubusercontent.com/HnDK0/external-sources/main/icons/webnovel.png"
@@ -1088,13 +1088,26 @@ end
 
 -- ── Helpers ───────────────────────────────────────────────────────────────────
 
-local function absUrl(href, base)
-  base = base or baseUrl
-  if not href or href == "" then return "" end
-  if string_starts_with(href, "http") then return href end
-  if string_starts_with(href, "//") then return "https:" .. href end
-  return url_resolve(base, href)
+-- Old builds ship no require_lib: keep the plugin loadable (a top-level error
+-- would drop it from the source list) and fail with a visible message on the
+-- first call instead. Shared libs load lazily and are cached per session.
+local _libs
+local function LIB(id)
+  if type(require_lib) ~= "function" then
+    show_error("Requires NoveLA update", "This plugin needs the shared libraries")
+    error("Requires NoveLA update (require_lib)", 0)
+  end
+  if not _libs then _libs = {} end
+  if not _libs[id] then _libs[id] = require_lib(id) end
+  return _libs[id]
 end
+
+local function absUrl(href, base)
+  return LIB("urls").absUrl(base or baseUrl, href)
+end
+
+-- Engine global url_encode delegates to the shared catalog lib.
+local url_encode = function(s) return LIB("catalog").urlEncode(s) end
 
 -- Primeros n elementos de una lista.
 local function firstN(list, n)
@@ -1152,16 +1165,11 @@ local function newCollector()
   return items, add
 end
 
--- Cache de la página de detalle del libro: el motor llama a getBookTitle/Cover/
--- Description/Genres/Rating en paralelo con la misma URL; el cache evita pedidos repetidos.
-local _bookCache = {}
-
+-- Session-cached book detail page (shared fetch lib, same contract as the old
+-- local _bookCache: the engine calls getBookTitle/Cover/Description/Genres/Rating
+-- in parallel on the same URL).
 local function fetchBookPage(bookUrl)
-  if _bookCache[bookUrl] then return _bookCache[bookUrl] end
-  local r = http_get(bookUrl)
-  if not r.success then return nil end
-  _bookCache[bookUrl] = r.body
-  return r.body
+  return LIB("fetch").page(bookUrl)
 end
 
 -- Deja la URL del libro limpia para armar "<url>/catalog": sin query, sin
@@ -1202,12 +1210,11 @@ local function ensureCsrfToken()
   return ""
 end
 
+-- Standard chapter-text cleanup from the shared content lib, plus WebNovel's
+-- own "[End]" markers and blank-line collapse.
 local function applyStandardContentTransforms(text)
-  if not text or text == "" then return "" end
-  text = string_normalize(text)
-  text = regex_replace(text, "(?i)webnovel\\.com.*?\\n", "")
-  text = regex_replace(text, "(?i)\\A[\\s\\p{Z}\\uFEFF]*((Chapter\\s+\\d+[^\\n\\r]*)[\\n\\r\\s]*)+", "")
-  text = regex_replace(text, "(?im)^\\s*(Translator|Editor|Proofreader|Read\\s+(at|on|latest))[:\\s][^\\n\\r]{0,70}(\\r?\\n|$)", "")
+  text = LIB("content").standardTransforms(text, { domain = baseUrl, lang = "en" })
+  if text == "" then return "" end
   -- Solo líneas que SON un marcador de fin: [End], [THE END], [Chapter End],
   -- [End of Chapter 12 ...]. La versión anterior borraba cualquier línea entre
   -- corchetes que contuviera "end" en cualquier parte: "[Endurance +2]",
@@ -1447,7 +1454,7 @@ end
 -- página HTML de listado.
 
 function getCatalogList(index)
-  local page = index + 1
+  local page = LIB("catalog").nextIndex(index)
   local mode = getMode()
 
   local res = fetchCategoryApi(mode, page, "0", "0", CATEGORY_ORDER.popular)
@@ -1464,7 +1471,7 @@ end
 -- páginas usan la misma tarjeta; las URLs de libro se normalizan a www en ambos casos.
 
 function getCatalogSearch(index, query)
-  local page = index + 1
+  local page = LIB("catalog").nextIndex(index)
   local url
   if getMode() == "fanfic" then
     url = M_BASE .. "search?keywords=" .. url_encode(query) .. "&type=fanfic&pageIndex=" .. tostring(page)
@@ -1658,7 +1665,7 @@ end
 -- El estado (bookStatus: 0 todos, 2 completado, 1 en curso) funciona en todos.
 
 function getCatalogFiltered(index, filters)
-  local page = index + 1
+  local page = LIB("catalog").nextIndex(index)
 
   -- modo (cambio desde dentro)
   local mode = tostring(filters["mode"] or "")
@@ -1814,12 +1821,8 @@ end
 function getBookGenres(bookUrl)
   local body = fetchBookPage(bookUrl)
   if not body then return {} end
-  local genres = {}
-  for _, a in ipairs(html_select(body, ".m-tags a, .book-info a[href*='/tags/']")) do
-    local g = string_trim(a.text)
-    if g ~= "" then table.insert(genres, g) end
-  end
-  return genres
+  -- trim + drop empties — shared meta lib (site order kept).
+  return LIB("meta").collectGenres(html_select(body, ".m-tags a, .book-info a[href*='/tags/']"))
 end
 
 -- ── Rating ────────────────────────────────────────────────────────────────────

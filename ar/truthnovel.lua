@@ -1,34 +1,29 @@
 id       = "truthnovel"
 name     = "Truth Novel"
-version  = "1.1.1"
+version  = "1.1.2"
 baseUrl  = "https://truthnovel.top"
 language = "ar"
 icon     = "https://raw.githubusercontent.com/HnDK0/external-sources/main/icons/truthnovel.png"
 
+-- Old builds ship no require_lib: keep the plugin loadable (a top-level error
+-- would drop it from the source list) and fail with a visible message on the
+-- first call instead. require_lib caches loaded libs.
+local function lib(id)
+    if type(require_lib) ~= "function" then
+        show_error("Requires NoveLA update", "This plugin needs the shared libraries")
+        error("Requires NoveLA update (require_lib)", 0)
+    end
+    return require_lib(id)
+end
+
 local _cover = baseUrl .. "/wp-content/uploads/2024/12/نسخة-الفصل-الف-الصغيرة-للموقع-العربي.jpg"
-local _pageCache = {}
-local function fetchPage(url)
-    if _pageCache[url] then return _pageCache[url] end
-    local r = http_get(url)
-    if r.success then _pageCache[url] = r.body end
-    return r.success and r.body or nil
-end
 
-local function absUrl(href)
-    if not href or href == "" then return "" end
-    if string_starts_with(href, "http") then return href end
-    if string_starts_with(href, "//") then return "https:" .. href end
-    return url_resolve(baseUrl, href)
-end
+local function absUrl(href) return lib("urls").absUrl(baseUrl, href) end
 
+-- Standard cleanup (domain lines, leading "Chapter N" heading, translator
+-- credits) from the shared content lib, then the site's own passes.
 local function applyStandardContentTransforms(text)
-    if not text or text == "" then return "" end
-    text = string_normalize(text)
-    local domain = baseUrl:gsub("https?://", ""):gsub("^www%.", ""):gsub("/$", "")
-    text = regex_replace(text, "(?i)" .. domain .. ".*?\\n", "")
-    text = regex_replace(text, "(?i)\\A[\\s\\p{Z}\\uFEFF]*((Chapter\\s+\\d+)[^\\n\\r]*[\\n\\r\\s]*)+", "")
-    text = regex_replace(text, "(?im)^\\s*(Translator|Editor|Proofreader|Read\\s+(at|on|latest))[:\\s][^\\n\\r]{0,70}(\\r?\\n|$)", "")
-    text = regex_replace(text, "(?m)^\\s*اذكر الله\\s*/+\\s*\\n?", "")
+    text = lib("content").standardTransforms(text, { domain = baseUrl, lang = "en" })
     -- Remove standalone separator lines (=, ~, -, —) wherever they appear
     -- (old regex "(?s)\\n={3,}.*" cut everything after the FIRST separator line,
     -- which swallowed the whole chapter when a "=======" line appears near the top)

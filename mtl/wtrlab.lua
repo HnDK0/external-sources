@@ -3,7 +3,7 @@
 -- ── Metadata ───────────────────────────────────────────────────────────────
 id = "wtrlab"
 name = "WTR-LAB"
-version = "1.2.0"
+version = "1.2.1"
 baseUrl = "https://wtr-lab.com/"
 language = "MTL"
 icon = "https://raw.githubusercontent.com/HnDK0/external-sources/main/icons/wtr-lab.png"
@@ -28,9 +28,8 @@ end
 local PREF_MODE = "wtrlab_mode"           -- "ai" | "raw" | "webplus"  (key kept from 1.x so existing settings survive)
 local PREF_DELAY = "wtrlab_chapter_delay" -- ms pause before each chapter fetch
 
--- ── Caches (page cache: 60s TTL; others live until app restart) ────────────
+-- ── Caches (page cache lives in the fetch lib for the session) ──────────────
 local termCache = {}    -- [novelId] = { termByOriginal }
-local _pageCache = {}   -- book page HTML, entries { body, at } with a 60s TTL
 local _buildIdCache = nil
 
 local function getMode()
@@ -46,17 +45,19 @@ end
 
 -- ── Helpers ─────────────────────────────────────────────────────────────────
 
+-- Old builds ship no require_lib: keep the plugin loadable (a top-level
+-- error would drop it from the source list) and fail with a visible
+-- message on the first call instead. require_lib caches loaded libs.
+local function lib(id)
+    if type(require_lib) ~= "function" then
+        show_error("Update NoveLA required", "This plugin needs the shared libraries")
+        error("A newer version of the app is required (require_lib)", 0)
+    end
+    return require_lib(id)
+end
+
 local function absUrl(href)
-    if not href or href == "" then
-        return ""
-    end
-    if string_starts_with(href, "http") then
-        return href
-    end
-    if string_starts_with(href, "//") then
-        return "https:" .. href
-    end
-    return url_resolve(baseUrl, href)
+    return lib("urls").absUrl(baseUrl, href)
 end
 
 -- Resolve wtr-lab "debranding" tokens (site stores some titles as
@@ -72,24 +73,10 @@ local function resolveTokens(text)
     return text
 end
 
--- Cache TTL: 60s. os_time may be missing in a sandbox — then the cache is
--- simply skipped (always a fresh http_get) instead of failing.
-local PAGE_TTL_MS = 60000
-
+-- Cache: session-scoped in the fetch lib (no TTL — book detail getters
+-- run once per book view; os_time may be missing in a sandbox anyway).
 local function fetchPage(url)
-    local now = (type(os_time) == "function") and os_time() or nil
-    local entry = _pageCache[url]
-    if entry then
-        if now ~= nil and (now - entry.at) <= PAGE_TTL_MS then
-            return entry.body
-        end
-        _pageCache[url] = nil
-    end
-    local r = http_get(url)
-    if r.success and now ~= nil then
-        _pageCache[url] = { body = r.body, at = now }
-    end
-    return r.success and r.body or nil
+    return lib("fetch").page(url)
 end
 
 -- Rating from the metrics block "Rating ★ 3.9 (563)" (book page + catalog cards)
@@ -1214,7 +1201,7 @@ end
 
 function getCatalogList(index)
     ensureEngine()
-    local page = index + 1
+    local page = lib("catalog").nextIndex(index)
     local pp = fetchNextData("/en/novel-list.json", "page=" .. tostring(page) .. "&orderBy=reader")
     if not pp then
         log_error("wtrlab: getCatalogList failed")
@@ -1227,7 +1214,7 @@ end
 
 function getCatalogSearch(index, query)
     ensureEngine()
-    local page = index + 1
+    local page = lib("catalog").nextIndex(index)
     local params = "text=" .. url_encode(query) .. "&page=" .. tostring(page)
     local pp = fetchNextData("/en/novel-finder.json", params)
     if not pp then
@@ -1720,15 +1707,7 @@ function getBookGenres(bookUrl)
         return {}
     end
 
-    local genres = {}
-    for _, el in ipairs(html_select(body, "a[href*='novel-list?genre='] span")) do
-        local label = string_trim(el.text)
-        if label ~= "" then
-            table.insert(genres, label)
-        end
-    end
-
-    return genres
+    return lib("meta").collectGenres(html_select(body, "a[href*='novel-list?genre='] span"))
 end
 
 function getBookRating(bookUrl)
@@ -2389,7 +2368,7 @@ end
 
 function getCatalogFiltered(index, filters)
     ensureEngine()
-    local page = index + 1
+    local page = lib("catalog").nextIndex(index)
     local orderBy = filters["orderBy"] or "update"
     local order = filters["order"] or "desc"
     local status = filters["status"] or "all"

@@ -1,7 +1,7 @@
 -- ── Metadata ────────────────────────────────────────────────────────────────
 id       = "xbiquge"
 name     = "XBiquge"
-version  = "1.0.3"
+version  = "1.0.4"
 baseUrl  = "https://www.xbiquge.info/"
 language = "zh"
 icon     = "https://raw.githubusercontent.com/HnDK0/external-sources/main/icons/xbiquge.png"
@@ -60,12 +60,34 @@ icon     = "https://raw.githubusercontent.com/HnDK0/external-sources/main/icons/
 
 -- ── Helpers ─────────────────────────────────────────────────────────────────
 
-local function absUrl(href)
-  if not href or href == "" then return "" end
-  if string_starts_with(href, "http") then return href end
-  if string_starts_with(href, "//") then return "https:" .. href end
-  return url_resolve(baseUrl, href)
+-- Old builds ship no require_lib: keep the plugin loadable (a top-level error
+-- would drop it from the source list) and fail with a visible message on the
+-- first call instead. Shared libs load lazily and are cached per session.
+local _libs
+local function LIB(id)
+  if type(require_lib) ~= "function" then
+    show_error("Requires NoveLA update", "This plugin needs the shared libraries")
+    error("Requires NoveLA update (require_lib)", 0)
+  end
+  if not _libs then _libs = {} end
+  if not _libs[id] then _libs[id] = require_lib(id) end
+  return _libs[id]
 end
+
+local function absUrl(href)
+  return LIB("urls").absUrl(baseUrl, href)
+end
+
+-- Session-cached book page (shared fetch lib): the book page is read by the
+-- title/cover/description/status/chapter-list functions in one adapter run.
+-- getChapterListHash stays on a direct http_get — the hash must see a fresh
+-- page.
+local function fetchPage(url)
+  return LIB("fetch").page(url)
+end
+
+-- Engine global url_encode delegates to the shared catalog lib.
+local url_encode = function(s) return LIB("catalog").urlEncode(s) end
 
 -- Книжная страница на xbiquge.info отдаёт 404 БЕЗ завершающего слэша
 -- (/135/135267 → 404, /135/135267/ → 200). Движок при сохранении URL из
@@ -78,50 +100,22 @@ local function normalizeBookUrl(url)
   return url .. "/"
 end
 
--- Apply standard content transforms.
--- Pattern lifted from the novel_extractor.py audit work: collapse duplicated
--- chapter-title prefix, strip the leading chapter title (duplicates the
--- engine's chapter-title field), drop translator/editor notes.
--- Also strips biquge page markers like "第(1/3)页" / "Page (1/3)" that appear
--- at the start and end of each multi-page chapter page.
+-- Apply standard content transforms from the shared content lib: strip site
+-- domain references, the leading chapter title (a duplicated
+-- "第N章：第N章 …" prefix collapses into the same strip; biquge titles often
+-- look like "第1189章 学的过于好了-《大明第一国舅》" and the whole line goes)
+-- and the translator/editor attribution lines. The biquge page markers
+-- ("第(1/3)页", "Page (1/3)", "页次(1/3)") at the start and end of each
+-- multi-page chapter page are site-specific and stay here.
 local function applyStandardContentTransforms(text)
-  if not text or text == "" then return "" end
-  text = string_normalize(text)
+  text = LIB("content").standardTransforms(text, { domain = baseUrl, lang = "zh" })
+  if text == "" then return "" end
 
-  -- Strip site domain references.
-  local domain = baseUrl:gsub("https?://", ""):gsub("^www%.", ""):gsub("/$", "")
-  text = regex_replace(text, "(?i)" .. domain .. ".*?\\n", "")
-
-  -- Strip biquge page markers: "第(1/3)页", "Page (1/3)", "页次(1/3)"
-  -- These appear at the start and end of each multi-page chapter page.
   text = regex_replace(text, "(?im)^\\s*第?\\s*[\\(（]\\s*\\d+\\s*/\\s*\\d+\\s*[\\)）]\\s*页\\s*$", "")
   text = regex_replace(text, "(?im)^\\s*Page\\s*\\(\\s*\\d+\\s*/\\s*\\d+\\s*\\)\\s*$", "")
   text = regex_replace(text, "(?im)^\\s*页次\\s*[\\(（]\\s*\\d+\\s*/\\s*\\d+\\s*[\\)）]\\s*$", "")
 
-  -- Collapse a duplicated chapter-title prefix at the start.
-  text = regex_replace(text,
-    "(?i)\\A[\\s\\p{Z}\\uFEFF]*" ..
-    "((?:第[\\d〇零一二三四五六七八九十百千两\\d]+[章节卷回部集篇]|Chapter\\s+\\d+)" ..
-    "(?:\\s*[:：.\\-—]\\s*|\\s+))" ..
-    "\\1" ..
-    "(?:[\\s\\p{Z}\\uFEFF]*[\\n\\r]+|[\\s\\p{Z}\\uFEFF]+)",
-    "")
-
-  -- Strip a single leading chapter title (duplicates engine's title field).
-  -- Biquge titles often look like "第1189章 学的过于好了-《大明第一国舅》"
-  -- (chapter title - book title). We strip the whole line.
-  text = regex_replace(text,
-    "(?i)\\A[\\s\\p{Z}\\uFEFF]*" ..
-    "(?:(?:第[\\d一二三四五六七八九十百]+[章节]|Chapter\\s+\\d+)" ..
-    "[^\\n\\r]*[\\n\\r\\s]*)+", "")
-
-  -- Strip translator / editor attribution lines.
-  text = regex_replace(text,
-    "(?im)^\\s*(翻译|譯者|译者|編輯|编辑|校對|校对|更新|閱讀|阅读|最新閱讀|最新阅读)" ..
-    "[:\\s：][^\\n\\r]{0,70}(\\r?\\n|$)", "")
-
-  text = string_trim(text)
-  return text
+  return string_trim(text)
 end
 
 -- Parse a list of <dl> book cards from an HTML body.
@@ -174,7 +168,7 @@ end
 -- Default catalog uses list1 (玄幻).
 
 function getCatalogList(index)
-  local page = index + 1
+  local page = LIB("catalog").nextIndex(index)
   local url = baseUrl .. "list1/" .. tostring(page) .. ".html"
   local r = http_get(url)
   if not r.success then return { items = {}, hasNext = false } end
@@ -199,7 +193,7 @@ end
 -- /search.php?q={query} — pagination via &p={N} (not &page=).
 
 function getCatalogSearch(index, query)
-  local page = index + 1
+  local page = LIB("catalog").nextIndex(index)
   local encoded = url_encode(query)
   local url = baseUrl .. "search.php?q=" .. encoded .. "&p=" .. tostring(page)
   local r = http_get(url)
@@ -224,27 +218,27 @@ end
 
 function getBookTitle(bookUrl)
   bookUrl = normalizeBookUrl(bookUrl)
-  local r = http_get(bookUrl)
-  if not r.success then return nil end
-  local el = html_select_first(r.body, "h1")
+  local body = fetchPage(bookUrl)
+  if not body then return nil end
+  local el = html_select_first(body, "h1")
   if el then return string_clean(el.text) end
   return nil
 end
 
 function getBookCoverImageUrl(bookUrl)
   bookUrl = normalizeBookUrl(bookUrl)
-  local r = http_get(bookUrl)
-  if not r.success then return nil end
-  local src = html_attr(r.body, "#fmimg img, .book-cover img, dt a img, img", "src")
+  local body = fetchPage(bookUrl)
+  if not body then return nil end
+  local src = html_attr(body, "#fmimg img, .book-cover img, dt a img, img", "src")
   if src ~= "" then return absUrl(src) end
   return nil
 end
 
 function getBookDescription(bookUrl)
   bookUrl = normalizeBookUrl(bookUrl)
-  local r = http_get(bookUrl)
-  if not r.success then return nil end
-  local el = html_select_first(r.body, "#intro, .intro, .description, .info p, .info")
+  local body = fetchPage(bookUrl)
+  if not body then return nil end
+  local el = html_select_first(body, "#intro, .intro, .description, .info p, .info")
   if el then return string_trim(el.text) end
   return nil
 end
@@ -260,13 +254,13 @@ function getChapterList(bookUrl)
   local base = bookUrl:gsub("/$", "")
 
   -- Fetch page 1 (the book page itself) to discover pagination.
-  local r = http_get(bookUrl)
-  if not r.success then return {} end
+  local body = fetchPage(bookUrl)
+  if not body then return {} end
 
   -- Discover the last page number from pagination links like
   -- /10/10202/index_12.html (the "»" link).
   local lastPage = 1
-  for _, a in ipairs(html_select(r.body, "a[href*='index_']")) do
+  for _, a in ipairs(html_select(body, "a[href*='index_']")) do
     local href = a.href or ""
     local m = string.match(href, "index_(%d+)%.html")
     if m then
@@ -277,7 +271,7 @@ function getChapterList(bookUrl)
 
   -- Collect chapters from page 1 (already fetched).
   local chapters = {}
-  for _, a in ipairs(html_select(r.body, ".book_list2 a[href]")) do
+  for _, a in ipairs(html_select(body, ".book_list2 a[href]")) do
     local chUrl = absUrl(a.href)
     local t = string_clean(a.text)
     -- Only accept chapter-like URLs, not "倒序" or pagination links.
@@ -432,23 +426,23 @@ end
 
 function getBookStatus(bookUrl)
   bookUrl = normalizeBookUrl(bookUrl)
-  local r = http_get(bookUrl)
-  if not r.success then return nil end
-  local s = html_attr(r.body, "meta[property='og:novel:status']", "content")
+  local body = fetchPage(bookUrl)
+  if not body then return nil end
+  local s = html_attr(body, "meta[property='og:novel:status']", "content")
   if s ~= "" then return s end
   return nil
 end
 
 function getBookLastUpdate(bookUrl)
   bookUrl = normalizeBookUrl(bookUrl)
-  local r = http_get(bookUrl)
-  if not r.success then return nil end
+  local body = fetchPage(bookUrl)
+  if not body then return nil end
   -- Дата в формате "YYYY-MM-DD HH:MM:SS"; берём только "YYYY-MM-DD".
-  local meta = html_attr(r.body, "meta[property='og:novel:update_time']", "content")
-  local d = string.match(meta, "%d%d%d%d%-%d%d%-%d%d")
+  local meta = html_attr(body, "meta[property='og:novel:update_time']", "content")
+  local d = LIB("meta").normalizeDate(meta)
   if not d then
     -- Запасной вариант: поиск даты по всему телу страницы.
-    d = string.match(r.body, "%d%d%d%d%-%d%d%-%d%d")
+    d = LIB("meta").normalizeDate(body)
   end
   return d
 end

@@ -1,7 +1,7 @@
 -- ── Metadata ────────────────────────────────────────────────────────────────
 id       = "biquge_company"
 name     = "BiqugeCompany"
-version  = "1.0.2"
+version  = "1.0.3"
 baseUrl  = "https://www.biquge.company/"
 language = "zh"
 icon     = "https://raw.githubusercontent.com/HnDK0/external-sources/main/icons/biquge_company.png"
@@ -38,12 +38,34 @@ icon     = "https://raw.githubusercontent.com/HnDK0/external-sources/main/icons/
 
 -- ── Helpers ─────────────────────────────────────────────────────────────────
 
-local function absUrl(href)
-  if not href or href == "" then return "" end
-  if string_starts_with(href, "http") then return href end
-  if string_starts_with(href, "//") then return "https:" .. href end
-  return url_resolve(baseUrl, href)
+-- Old builds ship no require_lib: keep the plugin loadable (a top-level error
+-- would drop it from the source list) and fail with a visible message on the
+-- first call instead. Shared libs load lazily and are cached per session.
+local _libs
+local function LIB(id)
+  if type(require_lib) ~= "function" then
+    show_error("Requires NoveLA update", "This plugin needs the shared libraries")
+    error("Requires NoveLA update (require_lib)", 0)
+  end
+  if not _libs then _libs = {} end
+  if not _libs[id] then _libs[id] = require_lib(id) end
+  return _libs[id]
 end
+
+local function absUrl(href)
+  return LIB("urls").absUrl(baseUrl, href)
+end
+
+-- Session-cached book page (shared fetch lib): the book page is read by the
+-- title/cover/description/status/chapter-list functions in one adapter run.
+-- getChapterListHash stays on a direct http_get — the hash must see a fresh
+-- page.
+local function fetchPage(url)
+  return LIB("fetch").page(url)
+end
+
+-- Engine global url_encode delegates to the shared catalog lib.
+local url_encode = function(s) return LIB("catalog").urlEncode(s) end
 
 -- Extract bookId from a book URL like /book/29901.html
 local function extractBookId(bookUrl)
@@ -62,53 +84,28 @@ local function coverForBookUrl(bookUrl)
 end
 
 -- Apply standard content transforms.
--- Pattern lifted from the novel_extractor.py audit work: collapse duplicated
--- chapter-title prefix, strip the leading chapter title, drop translator
--- notes, and strip the trailing "tip" text biquge leaves at the end.
+-- Shared lib covers the domain lines, the leading chapter title (the
+-- duplicated "第N章：第N章" prefix collapses into the same strip) and the
+-- translator/editor attribution lines. The trailing "tip" text biquge leaves
+-- at the end is site-specific and stays here.
 local function applyStandardContentTransforms(text)
-  if not text or text == "" then return "" end
-  text = string_normalize(text)
+  text = LIB("content").standardTransforms(text, { domain = baseUrl, lang = "zh" })
+  if text == "" then return "" end
 
-  -- Strip site domain references.
-  local domain = baseUrl:gsub("https?://", ""):gsub("^www%.", ""):gsub("/$", "")
-  text = regex_replace(text, "(?i)" .. domain .. ".*?\\n", "")
-
-  -- Collapse a duplicated chapter-title prefix at the start.
-  text = regex_replace(text,
-    "(?i)\\A[\\s\\p{Z}\\uFEFF]*" ..
-    "((?:第[\\d〇零一二三四五六七八九十百千两\\d]+[章节卷回部集篇]|Chapter\\s+\\d+)" ..
-    "(?:\\s*[:：.\\-—]\\s*|\\s+))" ..
-    "\\1" ..
-    "(?:[\\s\\p{Z}\\uFEFF]*[\\n\\r]+|[\\s\\p{Z}\\uFEFF]+)",
-    "")
-
-  -- Strip a single leading chapter title.
-  text = regex_replace(text,
-    "(?i)\\A[\\s\\p{Z}\\uFEFF]*" ..
-    "(?:(?:第[\\d一二三四五六七八九十百]+[章节]|Chapter\\s+\\d+)" ..
-    "[^\\n\\r]*[\\n\\r\\s]*)+", "")
-
-  -- Strip translator / editor attribution lines.
-  text = regex_replace(text,
-    "(?im)^\\s*(翻译|譯者|译者|編輯|编辑|校對|校对|更新|閱讀|阅读|最新閱讀|最新阅读)" ..
-    "[:\\s：][^\\n\\r]{0,70}(\\r?\\n|$)", "")
-
-  -- Strip the trailing "tip" text biquge leaves at the end:
   -- "温馨提示：按 回车[Enter]键 返回书目..."
   text = regex_replace(text,
     "(?im)温馨提示[:：].*$", "")
   text = regex_replace(text,
     "(?im)\\n\\s*上一章\\s*章节目录\\s*下一章\\s*$", "")
 
-  text = string_trim(text)
-  return text
+  return string_trim(text)
 end
 
 -- ── Catalog ─────────────────────────────────────────────────────────────────
 -- /sort/0/{page}.html — "书库" (full library). catId=0 means all categories.
 
 function getCatalogList(index)
-  local page = index + 1
+  local page = LIB("catalog").nextIndex(index)
   local url = baseUrl .. "sort/0/" .. tostring(page) .. ".html"
   local r = http_get(url)
   if not r.success then return { items = {}, hasNext = false } end
@@ -179,25 +176,25 @@ end
 -- ── Book details ────────────────────────────────────────────────────────────
 
 function getBookTitle(bookUrl)
-  local r = http_get(bookUrl)
-  if not r.success then return nil end
-  local el = html_select_first(r.body, "h1.booktitle, h1")
+  local body = fetchPage(bookUrl)
+  if not body then return nil end
+  local el = html_select_first(body, "h1.booktitle, h1")
   if el then return string_clean(el.text) end
   return nil
 end
 
 function getBookCoverImageUrl(bookUrl)
-  local r = http_get(bookUrl)
-  if not r.success then return nil end
-  local src = html_attr(r.body, ".bookinfo img, #fmimg img, .cover img, img", "src")
+  local body = fetchPage(bookUrl)
+  if not body then return nil end
+  local src = html_attr(body, ".bookinfo img, #fmimg img, .cover img, img", "src")
   if src ~= "" then return absUrl(src) end
   return nil
 end
 
 function getBookDescription(bookUrl)
-  local r = http_get(bookUrl)
-  if not r.success then return nil end
-  local el = html_select_first(r.body, ".bookintro, #intro, .intro")
+  local body = fetchPage(bookUrl)
+  if not body then return nil end
+  local el = html_select_first(body, ".bookintro, #intro, .intro")
   if el then return string_trim(el.text) end
   return nil
 end
@@ -213,13 +210,13 @@ end
 -- #list-chapterAll — он уже отсортирован по возрастанию, переворачивать не надо.
 
 function getChapterList(bookUrl)
-  local r = http_get(bookUrl)
-  if not r.success then return {} end
+  local body = fetchPage(bookUrl)
+  if not body then return {} end
 
-  local nodes = html_select(r.body, "#list-chapterAll a[href]")
+  local nodes = html_select(body, "#list-chapterAll a[href]")
   if #nodes == 0 then
     -- запасной вариант: весь <dl>, но только реальные ссылки на главы
-    nodes = html_select(r.body, "dl dd a[href]")
+    nodes = html_select(body, "dl dd a[href]")
   end
 
   local chapters = {}
@@ -289,16 +286,16 @@ end
 -- "更新时间：YYYY-MM-DD HH:MM". Извлекаем только дату YYYY-MM-DD.
 
 function getBookStatus(bookUrl)
-  local r = http_get(bookUrl)
-  if not r.success then return nil end
-  local el = html_select_first(r.body, ".booktag span.red")
+  local body = fetchPage(bookUrl)
+  if not body then return nil end
+  local el = html_select_first(body, ".booktag span.red")
   if el then return string_clean(el.text) end
   return nil
 end
 
 function getBookLastUpdate(bookUrl)
-  local r = http_get(bookUrl)
-  if not r.success then return nil end
-  -- Извлекаем дату YYYY-MM-DD из текста страницы.
-  return string.match(r.body, "%d%d%d%d%-%d%d%-%d%d")
+  local body = fetchPage(bookUrl)
+  if not body then return nil end
+  -- Извлекаем дату YYYY-MM-DD из текста страницы (shared meta lib).
+  return LIB("meta").normalizeDate(body)
 end

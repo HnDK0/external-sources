@@ -4,7 +4,7 @@
 content_type = "video"
 id           = "animephoenix"
 name         = "Anime Phoenix"
-version      = "1.1.0"
+version      = "1.1.1"
 baseUrl      = "https://anime-phoenix.com"
 language     = "ar"
 icon         = "https://raw.githubusercontent.com/HnDK0/external-sources/refs/heads/main/icons/animephoenix.png"
@@ -26,6 +26,9 @@ local function tryLib(name)
 end
 
 local URLS = tryLib("urls")
+local FETCH = tryLib("fetch")
+local CATALOG = tryLib("catalog")
+local SOURCES = tryLib("sources")
 local HLS = tryLib("hls")
 local OKRU = tryLib("okru")
 local SHARED = tryLib("shared")
@@ -48,7 +51,8 @@ local function ensureEngine()
             "This plugin needs shared libraries (require_lib). Update the app to the latest version.")
         error("A newer version of the app is required: require_lib", 0)
     end
-    if not URLS or not HLS or not OKRU or not SHARED or not UQLOAD then
+    if not URLS or not FETCH or not CATALOG or not SOURCES
+        or not HLS or not OKRU or not SHARED or not UQLOAD then
         show_error("Libraries not loaded",
             "Open the extensions screen and tap update, then restart the app. " .. (libErr or ""))
         error("Shared libraries not loaded", 0)
@@ -57,12 +61,7 @@ end
 
 -- ============ Утилиты ============
 
-local function absUrl(href)
-    if not href or href == "" then return "" end
-    if string_starts_with(href, "http") then return href end
-    if string_starts_with(href, "//") then return "https:" .. href end
-    return url_resolve(baseUrl, href)
-end
+local function absUrl(href) return URLS.absUrl(baseUrl, href) end
 
 -- Безопасное число из JSON-значения: number | строка | иначе nil.
 local function toNumber(v)
@@ -71,19 +70,9 @@ local function toNumber(v)
     return nil
 end
 
--- Кэш страницы тайтла: title/cover/description/genres/rating/status — 6 вызовов
--- на одну страницу (см. гайд «Кэширование страниц (fetchPage)»).
-local _pageCache = {}
-
-local function fetchPage(url)
-    if _pageCache[url] then return _pageCache[url] end
-    local r = http_get(url)
-    if r.success then
-        _pageCache[url] = r.body
-        return r.body
-    end
-    return nil
-end
+-- Кэш страницы тайтла ведёт общий fetch lib: title/cover/description/
+-- genres/rating/status — 6 вызовов на одну страницу.
+local function fetchPage(url) return FETCH.page(url) end
 
 -- Есть ли медиа-расширение в конце пути URL (до "?" / "#").
 -- Общая либа hls (union копий, включая .mkv из этого плагина).
@@ -191,10 +180,10 @@ local function apiCatalog(q, ctype, status, sort, page)
     local sig = hexEncode(hmac_sha256(PX_PUBLIC_KEY, msg))
 
     local url = baseUrl .. "/api/search.php"
-        .. "?type=" .. url_encode(ctype)
-        .. "&genre=&status=" .. url_encode(status) .. "&year=&season="
-        .. "&sort=" .. url_encode(sort)
-        .. "&q=" .. url_encode(q)
+        .. "?type=" .. CATALOG.urlEncode(ctype)
+        .. "&genre=&status=" .. CATALOG.urlEncode(status) .. "&year=&season="
+        .. "&sort=" .. CATALOG.urlEncode(sort)
+        .. "&q=" .. CATALOG.urlEncode(q)
         .. "&page=" .. tostring(page)
         .. "&per_page=25&dropdown=0"
         -- "_" — обязательный cache-bust: без него CF-кеш отдаёт чужой ответ.
@@ -243,14 +232,14 @@ local function apiCatalog(q, ctype, status, sort, page)
     end
 
     local totalPages = toNumber(d.total_pages) or 0
-    local hasNext = #items > 0
+    local hasNext = CATALOG.hasNextPage(items)
     if totalPages > 0 then hasNext = page < totalPages end
     return { items = items, hasNext = hasNext }
 end
 
 function getCatalogList(index)
     ensureEngine()
-    return apiCatalog("", "tvshow", "", "views", index + 1)
+    return apiCatalog("", "tvshow", "", "views", CATALOG.nextIndex(index))
 end
 
 -- ============ Фильтры ============
@@ -316,7 +305,7 @@ function getCatalogFiltered(index, filters)
         { [""] = true, releasing = true, completed = true })
     local sort = filterValue(filters, "sort",
         { views = true, date = true, relevance = true })
-    return apiCatalog("", ctype, status, sort, index + 1)
+    return apiCatalog("", ctype, status, sort, CATALOG.nextIndex(index))
 end
 
 -- ============ Поиск ============
@@ -325,7 +314,7 @@ end
 function getCatalogSearch(index, query)
     ensureEngine()
     if not query or query == "" then return emptyCatalog() end
-    return apiCatalog(query, "all", "", "relevance", index + 1)
+    return apiCatalog(query, "all", "", "relevance", CATALOG.nextIndex(index))
 end
 
 -- ============ Карточка тайтла ============
@@ -500,8 +489,8 @@ local function episodesAjaxUrl(meta, page, sort)
     end
     local sep = a.ajaxurl:find("?", 1, true) and "&" or "?"
     return a.ajaxurl .. sep .. "action=fj_get_episodes"
-        .. "&token=" .. url_encode(tostring(a.token or ""))
-        .. "&sig=" .. url_encode(tostring(a.sig or ""))
+        .. "&token=" .. CATALOG.urlEncode(tostring(a.token or ""))
+        .. "&sig=" .. CATALOG.urlEncode(tostring(a.sig or ""))
         .. "&page=" .. tostring(page)
         .. "&sort=" .. sort
 end
@@ -653,12 +642,9 @@ end
 
 -- ============ Потоки ============
 
+-- Дедупликация потоков по URL — общий sources lib.
 local function pushSource(list, seen, src)
-    if type(src) ~= "table" then return end
-    local url = src.url
-    if type(url) ~= "string" or url == "" or seen[url] then return end
-    seen[url] = true
-    list[#list + 1] = src
+    SOURCES.push(list, seen, src)
 end
 
 -- Хосты, которые никогда не дают прямую ссылку чистым HTTP (JS-превью) —
@@ -688,10 +674,8 @@ local function skipReason(link)
     return nil
 end
 
-local function hostLabel(link)
-    local host = link:match("^https?://([^/]+)") or link
-    return (host:gsub("^www%.", ""))
-end
+-- Имя хостера для UI — общий sources lib (host без "www.").
+local function hostLabel(link) return SOURCES.hostLabel(link) end
 
 -- Google Drive → прямой поток (проверено живьём 2026-10-03): usercontent с
 -- confirm=t отдаёт 206 без единого заголовка, для файлов >100 МБ хватает

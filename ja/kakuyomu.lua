@@ -7,10 +7,24 @@
 
 id       = "kakuyomu"
 name     = "カクヨム (Kakuyomu)"
-version  = "1.0.0"
+version  = "1.0.1"
 baseUrl  = "https://kakuyomu.jp/"
 language = "ja"
 icon     = "https://raw.githubusercontent.com/HnDK0/external-sources/main/icons/kakuyomu.png"
+
+-- Old builds ship no require_lib: keep the plugin loadable (a top-level error
+-- would drop it from the source list) and fail with a visible message on the
+-- first call instead. Shared libs load lazily and are cached per session.
+local _libs
+local function LIB(id)
+    if type(require_lib) ~= "function" then
+        show_error("Requires NoveLA update", "This plugin needs the shared libraries")
+        error("Requires NoveLA update (require_lib)", 0)
+    end
+    if not _libs then _libs = {} end
+    if not _libs[id] then _libs[id] = require_lib(id) end
+    return _libs[id]
+end
 
 local SITE = "https://kakuyomu.jp"
 local PAGE_SIZE = 20
@@ -79,41 +93,23 @@ local SERIAL_STATUS = {
     PAUSED    = "休載中"
 }
 
--- One local page cache is useful because NoveLA may call several book-detail
--- functions for the same URL during one adapter run.
-local _pageCache = {}
-
+-- Page cache for one adapter run — shared fetch lib (libs/helpers/fetch.lua).
 local function fetchPage(url)
-    if _pageCache[url] then
-        return _pageCache[url]
-    end
-
-    local r = http_get(url)
-    if not r or not r.success then
-        return nil
-    end
-
-    _pageCache[url] = r.body
-    return r.body
+    return LIB("fetch").page(url)
 end
 
 local function absUrl(href)
-    if not href or href == "" then return "" end
-    if string_starts_with(href, "http") then return href end
-    if string_starts_with(href, "//") then return "https:" .. href end
-    if string_starts_with(href, "/") then return SITE .. href end
-    return href
+    return LIB("urls").absUrl(baseUrl, href)
 end
 
+-- Standard chapter-text cleanup (domain lines, leading "N話" heading) from the
+-- shared content lib.
 local function applyStandardContentTransforms(text)
-    if not text or text == "" then return "" end
-    text = string_normalize(text)
-    local domain = baseUrl:gsub("https?://", ""):gsub("^www%.", ""):gsub("/$", "")
-    text = regex_replace(text, "(?i)" .. domain .. ".*?\\n", "")
-    text = regex_replace(text, "(?i)\\A[\\s\\p{Z}\\uFEFF]*((第\\s*\\d+話|Chapter\\s+\\d+)[^\\n\\r]*[\\n\\r\\s]*)+", "")
-    text = string_trim(text)
-    return text
+    return LIB("content").standardTransforms(text, { domain = baseUrl, lang = "ja" })
 end
+
+-- Engine global url_encode delegates to the shared catalog lib.
+local url_encode = function(s) return LIB("catalog").urlEncode(s) end
 
 local function metaContent(html, name)
     return string.match(html, 'property="' .. name .. '"%s+content="([^"]*)"')
@@ -191,14 +187,14 @@ local function parseListPage(r)
 end
 
 function getCatalogList(index)
-    local page = index + 1
+    local page = LIB("catalog").nextIndex(index)
     return parseListPage(
         http_get(SITE .. "/search?page=" .. page)
     )
 end
 
 function getCatalogSearch(index, query)
-    local page = index + 1
+    local page = LIB("catalog").nextIndex(index)
     local q = query or ""
 
     if q == "" then
@@ -303,7 +299,7 @@ end
 function getCatalogFiltered(index, filters)
     filters = filters or {}
 
-    local page = index + 1
+    local page = LIB("catalog").nextIndex(index)
     local params = {}
 
     local order = filters["order"] or "weekly_ranking"
@@ -454,20 +450,15 @@ function getBookLastUpdate(bookUrl)
     local w, body = getWork(bookUrl)
 
     if w and w.lastEpisodePublishedAt and w.lastEpisodePublishedAt ~= "" then
-        local y, m, d = string.match(
-            w.lastEpisodePublishedAt,
-            "(%d%d%d%d)%-(%d%d)%-(%d%d)"
-        )
-        if y then
-            return y .. "-" .. m .. "-" .. d
-        end
+        local date = LIB("meta").normalizeDate(w.lastEpisodePublishedAt)
+        if date then return date end
     end
 
     if body then
         local value = metaContent(body, "article:modified_time")
         if value then
-            local y, m, d = string.match(value, "(%d%d%d%d)%-(%d%d)%-(%d%d)")
-            if y then return y .. "-" .. m .. "-" .. d end
+            local date = LIB("meta").normalizeDate(value)
+            if date then return date end
         end
     end
 

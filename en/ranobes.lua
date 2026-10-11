@@ -24,7 +24,7 @@
 --   4) Ajuste opcional "Chapter list = Lite": no recorre las ~N/25 páginas de capítulos (ver más abajo).
 id       = "ranobes"
 name     = "Ranobes"
-version  = "1.1.0"
+version  = "1.1.1"
 baseUrl  = "https://ranobes.net"
 language = "en"
 icon     = "https://raw.githubusercontent.com/HnDK0/external-sources/refs/heads/main/icons/ranobes.png"
@@ -36,11 +36,22 @@ cf_options = {
 
 -- ── Hélpers ───────────────────────────────────────────────────────────────────
 
+-- Old builds ship no require_lib: keep the plugin loadable (a top-level error
+-- would drop it from the source list) and fail with a visible message on the
+-- first call instead. Shared libs load lazily and are cached per session.
+local _libs
+local function LIB(id)
+    if type(require_lib) ~= "function" then
+        show_error("Requires NoveLA update", "This plugin needs the shared libraries")
+        error("Requires NoveLA update (require_lib)", 0)
+    end
+    if not _libs then _libs = {} end
+    if not _libs[id] then _libs[id] = require_lib(id) end
+    return _libs[id]
+end
+
 local function absUrl(href)
-    if not href or href == "" then return "" end
-    if string_starts_with(href, "http") then return href end
-    if string_starts_with(href, "//") then return "https:" .. href end
-    return url_resolve(baseUrl, href)
+    return LIB("urls").absUrl(baseUrl, href)
 end
 
 -- Los enlaces absolutos de las páginas usan el dominio con que se pidió la página. Se reescriben
@@ -134,7 +145,8 @@ end
 
 -- Codifica un valor para un segmento de ruta (espacios como %20, nunca "+")
 local function enc(v)
-    return (tostring(url_encode(tostring(v))):gsub("%+", "%%20"))
+    -- path-segment encoding on top of the shared catalog lib (space as %20)
+    return (tostring(LIB("catalog").urlEncode(tostring(v))):gsub("%+", "%%20"))
 end
 
 -- Portada guardada como estilo: style="background-image: url(https://…/x.webp);"
@@ -249,7 +261,8 @@ local function fetchList(url, parser)
     if #items == 0 then
         log_info("ranobes: 0 resultados en " .. url .. " (body=" .. #r.body .. " bytes)")
     end
-    return { items = items, hasNext = (#items > 0 and hasNextLink(r.body)) }
+    -- shared "#items > 0" half + the site's own DLE nav-arrow check
+    return { items = items, hasNext = (LIB("catalog").hasNextPage(items) and hasNextLink(r.body)) }
 end
 
 local function pagePath(base, page)
@@ -262,7 +275,7 @@ end
 -- catálogo completo (/novels/, novelas nuevas primero).
 
 local function catalogListImpl(index)
-    local page = index + 1
+    local page = LIB("catalog").nextIndex(index)
     local res = fetchList(pagePath(baseUrl .. "/updates/", page), parseUpdates)
     -- con el reto activo no tiene sentido probar otra página: es el mismo bloqueo
     if #res.items > 0 or page > 1 or _challengeUrl then return res end
@@ -329,7 +342,7 @@ function getCatalogSearch(index, query)
     local q = string_trim(query or "")
     if q == "" then return { items = {}, hasNext = false } end
     beginCall()
-    local url = buildFilterUrl({ { "l.title", enc(q) } }, SEARCH_SORT, index + 1)
+    local url = buildFilterUrl({ { "l.title", enc(q) } }, SEARCH_SORT, LIB("catalog").nextIndex(index))
     local res = fetchList(url, parseArticles)
     finishCall()
     return res
@@ -382,12 +395,8 @@ function getBookGenres(bookUrl)
     local body = fetchPage(bookUrl)
     if not body then return {} end
 
-    local genres = {}
-    for _, a in ipairs(html_select(body, "#mc-fs-genre a")) do
-        local g = string_clean(a.text)
-        if g ~= "" then table.insert(genres, g) end
-    end
-    return genres
+    -- string_clean + drop empties/dupes — shared meta lib (site order kept).
+    return LIB("meta").collectGenres(html_select(body, "#mc-fs-genre a"), { clean = true })
 end
 
 function getBookRating(bookUrl)
@@ -410,8 +419,7 @@ function getBookStatus(bookUrl)
     for _, li in ipairs(html_select(body, ".r-fullstory-spec li")) do
         if string_starts_with(string_clean(li.text), "Status in COO") then
             local a = html_select_first(li.html, "a")
-            local s = a and string_clean(a.text) or ""
-            if s ~= "" then return s end
+            if a then return LIB("meta").status(a.text) end
         end
     end
     return nil
@@ -677,7 +685,8 @@ function getBookLastUpdate(bookUrl)
     if not first then return nil end
     local rows = rowsFromData(first.data)
     if #rows == 0 then return nil end
-    return rows[1].date:match("^(%d%d%d%d%-%d%d%-%d%d)")
+    -- ISO date from the chapter row -> "YYYY-MM-DD" (shared meta lib).
+    return LIB("meta").normalizeDate(rows[1].date)
 end
 
 -- ── Texto del capítulo ────────────────────────────────────────────────────────
@@ -1074,7 +1083,7 @@ function getFilterList()
 end
 
 function getCatalogFiltered(index, filters)
-    local page = index + 1
+    local page = LIB("catalog").nextIndex(index)
 
     local function num(key)
         local v = string_trim(tostring(filters[key] or ""))

@@ -1,32 +1,37 @@
 id       = "mvlempyr.com"
 name     = "MVLEMPYR"
-version  = "1.0.6"
+version  = "1.0.7"
 baseUrl  = "https://www.mvlempyr.io"
 language = "en"
 icon     = "https://raw.githubusercontent.com/HnDK0/external-sources/main/icons/mvlempyr.webp"
 
 local chapSite = "https://chap.heliosarchive.online/"
 
-local _pageCache = {}
 local _allNovels = nil
 
 -- ── Helpers ─────────────────────────────────────────────────────────────────
 
-local function absUrl(href)
-    if not href or href == "" then return "" end
-    if string_starts_with(href, "http") then return href end
-    if string_starts_with(href, "//") then return "https:" .. href end
-    return url_resolve(baseUrl, href)
+-- Old builds ship no require_lib: keep the plugin loadable (a top-level error
+-- would drop it from the source list) and fail with a visible message on the
+-- first call instead. Shared libs load lazily and are cached per session.
+local _libs
+local function LIB(id)
+    if type(require_lib) ~= "function" then
+        show_error("Requires NoveLA update", "This plugin needs the shared libraries")
+        error("Requires NoveLA update (require_lib)", 0)
+    end
+    if not _libs then _libs = {} end
+    if not _libs[id] then _libs[id] = require_lib(id) end
+    return _libs[id]
 end
 
+local function absUrl(href)
+    return LIB("urls").absUrl(baseUrl, href)
+end
+
+-- Session-cached page fetch (shared fetch lib, same contract as before).
 local function fetchPage(url)
-    if _pageCache[url] then return _pageCache[url] end
-    local r = http_get(url)
-    if r.success then
-        _pageCache[url] = r.body
-        return r.body
-    end
-    return nil
+    return LIB("fetch").page(url)
 end
 
 local function checkCaptcha(body)
@@ -40,12 +45,10 @@ local function checkCaptcha(body)
     return false
 end
 
+-- Chapter-text cleanup from the shared content lib (this site's copy only
+-- stripped the translator credits — no site-domain lines on the chap host).
 local function applyStandardContentTransforms(text)
-    if not text or text == "" then return "" end
-    text = string_normalize(text)
-    text = regex_replace(text, "(?im)^\\s*(Translator|Editor|Proofreader|Read\\s+(at|on|latest))[:\\s][^\\n\\r]{0,70}(\\r?\\n|$)", "")
-    text = string_trim(text)
-    return text
+    return LIB("content").standardTransforms(text, { lang = "en" })
 end
 
 local function mulmod(a, b, m)
@@ -398,7 +401,7 @@ function getCatalogList(index)
     for _, n in ipairs(paginate(sorted, index)) do
         table.insert(items, novelToItem(n))
     end
-    return { items = items, hasNext = #sorted > (index + 1) * 20 }
+    return { items = items, hasNext = #sorted > LIB("catalog").nextIndex(index) * 20 }
 end
 
 function getCatalogSearch(index, query)
@@ -414,7 +417,7 @@ function getCatalogSearch(index, query)
     for _, n in ipairs(paginate(results, index)) do
         table.insert(items, novelToItem(n))
     end
-    return { items = items, hasNext = #results > (index + 1) * 20 }
+    return { items = items, hasNext = #results > LIB("catalog").nextIndex(index) * 20 }
 end
 
 function getCatalogFiltered(index, filters)
@@ -424,7 +427,7 @@ function getCatalogFiltered(index, filters)
     for _, n in ipairs(paginate(sorted, index)) do
         table.insert(items, novelToItem(n))
     end
-    return { items = items, hasNext = #sorted > (index + 1) * 20 }
+    return { items = items, hasNext = #sorted > LIB("catalog").nextIndex(index) * 20 }
 end
 
 -- ── Filters ─────────────────────────────────────────────────────────────────
@@ -578,12 +581,8 @@ function getBookGenres(bookUrl)
     local body = fetchPage(bookUrl)
     if not body then return {} end
     if checkCaptcha(body) then return {} end
-    local genres = {}
-    for _, el in ipairs(html_select(body, ".genre-tags")) do
-        local label = string_trim(el.text)
-        if label ~= "" then table.insert(genres, label) end
-    end
-    return genres
+    -- trim + drop empties/dupes — shared meta lib (site order kept).
+    return LIB("meta").collectGenres(html_select(body, ".genre-tags"))
 end
 
 -- ── Статус / Дата обновления ───────────────────────────────────────────────
@@ -601,7 +600,7 @@ function getBookStatus(bookUrl)
     if not el then
         el = html_select_first(body, ".novelstatustextmedium")
     end
-    return el and string_clean(el.text) or nil
+    return el and LIB("meta").status(el.text) or nil
 end
 
 -- ── Last update ──────────────────────────────────────────────────────────────
@@ -622,9 +621,8 @@ function getBookLastUpdate(bookUrl)
     if not posts or type(posts) ~= "table" or #posts == 0 then return nil end
     local d = posts[1].date
     if not d then return nil end
-    local y, m, day = string.match(d, "(%d%d%d%d)%-(%d%d)%-(%d%d)")
-    if not y then return nil end
-    return y .. "-" .. m .. "-" .. day
+    -- ISO 8601 from the WP API -> "YYYY-MM-DD" (shared meta lib).
+    return LIB("meta").normalizeDate(d)
 end
 
 -- ── Rating ─────────────────────────────────────────────────────────────────

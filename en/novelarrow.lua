@@ -1,7 +1,7 @@
 -- ── Метаданные ────────────────────────────────────────────────────────────────
 id       = "NovelArrow"
 name     = "Novel Arrow"
-version  = "1.0.5"
+version  = "1.0.6"
 baseUrl  = "https://novelarrow.com/"
 language = "en"
 icon     = "https://raw.githubusercontent.com/HnDK0/external-sources/main/icons/novelarrow.png"
@@ -9,6 +9,29 @@ icon     = "https://raw.githubusercontent.com/HnDK0/external-sources/main/icons/
 -- ── Константы ─────────────────────────────────────────────────────────────────
 
 local apiBase = "https://novelarrow.com/api-web/"
+
+-- ── Хелперы ───────────────────────────────────────────────────────────────────
+
+-- Old builds ship no require_lib: keep the plugin loadable (a top-level error
+-- would drop it from the source list) and fail with a visible message on the
+-- first call instead. Shared libs load lazily and are cached per session.
+local _libs
+local function LIB(id)
+    if type(require_lib) ~= "function" then
+        show_error("Requires NoveLA update", "This plugin needs the shared libraries")
+        error("Requires NoveLA update (require_lib)", 0)
+    end
+    if not _libs then _libs = {} end
+    if not _libs[id] then _libs[id] = require_lib(id) end
+    return _libs[id]
+end
+
+local function absUrl(href)
+    return LIB("urls").absUrl(baseUrl, href)
+end
+
+-- Engine global url_encode delegates to the shared catalog lib.
+local url_encode = function(s) return LIB("catalog").urlEncode(s) end
 
 -- ── Кэш деталей книги ─────────────────────────────────────────────────────────
 -- Движок вызывает getBookTitle/Cover/Description/Genres параллельно.
@@ -37,27 +60,10 @@ local function fetchBookData(novelId)
     return data
 end
 
--- ── Хелперы ───────────────────────────────────────────────────────────────────
-
-local function absUrl(href)
-    if not href or href == "" then return "" end
-    if string_starts_with(href, "http") then return href end
-    if string_starts_with(href, "//") then return "https:" .. href end
-    return url_resolve(baseUrl, href)
-end
-
--- Кэш HTML-страницы книги: getBookStatus/getBookLastUpdate читают мета-теги
--- со страницы книги, fetchBookPage убирает дублирующиеся http_get.
-local _pageCache = {}
-
+-- Кэш HTML-страницы книги (shared fetch lib): getBookStatus/getBookLastUpdate
+-- читают мета-теги со страницы книги, fetchBookPage убирает дублирующиеся http_get.
 local function fetchBookPage(url)
-    if _pageCache[url] then return _pageCache[url] end
-    local r = http_get(url)
-    if r.success then
-        _pageCache[url] = r.body
-        return r.body
-    end
-    return nil
+    return LIB("fetch").page(url)
 end
 
 -- Извлекает novel_id (slug) из URL книги:
@@ -86,15 +92,10 @@ local function stripHtml(html)
     return string_trim(text)
 end
 
--- Стандартная очистка текста главы
+-- Стандартная очистка текста главы (domain lines, leading "Chapter N" heading,
+-- translator/editor credit lines) from the shared content lib.
 local function applyStandardContentTransforms(text)
-    if not text or text == "" then return "" end
-    text = string_normalize(text)
-    text = regex_replace(text, "(?i)novelarrow\\.com.*?\\n", "")
-    text = regex_replace(text, "(?i)\\A[\\s\\p{Z}\\uFEFF]*((Глава\\s+\\d+|Chapter\\s+\\d+)[^\\n\\r]*[\\n\\r\\s]*)+", "")
-    text = regex_replace(text, "(?im)^\\s*(Translator|Editor|Proofreader|Read\\s+(at|on|latest))[:\\s][^\\n\\r]{0,70}(\\r?\\n|$)", "")
-    text = string_trim(text)
-    return text
+    return LIB("content").standardTransforms(text, { domain = baseUrl, lang = "en" })
 end
 
 -- Парсит items[] из ответа /api-web/novels в таблицу плагина
@@ -131,7 +132,7 @@ end
 -- ── Каталог ───────────────────────────────────────────────────────────────────
 
 function getCatalogList(index)
-    local page = index + 1
+    local page = LIB("catalog").nextIndex(index)
     local url = apiBase .. "novels?sort=LASTEST&page=" .. tostring(page) .. "&limit=20&status=all&genre=ALL"
     local r = http_get(url)
     if not r.success then
@@ -148,7 +149,7 @@ end
 -- ── Поиск ─────────────────────────────────────────────────────────────────────
 
 function getCatalogSearch(index, query)
-    local page = index + 1
+    local page = LIB("catalog").nextIndex(index)
     -- Те же параметры, что использует сайт для поиска по ключевому слову
     -- (novels?...&sort=SEARCH_KEYWORD&keyword=...&status=all&genre=ALL).
     local url = apiBase .. "novels?keyword=" .. url_encode(query)
@@ -236,7 +237,7 @@ function getBookStatus(bookUrl)
     local html = fetchBookPage(bookUrl)
     if not html then return nil end
     local v = html_attr(html, "meta[name='og:novel:status']", "content")
-    return v ~= "" and string_clean(v) or nil
+    return v ~= "" and LIB("meta").status(v) or nil
 end
 
 -- Дата обновления последней главы: <meta property="article:modified_time"
@@ -247,8 +248,8 @@ function getBookLastUpdate(bookUrl)
     local html = fetchBookPage(bookUrl)
     if not html then return nil end
     local v = html_attr(html, "meta[property='article:modified_time']", "content")
-    local y, m, d = string.match(v, "(%d%d%d%d)%-(%d%d)%-(%d%d)")
-    return y and (y .. "-" .. m .. "-" .. d) or nil
+    -- ISO 8601 from the meta tag -> "YYYY-MM-DD" (shared meta lib).
+    return LIB("meta").normalizeDate(v)
 end
 
 -- ── Список глав (parsePage) ───────────────────────────────────────────────────
@@ -444,7 +445,7 @@ end
 -- ── Каталог с фильтрами ───────────────────────────────────────────────────────
 
 function getCatalogFiltered(index, filters)
-    local page       = index + 1
+    local page       = LIB("catalog").nextIndex(index)
     local sort       = filters["sort"]       or "LASTEST"
     local status     = filters["status"]     or "all"
     local genre_mode = filters["genre_mode"] or "AND"

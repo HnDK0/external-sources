@@ -1,6 +1,6 @@
 id       = "readfrom"
 name     = "Read From Net"
-version  = "1.5.1"
+version  = "1.5.2"
 baseUrl  = "https://readfrom.net/"
 language = "en"
 icon     = "https://raw.githubusercontent.com/HnDK0/external-sources/main/icons/readfrom.png"
@@ -9,37 +9,41 @@ function getUserAgentPreset()
   return "Safari Mobile"
 end
 
-local _pageCache = {}
-
-local function fetchPage(url)
-  if _pageCache[url] then return _pageCache[url] end
-  local r = http_get(url)
-  if r.success then
-    _pageCache[url] = r.body
-    return r.body
+-- Old builds ship no require_lib: keep the plugin loadable (a top-level error
+-- would drop it from the source list) and fail with a visible message on the
+-- first call instead. Shared libs load lazily and are cached per session.
+local _libs
+local function LIB(id)
+  if type(require_lib) ~= "function" then
+    show_error("Requires NoveLA update", "This plugin needs the shared libraries")
+    error("Requires NoveLA update (require_lib)", 0)
   end
-  return nil
+  if not _libs then _libs = {} end
+  if not _libs[id] then _libs[id] = require_lib(id) end
+  return _libs[id]
+end
+
+-- Session-cached page fetch (shared fetch lib, same contract as before).
+local function fetchPage(url)
+  return LIB("fetch").page(url)
 end
 
 local function absUrl(href)
-  if not href or href == "" then return "" end
-  if string_starts_with(href, "http") then return href end
-  if string_starts_with(href, "//") then return "https:" .. href end
-  return url_resolve(baseUrl, href)
+  return LIB("urls").absUrl(baseUrl, href)
 end
+
+-- Engine global url_encode delegates to the shared catalog lib.
+local url_encode = function(s) return LIB("catalog").urlEncode(s) end
 
 local function getRelPath(url)
   local path = url:gsub("^https?://[^/]+/", "")
   return path:gsub("^/", "")
 end
 
+-- Standard chapter-text cleanup from the shared content lib (this site's copy
+-- skipped the site-domain lines; nothing on the page matches them anyway).
 local function applyStandardContentTransforms(text)
-  if not text or text == "" then return "" end
-  text = string_normalize(text)
-  text = regex_replace(text, "(?i)\\A[\\s\\p{Z}\\uFEFF]*((Chapter\\s+\\d+)[^\\n\\r]*[\\n\\r\\s]*)+", "")
-  text = regex_replace(text, "(?im)^\\s*(Translator|Editor|Proofreader|Read\\s+(at|on|latest))[:\\s][^\\n\\r]{0,70}(\\r?\\n|$)", "")
-  text = string_trim(text)
-  return text
+  return LIB("content").standardTransforms(text, { lang = "en" })
 end
 
 local function parseCatalogCard(card, isSearch)
@@ -57,9 +61,8 @@ local function parseCatalogCard(card, isSearch)
     local descEl = html_select_first(card.html, "div.text5")
     if descEl then description = string_trim(html_text(descEl.html)) end
   else
-    for _, g in ipairs(html_select(card.html, "h2 a[title*='Genre']") or {}) do
-      table.insert(genres, string_clean(g.text))
-    end
+    -- trim + drop empties — shared meta lib (site order kept).
+    genres = LIB("meta").collectGenres(html_select(card.html, "h2 a[title*='Genre']") or {})
     local authorEl = html_select_first(card.html, "h4 a")
     if authorEl then author = string_clean(authorEl.text) end
     local descEl = html_select_first(card.html, "div.text3")
@@ -87,7 +90,7 @@ local function parseCatalogPage(html, isSearch)
 end
 
 function getCatalogList(index)
-  local page = (index or 0) + 1
+  local page = LIB("catalog").nextIndex(index)
   local r = http_get(baseUrl .. "allbooks/page/" .. page .. "/")
   if not r.success then return { items = {}, hasNext = false } end
   local items = parseCatalogPage(r.body, false)
@@ -140,11 +143,8 @@ end
 function getBookGenres(bookUrl)
   local body = fetchPage(bookUrl)
   if not body then return {} end
-  local genres = {}
-  for _, g in ipairs(html_select(body, "h2 a[title*='Genre']") or {}) do
-    table.insert(genres, string_clean(g.text))
-  end
-  return genres
+  -- trim + drop empties — shared meta lib (site order kept).
+  return LIB("meta").collectGenres(html_select(body, "h2 a[title*='Genre']") or {})
 end
 
 function getChapterList(bookUrl)

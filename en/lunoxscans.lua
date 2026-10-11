@@ -6,7 +6,7 @@
 --   Los capítulos premium (con monedas) traen href="#" y NO se pueden leer: se omiten.
 id       = "lunoxscans"
 name     = "Lunox Novels"
-version  = "1.0.0"
+version  = "1.0.1"
 baseUrl  = "https://lunoxscans.com"
 language = "en"
 icon     = "https://raw.githubusercontent.com/HnDK0/external-sources/main/icons/lunoxscans.png"
@@ -15,23 +15,30 @@ icon     = "https://raw.githubusercontent.com/HnDK0/external-sources/main/icons/
 
 local ajaxUrl = baseUrl .. "/wp-admin/admin-ajax.php"
 
-local function absUrl(href)
-    if not href or href == "" then return "" end
-    if string_starts_with(href, "http") then return href end
-    if string_starts_with(href, "//") then return "https:" .. href end
-    return url_resolve(baseUrl, href)
+-- Old builds ship no require_lib: keep the plugin loadable (a top-level error
+-- would drop it from the source list) and fail with a visible message on the
+-- first call instead. Shared libs load lazily and are cached per session.
+local _libs
+local function LIB(id)
+    if type(require_lib) ~= "function" then
+        show_error("Requires NoveLA update", "This plugin needs the shared libraries")
+        error("Requires NoveLA update (require_lib)", 0)
+    end
+    if not _libs then _libs = {} end
+    if not _libs[id] then _libs[id] = require_lib(id) end
+    return _libs[id]
 end
 
+local function absUrl(href)
+    return LIB("urls").absUrl(baseUrl, href)
+end
+
+-- Engine global url_encode delegates to the shared catalog lib.
+local url_encode = function(s) return LIB("catalog").urlEncode(s) end
+
 -- Caché de la ficha (solo para título/portada/descripción/géneros; NO para capítulos ni hash)
-local _pageCache = {}
 local function fetchPage(url)
-    if _pageCache[url] then return _pageCache[url] end
-    local r = http_get(url)
-    if r.success then
-        _pageCache[url] = r.body
-        return r.body
-    end
-    return nil
+    return LIB("fetch").page(url)
 end
 
 -- La ficha pesa ~1.3 MB por los SVG de cada capítulo premium. Todo lo que no es la lista
@@ -100,12 +107,12 @@ local function fetchCards(url)
         return { items = {}, hasNext = false }
     end
     local items = parseCards(r.body)
-    return { items = items, hasNext = #items > 0 }
+    return { items = items, hasNext = LIB("catalog").hasNextPage(items) }
 end
 
 -- URL de búsqueda/archivo estándar de Madara. Páginas >1 → /page/N/
 local function buildSearchUrl(index, query, sort, genres, status, matchAll)
-    local page = index + 1
+    local page = LIB("catalog").nextIndex(index)
     local u = baseUrl .. "/"
     if page > 1 then u = u .. "page/" .. page .. "/" end
     u = u .. "?s=" .. url_encode(query or "") .. "&post_type=wp-manga"
@@ -151,7 +158,7 @@ function getCatalogList(index)
         return { items = {}, hasNext = false }
     end
     local items = parseCards(r.body)
-    return { items = items, hasNext = #items > 0 }
+    return { items = items, hasNext = LIB("catalog").hasNextPage(items) }
 end
 
 function getCatalogSearch(index, query)
@@ -220,12 +227,7 @@ function getBookGenres(bookUrl)
     if not body then return {} end
     local head = splitBook(body)
 
-    local genres = {}
-    for _, a in ipairs(html_select(head, ".genres-content a")) do
-        local g = string_clean(a.text)
-        if g ~= "" then table.insert(genres, g) end
-    end
-    return genres
+    return LIB("meta").collectGenres(html_select(head, ".genres-content a"), { clean = true })
 end
 
 function getBookStatus(bookUrl)
@@ -237,8 +239,8 @@ function getBookStatus(bookUrl)
         local h5 = html_select_first(item.html, "h5")
         if h5 and string_clean(h5.text) == "Status" then
             local el = html_select_first(item.html, ".summary-content")
-            local v = el and string_clean(el.text) or ""
-            if v ~= "" then return v end
+            local v = el and LIB("meta").status(el.text) or nil
+            if v then return v end
         end
     end
     return nil
@@ -250,8 +252,8 @@ function getBookLastUpdate(bookUrl)
     local head = splitBook(body)
 
     local v = html_attr(head, "meta[property='article:modified_time']", "content") or ""
-    local y, m, d = string.match(v, "(%d%d%d%d)%-(%d%d)%-(%d%d)")
-    return y and (y .. "-" .. m .. "-" .. d) or nil
+    -- ISO string -> "YYYY-MM-DD" via the shared meta lib.
+    return LIB("meta").normalizeDate(v)
 end
 
 function getBookRating(bookUrl)
@@ -338,17 +340,11 @@ local WATERMARK_LINE = "(?im)^[^\\n]*(?:translated by Lunox|LunoxScans\\.com)[^\
 -- Primera línea "<título en coreano/inglés> Episode N": repite el título del capítulo
 local EPISODE_HEADER = "(?i)\\A\\s*[^\\n]{0,100}\\bEpisode\\s+\\d+[ \\t]*\\n+"
 
--- Limpieza estándar: quita el encabezado "… Chapter N" del inicio, líneas de
--- créditos (Translator/Editor/Proofreader) y basura del dominio.
+-- Limpieza estándar (shared content lib): quita el encabezado "… Chapter N"
+-- del inicio, líneas de créditos (Translator/Editor/Proofreader) y basura del
+-- dominio.
 local function applyStandardContentTransforms(text)
-    if not text or text == "" then return "" end
-    text = string_normalize(text)
-    local domain = baseUrl:gsub("https?://", ""):gsub("^www%.", ""):gsub("/$", "")
-    text = regex_replace(text, "(?i)" .. domain .. ".*?\\n", "")
-    text = regex_replace(text, "(?i)\\A[\\s\\p{Z}\\uFEFF]*((Chapter\\s+\\d+)[^\\n\\r]*[\\n\\r\\s]*)+", "")
-    text = regex_replace(text, "(?im)^\\s*(Translator|Editor|Proofreader|Read\\s+(at|on|latest))[:\\s][^\\n\\r]{0,70}(\\r?\\n|$)", "")
-    text = string_trim(text)
-    return text
+    return LIB("content").standardTransforms(text, { domain = baseUrl, lang = "en" })
 end
 
 function getChapterText(html, url)

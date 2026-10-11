@@ -10,23 +10,29 @@
 
 id       = "kolnovel"
 name     = "KOLNOVEL"
-version  = "1.0.0"
+version  = "1.0.1"
 baseUrl  = "https://kolnovel.com"
 language = "ar"
 icon     = "https://raw.githubusercontent.com/HnDK0/external-sources/refs/heads/main/icons/kolnovel.png"
 
 -- ── Хелперы ───────────────────────────────────────────────────────────────
 
+-- Old builds ship no require_lib: keep the plugin loadable (a top-level
+-- error would drop it from the source list) and fail with a visible
+-- message on the first call instead. require_lib caches loaded libs.
+local function lib(id)
+    if type(require_lib) ~= "function" then
+        show_error("Требуется обновление NoveLA", "Плагину нужны общие библиотеки")
+        error("Требуется обновление NoveLA (require_lib)", 0)
+    end
+    return require_lib(id)
+end
+
 local _catalogRatings = {}  -- рейтинг из карточек каталога/поиска (span.mdminf):
                             -- страница книги отдаёт неверный рейтинг (0.0/5),
                             -- поэтому для getBookRating берём только кэш карточек
 
-local function absUrl(href)
-    if not href or href == "" then return "" end
-    if string_starts_with(href, "http") then return href end
-    if string_starts_with(href, "//") then return "https:" .. href end
-    return url_resolve(baseUrl, href)
-end
+local function absUrl(href) return lib("urls").absUrl(baseUrl, href) end
 
 -- Приложение нормализует URL книги (срезает trailing slash) перед вызовом
 -- функций деталей; повторяем это для ключей кеша, иначе getBookRating ищет
@@ -35,23 +41,12 @@ local function normUrl(u)
     return u:gsub("/+$", "")
 end
 
--- Кэш страницы книги: движок вызывает функции деталей книги параллельно,
--- поэтому один загруженный ответ делим между ними (паттерн fetchPage из гайда).
-local _pageCache = {}
-local function fetchPage(url)
-    if _pageCache[url] then return _pageCache[url] end
-    local r = http_get(url)
-    if r.success then _pageCache[url] = r.body end
-    return r.success and r.body or nil
-end
+-- Кэш страницы книги ведёт общий fetch lib (ключ — URL).
+local function fetchPage(url) return lib("fetch").page(url) end
 
+-- Стандартная чистка (доменные строки и пр.) из общего content lib.
 local function applyStandardContentTransforms(text)
-    if not text or text == "" then return "" end
-    text = string_normalize(text)
-    local domain = baseUrl:gsub("https?://", ""):gsub("^www%.", ""):gsub("/$", "")
-    text = regex_replace(text, "(?i)" .. domain .. ".*?\\n", "")
-    text = string_trim(text)
-    return text
+    return lib("content").standardTransforms(text, { domain = baseUrl, lang = "en" })
 end
 
 -- Парсер карточек каталога и поиска (article.maindet). Рейтинг — из span.mdminf.
@@ -95,7 +90,7 @@ end
 -- ── Каталог ───────────────────────────────────────────────────────────────
 
 function getCatalogList(index)
-    local url = baseUrl .. "/series/?order=rating&page=" .. tostring(index + 1)
+    local url = baseUrl .. "/series/?order=rating&page=" .. tostring(lib("catalog").nextIndex(index))
     local r = http_get(url)
     if not r.success then return { items = {}, hasNext = false } end
     local items   = parseCatalogItems(r.body, true)
@@ -108,7 +103,7 @@ end
 -- hasNext — a.next.page-numbers из div.pagination (не .hpage, это каталог).
 
 function getCatalogSearch(index, query)
-    local url = baseUrl .. "/page/" .. tostring(index + 1) .. "/?s=" .. url_encode(query)
+    local url = baseUrl .. "/page/" .. tostring(lib("catalog").nextIndex(index)) .. "/?s=" .. lib("catalog").urlEncode(query)
     local r = http_get(url)
     if not r.success then return { items = {}, hasNext = false } end
     local items   = parseCatalogItems(r.body, true)
@@ -192,13 +187,13 @@ function getFilterList()
 end
 
 function getCatalogFiltered(index, filters)
-    local page = index + 1
+    local page = lib("catalog").nextIndex(index)
     local url = baseUrl .. "/series/?page=" .. page
     for _, v in ipairs(filters["genres_included"] or {}) do
-        url = url .. "&genre[]=" .. url_encode(v)
+        url = url .. "&genre[]=" .. lib("catalog").urlEncode(v)
     end
     for _, v in ipairs(filters["types_included"] or {}) do
-        url = url .. "&type[]=" .. url_encode(v)
+        url = url .. "&type[]=" .. lib("catalog").urlEncode(v)
     end
     local status = filters["status"] or ""
     local order  = filters["order"]  or ""

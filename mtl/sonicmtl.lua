@@ -1,41 +1,30 @@
 id       = "sonicmtl"
 name     = "Sonic MTL"
-version  = "1.8.1"
+version  = "1.8.2"
 baseUrl  = "https://www.sonicmtl.com"
 language = "Mtl"
 icon     = "https://raw.githubusercontent.com/HnDK0/external-sources/main/icons/sonicmtl.png"
 
 -- ── Хелперы ───────────────────────────────────────────────────────────────────
 
-local function absUrl(href)
-    if not href or href == "" then return "" end
-    if string_starts_with(href, "http") then return href end
-    if string_starts_with(href, "//") then return "https:" .. href end
-    return url_resolve(baseUrl, href)
+-- Old builds ship no require_lib: keep the plugin loadable (a top-level
+-- error would drop it from the source list) and fail with a visible
+-- message on the first call instead. require_lib caches loaded libs.
+local function lib(id)
+    if type(require_lib) ~= "function" then
+        show_error("Требуется обновление NoveLA", "Плагину нужны общие библиотеки")
+        error("Требуется обновление NoveLA (require_lib)", 0)
+    end
+    return require_lib(id)
 end
+
+local function absUrl(href) return lib("urls").absUrl(baseUrl, href) end
 
 local function applyStandardContentTransforms(text)
-    if not text or text == "" then return "" end
-    text = string_normalize(text)
-    local domain = baseUrl:gsub("https?://", ""):gsub("^www%.", ""):gsub("/$", "")
-    text = regex_replace(text, "(?i)" .. domain .. ".*?\\n", "")
-    text = regex_replace(text, "(?i)\\A[\\s\\p{Z}\\uFEFF]*((Глава\\s+\\d+|Chapter\\s+\\d+)[^\\n\\r]*[\\n\\r\\s]*)+", "")
-    text = regex_replace(text, "(?im)^\\s*(Translator|Editor|Proofreader|Read\\s+(at|on|latest))[:\\s][^\\n\\r]{0,70}(\\r?\\n|$)", "")
-    text = string_trim(text)
-    return text
+    return lib("content").standardTransforms(text, { domain = baseUrl, lang = "en" })
 end
 
-local _pageCache = {}
-
-local function fetchPage(url)
-    if _pageCache[url] then return _pageCache[url] end
-    local r = http_get(url)
-    if r.success then
-        _pageCache[url] = r.body
-        return r.body
-    end
-    return nil
-end
+local function fetchPage(url) return lib("fetch").page(url) end
 
 -- ── Утилиты для парсинга ──────────────────────────────────────────────────────
 
@@ -69,7 +58,7 @@ end
 -- ── Каталог ───────────────────────────────────────────────────────────────────
 
 function getCatalogList(index)
-    local page = index + 1
+    local page = lib("catalog").nextIndex(index)
     local url = baseUrl .. "/?s&post_type=wp-manga&m_orderby=rating"
     if page > 1 then
         url = baseUrl .. "/page/" .. page .. "/?s&post_type=wp-manga&m_orderby=rating"
@@ -79,13 +68,13 @@ function getCatalogList(index)
     if not r.success then return { items = {}, hasNext = false } end
 
     local items = parseCatalogItems(r.body)
-    return { items = items, hasNext = #items > 0 }
+    return { items = items, hasNext = lib("catalog").hasNextPage(items) }
 end
 
 -- ── Поиск ─────────────────────────────────────────────────────────────────────
 
 function getCatalogSearch(index, query)
-    local page = index + 1
+    local page = lib("catalog").nextIndex(index)
     local url = baseUrl .. "/?s=" .. url_encode(query) .. "&post_type=wp-manga"
     if page > 1 then
         url = baseUrl .. "/page/" .. page .. "/?s=" .. url_encode(query) .. "&post_type=wp-manga"
@@ -95,7 +84,7 @@ function getCatalogSearch(index, query)
     if not r.success then return { items = {}, hasNext = false } end
 
     local items = parseCatalogItems(r.body)
-    return { items = items, hasNext = #items > 0 }
+    return { items = items, hasNext = lib("catalog").hasNextPage(items) }
 end
 
 -- ── Детали книги ──────────────────────────────────────────────────────────────
@@ -127,13 +116,7 @@ end
 function getBookGenres(bookUrl)
     local body = fetchPage(bookUrl)
     if not body then return {} end
-
-    local genres = {}
-    for _, a in ipairs(html_select(body, ".genres-content a")) do
-        local label = string_trim(a.text)
-        if label ~= "" then table.insert(genres, label) end
-    end
-    return genres
+    return lib("meta").collectGenres(html_select(body, ".genres-content a"))
 end
 
 -- ── Рейтинг ─────────────────────────────────────────────────────────────────
@@ -155,30 +138,15 @@ local MONTHS = {
 }
 
 -- Приводит строку даты к YYYY-MM-DD. Поддерживает оба формата сайта:
--- относительный "N minutes/hours/days ago" и абсолютный "August 19, 2026".
+-- относительный "N minutes/hours/days ago" (meta.normalizeDate) и
+-- абсолютный "August 19, 2026" (локальный разбор).
 local function normalizeUpdateDate(raw)
     if not raw then return nil end
-    local n, unit = string.match(raw, "(%d+)%s+(%w+)%s+ago")
-    if n and unit then
-        n = tonumber(n)
-        local secs = 0
-        if unit == "second" or unit == "seconds" then secs = n
-        elseif unit == "minute" or unit == "minutes" then secs = n * 60
-        elseif unit == "hour" or unit == "hours" then secs = n * 3600
-        elseif unit == "day" or unit == "days" then secs = n * 86400
-        elseif unit == "week" or unit == "weeks" then secs = n * 604800
-        elseif unit == "month" or unit == "months" then secs = n * 2592000
-        elseif unit == "year" or unit == "years" then secs = n * 31536000
-        end
-        if secs > 0 then
-            return os.date("%Y-%m-%d", os.time() - secs)
-        end
-    end
     local mon, d, y = string.match(raw, "(%a+)%s+(%d+),?%s+(%d%d%d%d)")
     if mon and MONTHS[mon] and d and y then
         return string.format("%04d-%02d-%02d", tonumber(y), MONTHS[mon], tonumber(d))
     end
-    return nil
+    return lib("meta").normalizeDate(raw)
 end
 
 function getBookStatus(bookUrl)
@@ -479,7 +447,7 @@ end
 -- ── Каталог с фильтрами ───────────────────────────────────────────────────────
 
 function getCatalogFiltered(index, filters)
-    local page    = index + 1
+    local page    = lib("catalog").nextIndex(index)
     local orderby = filters["m_orderby"] or "rating"
     local op      = filters["op"] or ""
     local adult   = filters["adult"] or ""
@@ -519,5 +487,5 @@ function getCatalogFiltered(index, filters)
     if not r.success then return { items = {}, hasNext = false } end
 
     local items = parseCatalogItems(r.body)
-    return { items = items, hasNext = #items > 0 }
+    return { items = items, hasNext = lib("catalog").hasNextPage(items) }
 end

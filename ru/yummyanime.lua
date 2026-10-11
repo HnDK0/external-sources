@@ -7,7 +7,7 @@
 content_type = "video"
 id          = "yummyanime"
 name        = "YummyAnime"
-version     = "1.1.0"
+version     = "1.1.1"
 baseUrl     = "https://ru.yummyani.me"
 language    = "ru"
 icon        = "https://raw.githubusercontent.com/HnDK0/external-sources/refs/heads/main/icons/yummyanime.png"
@@ -28,6 +28,8 @@ local function tryLib(name)
 end
 
 local TEXT = tryLib("text")
+local SOURCES = tryLib("sources")
+local FETCH = tryLib("fetch")
 -- Хостер-резолверы вынесены в libs/hosters/ (lane shared-libs): каждая либа
 -- грузится тем же pcall-паттерном, ошибка копится в libErr для ensureEngine.
 local KODIK  = tryLib("kodik")
@@ -41,6 +43,8 @@ local function ensureEngine()
     if not HAS_LIBS then missing[#missing + 1] = "require_lib" end
     if rawget(_G, "base64_decode") == nil then missing[#missing + 1] = "base64_decode" end
     if TEXT == nil then missing[#missing + 1] = "text" end
+    if SOURCES == nil then missing[#missing + 1] = "sources" end
+    if FETCH == nil then missing[#missing + 1] = "fetch" end
     if KODIK == nil then missing[#missing + 1] = "kodik" end
     if ALLOHA == nil then missing[#missing + 1] = "alloha" end
     if AKSOR == nil then missing[#missing + 1] = "aksor" end
@@ -71,10 +75,10 @@ local BATCH_TIMEOUT = 8000  -- дефолт батча: iframe kodik/alloha, she
 local AKSOR_TIMEOUT = 6000  -- aksor: маленький JSON-запрос
 local CVH_TIMEOUT   = 6000  -- CVH: маленький JSON-запрос
 
--- Кэш сеанса: detail-ответы api.yani.tv, CVH-плейлисты (по shikimori_id)
--- и списки плееров эпизодов (по slug, ?need_videos=true).
-local _detailCache   = {}
-local _playlistCache = {}
+-- Кэш сеанса: списки плееров эпизодов (по slug, ?need_videos=true).
+-- detail-ответы и CVH-плейлисты кэширует fetch.page (см. fetchDetail/fetchPlaylist);
+-- _videosCache не уходит в fetch.page: getChapterListHash пишет в него свежий
+-- ответ напрямую (обход сессионного кэша обязателен для хэша).
 local _videosCache   = {}
 
 -- Слаг и из веб-роута /catalog/item/<slug>, и из старого API-вида /anime/<slug>.
@@ -85,14 +89,11 @@ end
 local function fetchDetail(bookUrl)
     local slug = bookSlug(bookUrl)
     if not slug then return nil end
-    local cached = _detailCache[slug]
-    if cached then return cached end
-    local r = http_get(API .. "/anime/" .. slug, { headers = API_APP })
-    if not r.success then return nil end
-    local data = json_parse(r.body)
+    local body = FETCH.page(API .. "/anime/" .. slug, { headers = API_APP })
+    if not body then return nil end
+    local data = json_parse(body)
     local detail = data and data.response
     if type(detail) ~= "table" then return nil end
-    _detailCache[slug] = detail
     return detail
 end
 
@@ -387,15 +388,11 @@ local function playlistUrl(id)
 end
 
 local function fetchPlaylist(shikimoriId)
-    local cached = _playlistCache[shikimoriId]
-    if cached then return cached end
-    local r = http_get(playlistUrl(shikimoriId), { headers = CVH_HDR })
-    if not r.success then return nil end
-    local data = json_parse(r.body)
+    local body = FETCH.page(playlistUrl(shikimoriId), { headers = CVH_HDR })
+    if not body then return nil end
+    local data = json_parse(body)
     if type(data) ~= "table" or type(data.items) ~= "table" then return nil end
-    local episodes = normalizeEpisodes(data.items)
-    _playlistCache[shikimoriId] = episodes
-    return episodes
+    return normalizeEpisodes(data.items)
 end
 
 -- Список плееров серий: GET api.yani.tv/anime/<slug>?need_videos=true →
@@ -512,13 +509,8 @@ end
 -- libs/hosters/. Диспетчер record (api.yani.tv) остаётся в плагине: kind-ID
 -- 4=kodik/2=alloha/1=aksor/7=sibnet специфичны для бэкенда yummyanime.
 
-local function pushSource(list, seen, src)
-    if type(src) ~= "table" then return end
-    local url = src.url
-    if type(url) ~= "string" or url == "" or seen[url] then return end
-    seen[url] = true
-    list[#list + 1] = src
-end
+-- Дедупликация источников по url — sources.push (libs/helpers/sources.lua).
+local function pushSource(list, seen, src) SOURCES.push(list, seen, src) end
 
 local PLAYER_KINDS = { [4] = "kodik", [2] = "alloha", [1] = "aksor", [7] = "sibnet" }
 

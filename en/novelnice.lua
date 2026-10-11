@@ -1,40 +1,42 @@
 id       = "novelnice"
 name     = "NovelNice"
-version  = "1.4.4"
+version  = "1.4.5"
 baseUrl  = "https://novelnice.com/"
 language = "en"
 icon     = "https://raw.githubusercontent.com/HnDK0/external-sources/main/icons/novelnice.png"
 
 -- ── Хелперы ───────────────────────────────────────────────────────────────────
 
-local function absUrl(href)
-    if not href or href == "" then return "" end
-    if string_starts_with(href, "http") then return href end
-    if string_starts_with(href, "//") then return "https:" .. href end
-    return url_resolve(baseUrl, href)
-end
-
-local function applyStandardContentTransforms(text)
-    if not text or text == "" then return "" end
-    text = string_normalize(text)
-    local domain = baseUrl:gsub("https?://", ""):gsub("^www%.", ""):gsub("/$", "")
-    text = regex_replace(text, "(?i)" .. domain .. ".*?\\n", "")
-    text = regex_replace(text, "(?i)\\A[\\s\\p{Z}\\uFEFF]*((Глава\\s+\\d+|Chapter\\s+\\d+)[^\\n\\r]*[\\n\\r\\s]*)+", "")
-    text = regex_replace(text, "(?im)^\\s*(Translator|Editor|Proofreader|Read\\s+(at|on|latest))[:\\s][^\\n\\r]{0,70}(\\r?\\n|$)", "")
-    text = string_trim(text)
-    return text
-end
-
-local _pageCache = {}
-
-local function fetchPage(url)
-    if _pageCache[url] then return _pageCache[url] end
-    local r = http_get(url)
-    if r.success then
-        _pageCache[url] = r.body
-        return r.body
+-- Old builds ship no require_lib: keep the plugin loadable (a top-level error
+-- would drop it from the source list) and fail with a visible message on the
+-- first call instead. Shared libs load lazily and are cached per session.
+local _libs
+local function LIB(id)
+    if type(require_lib) ~= "function" then
+        show_error("Requires NoveLA update", "This plugin needs the shared libraries")
+        error("Requires NoveLA update (require_lib)", 0)
     end
-    return nil
+    if not _libs then _libs = {} end
+    if not _libs[id] then _libs[id] = require_lib(id) end
+    return _libs[id]
+end
+
+local function absUrl(href)
+    return LIB("urls").absUrl(baseUrl, href)
+end
+
+-- Engine global url_encode delegates to the shared catalog lib.
+local url_encode = function(s) return LIB("catalog").urlEncode(s) end
+
+-- Standard chapter-text cleanup (domain lines, leading "Chapter N" heading,
+-- translator/editor credit lines) from the shared content lib.
+local function applyStandardContentTransforms(text)
+    return LIB("content").standardTransforms(text, { domain = baseUrl, lang = "en" })
+end
+
+-- Session-cached page fetch (shared fetch lib, same contract as before).
+local function fetchPage(url)
+    return LIB("fetch").page(url)
 end
 
 -- ── Утилиты для парсинга ──────────────────────────────────────────────────────
@@ -91,7 +93,7 @@ end
 -- ── Каталог ───────────────────────────────────────────────────────────────────
 
 function getCatalogList(index)
-    local page = index + 1
+    local page = LIB("catalog").nextIndex(index)
     -- Каталог живёт на /read/ (запросы с post_type=wp-manga блокирует Cloudflare → 403)
     local url = baseUrl .. "read/?m_orderby=rating"
     if page > 1 then
@@ -112,7 +114,7 @@ function getCatalogSearch(index, query)
     -- ?s=<q>&post_type=wp-manga, а CF блокирует параметр post_type (403).
     -- Без него WordPress ищет только по обычным постам → всегда пусто.
     -- Оставляем вызов, чтобы движок не падал; результатов не будет.
-    local page = index + 1
+    local page = LIB("catalog").nextIndex(index)
     local url = baseUrl .. "?s=" .. url_encode(query)
     if page > 1 then
         url = baseUrl .. "page/" .. page .. "/?s=" .. url_encode(query)
@@ -151,12 +153,8 @@ function getBookGenres(bookUrl)
     local body = fetchPage(bookUrl)
     if not body then return {} end
 
-    local genres = {}
-    for _, a in ipairs(html_select(body, ".genres-content a")) do
-        local label = string_trim(a.text)
-        if label ~= "" then table.insert(genres, label) end
-    end
-    return genres
+    -- trim + drop empties — shared meta lib (site order kept).
+    return LIB("meta").collectGenres(html_select(body, ".genres-content a"))
 end
 
 function getBookRating(bookUrl)
@@ -176,8 +174,8 @@ function getBookStatus(bookUrl)
         if heading and string_trim(heading.text) == "Status" then
             local content = html_select_first(item.html, ".summary-content")
             if content then
-                local v = string_trim(content.text)
-                if v ~= "" then return v end
+                local v = LIB("meta").status(content.text)
+                if v then return v end
             end
             break
         end
@@ -215,21 +213,9 @@ function getBookLastUpdate(bookUrl)
     local v = string_trim(el.text)
 
     -- Относительная дата: "22 minutes ago" / "3 hours ago" / "1 day ago"
-    local n, unit = string.match(v, "(%d+)%s+(%w+)%s+ago")
-    if n then
-        local secs = {
-            minute = 60, minutes = 60,
-            hour = 3600, hours = 3600,
-            day = 86400, days = 86400,
-            week = 604800, weeks = 604800,
-            month = 2592000, months = 2592000,
-            year = 31536000, years = 31536000
-        }
-        local mult = secs[unit]
-        if mult then
-            return os.date("%Y-%m-%d", os.time() - tonumber(n) * mult)
-        end
-    end
+    -- → YYYY-MM-DD (shared meta lib; месяцы/годы приблизительны — 30/365 дней,
+    -- как и в прежнем локальном парсере).
+    if string.match(v, "(%d+)%s+(%w+)%s+ago") then return LIB("meta").normalizeDate(v) end
 
     -- Абсолютная дата: "August 17, 2026"
     local months = {
@@ -458,7 +444,7 @@ end
 -- ── Каталог с фильтрами ───────────────────────────────────────────────────────
 
 function getCatalogFiltered(index, filters)
-    local page    = index + 1
+    local page    = LIB("catalog").nextIndex(index)
     local orderby = filters["m_orderby"] or "rating"
     local op      = filters["op"] or ""
     local adult   = filters["adult"] or ""

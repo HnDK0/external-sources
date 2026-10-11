@@ -1,49 +1,59 @@
 -- ── Метаданные ────────────────────────────────────────────────────────────────
 id       = "sto9"
 name     = "Sto9"
-version = "1.0.6"
+version = "1.0.7"
 baseUrl  = "https://sto9.com/"
 language = "zh"
 icon     = "https://raw.githubusercontent.com/HnDK0/external-sources/main/icons/sto9.png"
 
 -- ── Хелперы ───────────────────────────────────────────────────────────────────
 
-local function absUrl(href)
-  if not href or href == "" then return "" end
-  if string_starts_with(href, "http") then return href end
-  if string_starts_with(href, "//") then return "https:" .. href end
-  return url_resolve(baseUrl, href)
+-- Old builds ship no require_lib: keep the plugin loadable (a top-level error
+-- would drop it from the source list) and fail with a visible message on the
+-- first call instead. Shared libs load lazily and are cached per session.
+local _libs
+local function LIB(id)
+  if type(require_lib) ~= "function" then
+    show_error("Requires NoveLA update", "This plugin needs the shared libraries")
+    error("Requires NoveLA update (require_lib)", 0)
+  end
+  if not _libs then _libs = {} end
+  if not _libs[id] then _libs[id] = require_lib(id) end
+  return _libs[id]
 end
 
+local function absUrl(href)
+  return LIB("urls").absUrl(baseUrl, href)
+end
+
+-- Standard chapter-text cleanup (domain lines, leading "第N章" heading,
+-- translator/editor credit lines) from the shared content lib, plus the
+-- site-specific watermarks: the o9.com em-spacer line and the "（還有更新耶）"
+-- stub the site injects at the end of a chapter.
 local function applyStandardContentTransforms(text)
-  if not text or text == "" then return "" end
-  text = string_normalize(text)
+  text = LIB("content").standardTransforms(text, { domain = baseUrl, lang = "zh" })
+  if text == "" then return "" end
   text = regex_replace(text, "(?<!\\n)\\u2003\\u2003[^\\n]*o9\\.com[^\\n]*", "")
   text = regex_replace(text, "(?m)^\\s*（還有更新耶）\\s*$", "")
-  text = regex_replace(text, "(?i)\\A[\\s\\uFEFF]*((第[\\d一二三四五六七八九十百千萬]+[章節]|Chapter\\s+\\d+)[^\\n\\r]*[\\n\\r\\s]*)+", "")
-  text = regex_replace(text, "(?im)^\\s*(翻譯|譯者|編輯|校對|翻譯|译者|编辑|校对|更新|閱讀|最新閱讀)[:\\s：][^\\n\\r]{0,70}(\\r?\\n|$)", "")
-  text = string_trim(text)
-  return text
+  return string_trim(text)
 end
+
+-- Engine global url_encode delegates to the shared catalog lib.
+local url_encode = function(s) return LIB("catalog").urlEncode(s) end
 
 -- ── Кэш страницы книги (fetchPage) ──────────────────────────────────────────
 
-local _pageCache = {}
+-- Session-cached book page (shared fetch lib): the book details are read by
+-- several functions in one adapter run. getChapterListHash stays on a direct
+-- http_get — the hash must see a fresh page.
 local function fetchPage(url)
-  if _pageCache[url] then return _pageCache[url] end
-  local r = http_get(url)
-  if not r.success then
-    log_error("sto9: fetchPage failed " .. url .. " code=" .. tostring(r.code))
-    return nil
-  end
-  _pageCache[url] = r.body
-  return r.body
+  return LIB("fetch").page(url)
 end
 
 -- ── Каталог ───────────────────────────────────────────────────────────────────
 
 function getCatalogList(index)
-  local page = index + 1
+  local page = LIB("catalog").nextIndex(index)
   local url = "https://sto9.com/novels/newhot_0_0_" .. tostring(page) .. ".html"
   local r = http_get(url)
   if not r.success then
@@ -65,13 +75,13 @@ function getCatalogList(index)
     end
   end
 
-  return { items = items, hasNext = #items > 0 }
+  return { items = items, hasNext = LIB("catalog").hasNextPage(items) }
 end
 
 -- ── Поиск ─────────────────────────────────────────────────────────────────────
 
 function getCatalogSearch(index, query)
-  local page = index + 1
+  local page = LIB("catalog").nextIndex(index)
   local sanitized = query:gsub("[:%?%%#&]+", " ")
   local encoded = url_encode(sanitized)
   local url = "https://sto9.com/search/" .. encoded .. "/" .. tostring(page) .. ".html"
@@ -96,7 +106,7 @@ function getCatalogSearch(index, query)
     end
   end
 
-  return { items = items, hasNext = #items > 0 }
+  return { items = items, hasNext = LIB("catalog").hasNextPage(items) }
 end
 
 -- ── Фильтры ───────────────────────────────────────────────────────────────────
@@ -126,7 +136,7 @@ function getFilterList()
 end
 
 function getCatalogFiltered(index, filters)
-  local page = index + 1
+  local page = LIB("catalog").nextIndex(index)
   local cat  = filters["category"] or "0"
   local url  = "https://sto9.com/novels/class/" .. cat .. "_" .. tostring(page) .. ".html"
   local r = http_get(url)
@@ -149,7 +159,7 @@ function getCatalogFiltered(index, filters)
     end
   end
 
-  return { items = items, hasNext = #items > 0 }
+  return { items = items, hasNext = LIB("catalog").hasNextPage(items) }
 end
 
 -- ── Детали книги (fetchPage — кэш) ───────────────────────────────────────────
@@ -182,9 +192,9 @@ end
 
 -- Статус книги — мета-тег og:novel:status (напр. «連載»).
 function getBookStatus(bookUrl)
-  local r = http_get(bookUrl)
-  if not r.success then return nil end
-  local s = html_attr(r.body, "meta[property='og:novel:status']", "content")
+  local body = fetchPage(bookUrl)
+  if not body then return nil end
+  local s = html_attr(body, "meta[property='og:novel:status']", "content")
   if s and s ~= "" then return s end
   return nil
 end
@@ -192,11 +202,11 @@ end
 -- Дата обновления — мета-тег og:novel:update_time (формат «YYYY-MM-DD» или
 -- «YYYY-MM-DD HH:MM:SS»). Берём только часть YYYY-MM-DD.
 function getBookLastUpdate(bookUrl)
-  local r = http_get(bookUrl)
-  if not r.success then return nil end
-  local dt = html_attr(r.body, "meta[property='og:novel:update_time']", "content")
+  local body = fetchPage(bookUrl)
+  if not body then return nil end
+  local dt = html_attr(body, "meta[property='og:novel:update_time']", "content")
   if dt and dt ~= "" then
-    local d = string.match(dt, "(%d%d%d%d%-%d%d%-%d%d)")
+    local d = LIB("meta").normalizeDate(dt)
     if d then return d end
   end
   return nil

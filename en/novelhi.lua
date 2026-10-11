@@ -1,7 +1,7 @@
 -- ── Metadata ────────────────────────────────────────────────────────────────
 id       = "novelhi"
 name     = "NovelHi"
-version  = "1.1.0"
+version  = "1.1.1"
 baseUrl  = "https://novelhi.com"
 language = "en"
 icon     = "https://raw.githubusercontent.com/HnDK0/external-sources/main/icons/novelhi.png"
@@ -38,44 +38,43 @@ local function ensureEngine()
     end
 end
 
+-- Lazy loader for the shared helper libs (urls/fetch/catalog/content/meta);
+-- reuses the ensureEngine guard above. require_lib caches loaded libs itself.
+local _shared = {}
+local function LIB(id)
+    ensureEngine()
+    if not _shared[id] then _shared[id] = require_lib(id) end
+    return _shared[id]
+end
+
 -- ── Helpers ───────────────────────────────────────────────────────────────────
 
 local function absUrl(href)
-    if not href or href == "" then return "" end
-    if string_starts_with(href, "http") then return href end
-    if string_starts_with(href, "//") then return "https:" .. href end
-    return url_resolve(baseUrl, href)
+    return LIB("urls").absUrl(baseUrl, href)
 end
 
+-- Engine global url_encode delegates to the shared catalog lib.
+local url_encode = function(s) return LIB("catalog").urlEncode(s) end
+
+-- Standard chapter-text cleanup (domain lines, leading "Chapter N" heading,
+-- translator/editor credit lines) from the shared content lib, plus the
+-- site-specific extras: "[End ...]" credit lines and blank-run collapse.
 local function applyStandardContentTransforms(text)
-    if not text or text == "" then return "" end
-    text = string_normalize(text)
-    local domain = baseUrl:gsub("https?://", ""):gsub("^www%.", ""):gsub("/$", "")
-    text = regex_replace(text, "(?i)" .. domain .. ".*?\\n", "")
-    text = regex_replace(text, "(?i)\\A[\\s\\p{Z}\\uFEFF]*((Chapter\\s+\\d+)[^\\n\\r]*[\\n\\r\\s]*)+", "")
-    text = regex_replace(text, "(?im)^\\s*(Translator|Editor|Proofreader|Read\\s+(at|on|latest))[:\\s][^\\n\\r]{0,70}(\\r?\\n|$)", "")
+    text = LIB("content").standardTransforms(text, { domain = baseUrl, lang = "en" })
+    if text == "" then return "" end
     text = regex_replace(text, "(?im)^\\s*\\[[^\\]\\n]*[Ee]nd[^\\]\\n]*\\]\\s*(\\r?\\n|$)", "")
     text = regex_replace(text, "\\n{3,}", "\n\n")
-    text = string_trim(text)
-    return text
+    return string_trim(text)
 end
 
 -- NovelHi obfuscates chapter text with ROT13 + a custom font (the raw JSON
 -- contains ROT13-encoded English; the font visually decodes it in a browser).
 -- The ROT13 itself lives in libs/text (require_lib("text").rot13).
 
--- Book page cache: the engine calls the detail functions in parallel.
-local _pageCache = {}
-
+-- Book page cache: the engine calls the detail functions in parallel
+-- (shared fetch lib caches successful responses for the session).
 local function fetchPage(url)
-    if not url or url == "" then return nil end
-    if _pageCache[url] then return _pageCache[url] end
-    local r = http_get(url)
-    if r.success then
-        _pageCache[url] = r.body
-        return r.body
-    end
-    return nil
+    return LIB("fetch").page(url)
 end
 
 -- novelhi отдаёт разный шаблон в зависимости от User-Agent: под мобильным/пустым
@@ -168,14 +167,16 @@ local function fetchCatalog(apiUrl)
     local total      = tonumber(data.data.total)     or 0
     local pageSize   = tonumber(data.data.pageSize)  or 20
     local totalPages = math.ceil(total / math.max(pageSize, 1))
-    return { items = items, hasNext = page < totalPages and #items > 0 }
+    -- API knows its total page count; keep that comparison (shared lib only
+    -- supplies the "#items > 0" half).
+    return { items = items, hasNext = page < totalPages and LIB("catalog").hasNextPage(items) }
 end
 
 -- ── Catalog ───────────────────────────────────────────────────────────────────
 
 function getCatalogList(index)
     ensureEngine()
-    local page = (index or 0) + 1
+    local page = LIB("catalog").nextIndex(index)
     local url  = baseUrl .. "/book/searchBookListWithShelfState?curr=" .. page .. "&limit=20"
     return fetchCatalog(url)
 end
@@ -184,7 +185,7 @@ end
 
 function getCatalogSearch(index, query)
     ensureEngine()
-    local page = (index or 0) + 1
+    local page = LIB("catalog").nextIndex(index)
     local url  = baseUrl .. "/book/searchBookListWithShelfState?curr=" .. page ..
                  "&limit=20&keyword=" .. url_encode(query or "")
     return fetchCatalog(url)
@@ -222,7 +223,7 @@ end
 
 function getCatalogFiltered(index, filters)
     ensureEngine()
-    local page   = (index or 0) + 1
+    local page   = LIB("catalog").nextIndex(index)
     local status = tostring(filters and filters["status"] or "")
     local genre  = tostring(filters and filters["genre"] or "")
 
@@ -280,12 +281,12 @@ function getBookGenres(bookUrl)
     local data = json_parse(r.body)
     if not data or type(data.data) ~= "table" then return {} end
 
-    local genres = {}
+    -- JSON genre names (plain strings) — shared meta lib drops empties/dupes.
+    local names = {}
     for _, g in ipairs(data.data) do
-        local name = string_clean(tostring(g.genreName or ""))
-        if name ~= "" then table.insert(genres, name) end
+        names[#names + 1] = tostring(g.genreName or "")
     end
-    return genres
+    return LIB("meta").collectGenres(names, { clean = true })
 end
 
 -- ── Status / Last update ──────────────────────────────────────────────────────

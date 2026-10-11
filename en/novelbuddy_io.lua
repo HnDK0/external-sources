@@ -1,7 +1,7 @@
 -- Метаданные
 id       = "novelbuddy"
 name     = "NovelBuddy"
-version  = "3.0.3"
+version  = "3.0.4"
 baseUrl  = "https://novelbuddy.me"
 language = "en"
 icon     = "https://raw.githubusercontent.com/HnDK0/external-sources/main/icons/novelbuddy.png"
@@ -17,12 +17,26 @@ local API_BASE = "https://api.novelbuddy.me/"
 
 -- ── Хелперы ──────────────────────────────────────────────────────────────────
 
-local function absUrl(href)
-    if not href or href == "" then return "" end
-    if string_starts_with(href, "http") then return href end
-    if string_starts_with(href, "//") then return "https:" .. href end
-    return url_resolve(baseUrl, href)
+-- Old builds ship no require_lib: keep the plugin loadable (a top-level error
+-- would drop it from the source list) and fail with a visible message on the
+-- first call instead. Shared libs load lazily and are cached per session.
+local _libs
+local function LIB(id)
+    if type(require_lib) ~= "function" then
+        show_error("Requires NoveLA update", "This plugin needs the shared libraries")
+        error("Requires NoveLA update (require_lib)", 0)
+    end
+    if not _libs then _libs = {} end
+    if not _libs[id] then _libs[id] = require_lib(id) end
+    return _libs[id]
 end
+
+local function absUrl(href)
+    return LIB("urls").absUrl(baseUrl, href)
+end
+
+-- Engine global url_encode delegates to the shared catalog lib.
+local url_encode = function(s) return LIB("catalog").urlEncode(s) end
 
 local function resolveCover(raw, slug)
     local cover = ""
@@ -128,7 +142,7 @@ end
 -- ── Каталог ───────────────────────────────────────────────────────────────────
 
 function getCatalogList(index, filters)
-    local page   = index + 1
+    local page   = LIB("catalog").nextIndex(index)
     local params = "page=" .. tostring(page) .. "&limit=24"
 
     if type(filters) == "table" then
@@ -183,7 +197,7 @@ function getCatalogList(index, filters)
 end
 
 function getCatalogSearch(index, query)
-    local page = index + 1
+    local page = LIB("catalog").nextIndex(index)
     local data = apiGet("titles/search?q=" .. url_encode(query)
                         .. "&page=" .. tostring(page) .. "&limit=24")
     if not data then return { items = {}, hasNext = false } end
@@ -298,19 +312,17 @@ end
 function getBookStatus(bookUrl)
     local manga = fetchMangaNextData(bookUrl)
     if not manga or not manga.status then return nil end
-    return string_clean(manga.status)
+    return LIB("meta").status(manga.status)
 end
 
 function getBookLastUpdate(bookUrl)
     local manga = fetchMangaNextData(bookUrl)
     if not manga then return nil end
-    -- updatedAt (CamelCase) из __NEXT_DATA__, fallback updated_at из API
+    -- updatedAt (CamelCase) из __NEXT_DATA__, fallback updated_at из API.
+    -- ISO 8601: "2026-08-21T13:12:56.000Z" → YYYY-MM-DD (shared meta lib).
     local raw = manga.updatedAt or manga.updated_at
     if not raw or raw == "" then return nil end
-    -- ISO 8601: "2026-08-21T13:12:56.000Z" → YYYY-MM-DD
-    local y, m, d = raw:match("(%d%d%d%d)%-(%d%d)%-(%d%d)")
-    if y then return y .. "-" .. m .. "-" .. d end
-    return nil
+    return LIB("meta").normalizeDate(raw)
 end
 
 -- ── Список глав ───────────────────────────────────────────────────────────────

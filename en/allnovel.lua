@@ -1,7 +1,7 @@
 -- ── Метаданные ────────────────────────────────────────────────────────────────
 id       = "allnovel"
 name     = "AllNovel"
-version  = "1.0.6"
+version  = "1.0.7"
 baseUrl  = "https://allnovel.org/"
 language = "en"
 icon     = "https://raw.githubusercontent.com/HnDK0/external-sources/main/icons/allnovel.png"
@@ -11,11 +11,22 @@ status   = "dead"
 
 -- ── Хелперы ───────────────────────────────────────────────────────────────────
 
+-- Old builds ship no require_lib: keep the plugin loadable (a top-level error
+-- would drop it from the source list) and fail with a visible message on the
+-- first call instead. Shared libs load lazily and are cached per session.
+local _libs
+local function LIB(id)
+  if type(require_lib) ~= "function" then
+    show_error("Requires NoveLA update", "This plugin needs the shared libraries")
+    error("Requires NoveLA update (require_lib)", 0)
+  end
+  if not _libs then _libs = {} end
+  if not _libs[id] then _libs[id] = require_lib(id) end
+  return _libs[id]
+end
+
 local function absUrl(href)
-  if not href or href == "" then return "" end
-  if string_starts_with(href, "http") then return href end
-  if string_starts_with(href, "//") then return "https:" .. href end
-  return url_resolve(baseUrl, href)
+  return LIB("urls").absUrl(baseUrl, href)
 end
 
 -- novelBinCoverUrl: строим URL обложки из слага книги (src из каталога игнорируем)
@@ -26,21 +37,19 @@ local function transformCover(bookUrl)
   return "https://images.novelbin.me/novel/" .. slug .. ".jpg"
 end
 
+-- Standard chapter-text cleanup (domain lines, leading "Chapter N" heading,
+-- translator/editor credit lines) from the shared content lib.
 local function applyStandardContentTransforms(text)
-  if not text or text == "" then return "" end
-  text = string_normalize(text)
-  local domain = baseUrl:gsub("https?://", ""):gsub("^www%.", ""):gsub("/$", "")
-  text = regex_replace(text, "(?i)" .. domain .. ".*?\\n", "")
-  text = regex_replace(text, "(?i)\\A[\\s\\p{Z}\\uFEFF]*((Глава\\s+\\d+|Chapter\\s+\\d+)[^\\n\\r]*[\\n\\r\\s]*)+", "")
-  text = regex_replace(text, "(?im)^\\s*(Translator|Editor|Proofreader|Read\\s+(at|on|latest))[:\\s][^\\n\\r]{0,70}(\\r?\\n|$)", "")
-  text = string_trim(text)
-  return text
+  return LIB("content").standardTransforms(text, { domain = baseUrl, lang = "en" })
 end
+
+-- Engine global url_encode delegates to the shared catalog lib.
+local url_encode = function(s) return LIB("catalog").urlEncode(s) end
 
 -- ── Каталог ───────────────────────────────────────────────────────────────────
 
 function getCatalogList(index)
-  local page = index + 1
+  local page = LIB("catalog").nextIndex(index)
   local url = baseUrl .. "latest-release-novel"
   if page > 1 then url = url .. "?page=" .. tostring(page) end
 
@@ -67,7 +76,7 @@ end
 -- ── Поиск ─────────────────────────────────────────────────────────────────────
 
 function getCatalogSearch(index, query)
-  local page = index + 1
+  local page = LIB("catalog").nextIndex(index)
   local url = baseUrl .. "search?keyword=" .. url_encode(query)
   if page > 1 then url = url .. "&page=" .. tostring(page) end
 
@@ -94,9 +103,9 @@ end
 -- ── Детали книги ──────────────────────────────────────────────────────────────
 
 function getBookTitle(bookUrl)
-  local r = http_get(bookUrl)
-  if not r.success then return nil end
-  local el = html_select_first(r.body, "h3.title")
+  local body = LIB("fetch").page(bookUrl)
+  if not body then return nil end
+  local el = html_select_first(body, "h3.title")
   if el then return string_clean(el.text) end
   return nil
 end
@@ -104,17 +113,17 @@ end
 function getBookCoverImageUrl(bookUrl)
   local cover = transformCover(bookUrl)
   if cover ~= "" then return cover end
-  local r = http_get(bookUrl)
-  if not r.success then return nil end
-  local el = html_select_first(r.body, ".book img[src]")
+  local body = LIB("fetch").page(bookUrl)
+  if not body then return nil end
+  local el = html_select_first(body, ".book img[src]")
   if el then return absUrl(el.src) end
   return nil
 end
 
 function getBookDescription(bookUrl)
-  local r = http_get(bookUrl)
-  if not r.success then return nil end
-  local el = html_select_first(r.body, ".desc-text")
+  local body = LIB("fetch").page(bookUrl)
+  if not body then return nil end
+  local el = html_select_first(body, ".desc-text")
   if el then return string_trim(el.text) end
   return nil
 end
@@ -122,13 +131,13 @@ end
 -- ── Статус / Дата обновления ─────────────────────────────────────────────────
 
 function getBookStatus(bookUrl)
-  local r = http_get(bookUrl)
-  if not r.success then return nil end
-  for _, div in ipairs(html_select(r.body, ".info div")) do
+  local body = LIB("fetch").page(bookUrl)
+  if not body then return nil end
+  for _, div in ipairs(html_select(body, ".info div")) do
     local h3 = html_select_first(div.html, "h3")
     if h3 and string_trim(h3.text) == "Status:" then
       local a = html_select_first(div.html, "a")
-      if a then return string_trim(a.text) end
+      if a then return LIB("meta").status(a.text) end
     end
   end
   return nil
@@ -210,20 +219,15 @@ end
 -- ── Жанры книги ───────────────────────────────────────────────────────────────
 
 function getBookGenres(bookUrl)
-  local r = http_get(bookUrl)
-  if not r.success then return {} end
-  local genres = {}
-  for _, div in ipairs(html_select(r.body, ".info div")) do
+  local body = LIB("fetch").page(bookUrl)
+  if not body then return {} end
+  for _, div in ipairs(html_select(body, ".info div")) do
     local h3 = html_select_first(div.html, "h3")
     if h3 and string_trim(h3.text) == "Genre:" then
-      for _, a in ipairs(html_select(div.html, "a")) do
-        local g = string_trim(a.text)
-        if g ~= "" then table.insert(genres, g) end
-      end
-      break
+      return LIB("meta").collectGenres(html_select(div.html, "a"))
     end
   end
-  return genres
+  return {}
 end
 
 -- ── Список фильтров ───────────────────────────────────────────────────────────
@@ -289,7 +293,7 @@ end
 -- ── Каталог с фильтрами ───────────────────────────────────────────────────────
 
 function getCatalogFiltered(index, filters)
-  local page   = index + 1
+  local page   = LIB("catalog").nextIndex(index)
   local ftype  = filters["type"] or "most-popular"
   local genres = filters["genre_included"] or {}
   local genre  = genres[1] or ""
@@ -313,5 +317,5 @@ function getCatalogFiltered(index, filters)
       })
     end
   end
-  return { items = items, hasNext = #items > 0 }
+  return { items = items, hasNext = LIB("catalog").hasNextPage(items) }
 end
