@@ -1,606 +1,74 @@
--- ── Метаданные ────────────────────────────────────────────────────────────────
+-- Loaded via require_lib("cdnlibs"): the shared engine for the LibGroup
+-- CDN family (api.cdnlibs.org, "Site-Id" header, site_id[0] query) lives
+-- in libs/family/cdnlibs.lua — this file only carries the site metadata,
+-- the family config and the site-specific hooks.
 id       = "mangalib"
 name     = "MangaLib"
-version  = "1.0.1"
+version  = "1.1.0"
 baseUrl  = "https://mangalib.me/"
 language = "ru"
 icon     = "https://raw.githubusercontent.com/HnDK0/external-sources/main/icons/mangalib.png"
 content_type = "manga"
 
--- MangaLib — манга на русском (LibGroup, api.cdnlibs.org).
--- Клон RanobeLib с siteId=1 для манги вместо ранобе.
--- Авторизация: Bearer Token (опционально, для 18+ контента).
-
-local apiBase  = "https://api.cdnlibs.org/api/manga/"
-local siteId   = "1"
-
-local userId = nil
-
-local function parseAuth()
-  if not get_localStorage then return nil, nil end
-  for _, domain in ipairs({"mangalib.me", "hentailib.me", "ranobelib.me"}) do
-    local raw = get_localStorage(domain, "auth")
-    if raw and raw ~= "" then
-      local ok, data = pcall(json_parse, raw)
-      if ok and data then
-        local at = data.token and data.token.access_token
-        local uid = data.auth and data.auth.id
-        if at and uid then
-          userId = tostring(uid)
-          return "Bearer " .. at, userId
-        end
-      end
-    end
-  end
-  return nil, nil
-end
-
-local function buildHeaders()
-  local h = {
-    ["Site-Id"]          = siteId,
-    ["User-Agent"]       = "Mozilla/5.0 (Linux; Android 14; Pixel 8 Pro Build/UQ1A.240205.004) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/132.0.6834.83 Mobile Safari/537.36",
-    ["Accept"]           = "application/json, text/plain, */*",
-    ["Accept-Language"]  = "ru-RU,ru;q=0.9,en-US;q=0.8,en;q=0.7",
-    ["Referer"]          = "https://mangalib.me/",
-    ["Origin"]           = "https://mangalib.me",
-    ["Sec-Fetch-Dest"]   = "empty",
-    ["Sec-Fetch-Mode"]   = "cors",
-    ["Sec-Fetch-Site"]   = "cross-site",
-  }
-  local token = parseAuth()
-  if token then h["Authorization"] = token end
-  return h
-end
-
--- ── Хелперы ───────────────────────────────────────────────────────────────────
-
-local function absUrl(href)
-  if not href or href == "" then return "" end
-  if string_starts_with(href, "http") then return href end
-  if string_starts_with(href, "//") then return "https:" .. href end
-  return url_resolve(baseUrl, href)
-end
-
-local function normalizeCover(raw)
-  if not raw or raw == "" then return "" end
-  if string_starts_with(raw, "//")   then return "https:" .. raw end
-  if string_starts_with(raw, "http") then return raw end
-  return "https://" .. raw
-end
-
-local function applyStandardContentTransforms(text)
-  if not text or text == "" then return "" end
-  text = string_normalize(text)
-  local domain = baseUrl:gsub("https?://", ""):gsub("^www%.", ""):gsub("/$", "")
-  text = regex_replace(text, "(?i)(?:^|\\n)[^<\\n]*" .. domain .. ".*?\\n", "\n")
-  text = regex_replace(text, "(?i)\\A[\\s\\p{Z}\\uFEFF]*((Глава\\s+\\d+|Chapter\\s+\\d+)[^\\n\\r]*[\\n\\r\\s]*)+", "")
-  text = string_trim(text)
-  return text
-end
-
-local function pickTitle(data)
-  return data.rus_name or data.eng_name or data.name or ""
-end
-
-local function extractSlug(bookUrl)
-  local clean = bookUrl:gsub("/?$", "")
-  local last = clean:match("([^/]+)$")
-  if not last then return nil end
-  return last
-end
-
-local function getPath(tbl, path)
-  if not tbl or not path then return nil end
-  local cur = tbl
-  for key in path:gmatch("[^.]+") do
-    if type(cur) ~= "table" then return nil end
-    cur = cur[key]
-  end
-  return cur
-end
-
-local function formatRating(avg)
-  if not avg or avg == "" or avg == "0" then return nil end
-  return avg .. "/10"
-end
-
-local function isErrorResponse(body)
-  if not body or body == "" then return true end
-  if body:sub(1, 15):find("<!DOCTYPE") or body:sub(1, 6):lower():find("<html") then
-    return true
-  end
-  return false
-end
-
--- ── Каталог (JSON API) ────────────────────────────────────────────────────────
-
-function getCatalogList(index)
-  local page = index + 1
-  local url = apiBase .. "?site_id[0]=" .. siteId ..
-              "&page=" .. tostring(page) ..
-              "&sort_by=rating_score&sort_type=desc&chapters[min]=1"
-
-  local r = http_get(url, { headers = buildHeaders() })
-  if not r.success then return { items = {}, hasNext = false } end
-
-  local parsed = json_parse(r.body)
-  if not parsed or not parsed.data then return { items = {}, hasNext = false } end
-
-  local items = {}
-  for _, manga in ipairs(parsed.data) do
-    local title = pickTitle(manga)
-    local slug  = manga.slug or manga.slug_url or ""
-    local cover = getPath(manga, "cover.default") or ""
-    if title ~= "" and slug ~= "" then
-      local item = {
-        title = string_clean(title),
-        url   = baseUrl .. "ru/" .. slug,
-        cover = (cover)
-      }
-      local avg = getPath(manga, "rating.average")
-      item.rating = formatRating(avg)
-      table.insert(items, item)
-    end
-  end
-
-  local hasNext = getPath(parsed, "meta.has_next_page")
-  return { items = items, hasNext = hasNext == true or #items > 0 }
-end
-
--- ── Поиск (JSON API) ──────────────────────────────────────────────────────────
-
-function getCatalogSearch(index, query)
-  local page = index + 1
-  local url = apiBase .. "?site_id[0]=" .. siteId ..
-              "&page=" .. tostring(page) ..
-              "&q=" .. url_encode(query)
-
-  local r = http_get(url, { headers = buildHeaders() })
-  if not r.success then return { items = {}, hasNext = false } end
-
-  local parsed = json_parse(r.body)
-  if not parsed or not parsed.data then return { items = {}, hasNext = false } end
-
-  local items = {}
-  for _, manga in ipairs(parsed.data) do
-    local title = pickTitle(manga)
-    local slug  = manga.slug_url or manga.slug or ""
-    local cover = getPath(manga, "cover.default") or ""
-    if title ~= "" and slug ~= "" then
-      local item = {
-        title = string_clean(title),
-        url   = baseUrl .. "ru/" .. slug,
-        cover = (cover)
-      }
-      local avg = getPath(manga, "rating.average")
-      item.rating = formatRating(avg)
-      table.insert(items, item)
-    end
-  end
-
-  local hasNext = getPath(parsed, "meta.has_next_page")
-  return { items = items, hasNext = hasNext == true }
-end
-
--- ── Детали книги (JSON API /api/manga/{slug}) ─────────────────────────────────
-
-local function fetchBookJson(bookUrl)
-  local slug = extractSlug(bookUrl)
-  if not slug then return nil end
-  local r = http_get(apiBase .. slug, { headers = buildHeaders() })
-  if not r.success then return nil end
-  if isErrorResponse(r.body) then return nil end
-  local parsed = json_parse(r.body)
-  return parsed and parsed.data or nil
-end
-
-function getBookTitle(bookUrl)
-  local data = fetchBookJson(bookUrl)
-  if not data then return nil end
-  local names = data.names
-  local title
-  if names then
-    title = names.rus or names.eng or data.rus_name or data.name
-  else
-    title = data.rus_name or data.eng_name or data.name
-  end
-  return title and string_clean(title) or nil
-end
-
-function getBookCoverImageUrl(bookUrl)
-  local data = fetchBookJson(bookUrl)
-  if not data then return nil end
-  local cover = getPath(data, "cover.default") or ""
-  return cover ~= "" and (cover) or nil
-end
-
-local function extractTextFromTipTap(node)
-  if not node then return "" end
-  if type(node) == "string" then return node end
-  if type(node) ~= "table" then return "" end
-  local parts = {}
-  if node.type == "text" then
-    table.insert(parts, node.text or "")
-  end
-  if node.content and type(node.content) == "table" then
-    for _, child in ipairs(node.content) do
-      table.insert(parts, extractTextFromTipTap(child))
-    end
-  end
-  return table.concat(parts, "")
-end
-
-local mangaDetailFields = "fields[]=eng_name&fields[]=otherNames&fields[]=summary&fields[]=rate&fields[]=genres&fields[]=tags&fields[]=teams&fields[]=authors&fields[]=publisher&fields[]=userRating&fields[]=manga_status_id&fields[]=status_id&fields[]=artists"
-
-function getBookDescription(bookUrl)
-  local slug = extractSlug(bookUrl)
-  if not slug then return nil end
-  local r = http_get(apiBase .. slug .. "?" .. mangaDetailFields, { headers = buildHeaders() })
-  if not r.success then return nil end
-  if isErrorResponse(r.body) then return nil end
-  local parsed = json_parse(r.body)
-  local data = parsed and parsed.data
-  if not data then return nil end
-  local summary = data.summary
-  if summary and type(summary) == "table" then
-    local desc = extractTextFromTipTap(summary)
-    if string_trim(desc) ~= "" then return string_trim(desc) end
-  elseif summary and type(summary) == "string" then
-    if string_trim(summary) ~= "" then return string_trim(summary) end
-  end
-  return nil
-end
-
-function getBookGenres(bookUrl)
-  local slug = extractSlug(bookUrl)
-  if not slug then return {} end
-
-  local r = http_get(
-    apiBase .. slug .. "?fields[]=genres&fields[]=tags",
-    { headers = buildHeaders() }
-  )
-  if not r.success then return {} end
-
-  local parsed = json_parse(r.body)
-  local data = parsed and parsed.data
-  if not data then return {} end
-
-  local genres = {}
-  local function addList(list)
-    if not list then return end
-    for _, item in ipairs(list) do
-      local label = item.name or ""
-      label = string_trim(label)
-      if label ~= "" then table.insert(genres, label) end
-    end
-  end
-
-  addList(data.genres)
-  addList(data.tags)
-
-  return genres
-end
-
-function getBookRating(bookUrl)
-  local slug = extractSlug(bookUrl)
-  if not slug then return nil end
-
-  local r = http_get(
-    apiBase .. slug .. "?fields[]=rate_avg&fields[]=rate",
-    { headers = buildHeaders() }
-  )
-  if not r.success then return nil end
-
-  local parsed = json_parse(r.body)
-  local avg = getPath(parsed, "data.rating.average")
-  return formatRating(avg)
-end
-
-local function fetchBookStatusJson(bookUrl)
-  local slug = extractSlug(bookUrl)
-  if not slug then return nil end
-  local r = http_get(apiBase .. slug .. "?fields[]=updated_at", { headers = buildHeaders() })
-  if not r.success then return nil end
-  if isErrorResponse(r.body) then return nil end
-  local parsed = json_parse(r.body)
-  return parsed and parsed.data or nil
-end
-
-function getBookStatus(bookUrl)
-  local data = fetchBookStatusJson(bookUrl)
-  if not data then return nil end
-  local st = data.status
-  if type(st) == "table" and st.label then
-    local label = string_trim(st.label)
-    return label ~= "" and string_clean(label) or nil
-  end
-  return nil
-end
-
-function getBookLastUpdate(bookUrl)
-  local data = fetchBookStatusJson(bookUrl)
-  if not data then return nil end
-  local ua = data.updated_at
-  if not ua or ua == "" then return nil end
-  local date = string.match(ua, "^(%d%d%d%d%-%d%d%-%d%d)")
-  return date ~= "" and date or nil
-end
-
--- ── Список глав (JSON API /api/manga/{slug}/chapters) ────────────────────────
-
-function getChapterList(bookUrl)
-  local slug = extractSlug(bookUrl)
-  if not slug then
-    log_error("mangalib: cannot extract slug from " .. bookUrl)
-    return {}
-  end
-
-  local r = http_get(apiBase .. slug .. "/chapters", { headers = buildHeaders() })
-  if not r.success then
-    log_error("mangalib: chapters failed code=" .. tostring(r.code))
-    return {}
-  end
-
-  if isErrorResponse(r.body) then
-    if show_error then show_error("Ошибка загрузки", "Не удалось загрузить список глав.\nВозможно, требуется авторизация.") end
-    return nil
-  end
-
-  local parsed = json_parse(r.body)
-  if not parsed or not parsed.data then return {} end
-
-  local raw = {}
-  for _, chapter in ipairs(parsed.data) do
-    local volume = tostring(chapter.volume or "")
-    local number = tostring(chapter.number or "")
-    local name   = chapter.name and chapter.name ~= "" and chapter.name or nil
-    local bid    = "0"
-    local isPaid = false
-    if chapter.branches and chapter.branches[1] then
-      local br = chapter.branches[1]
-      local branchId = br.branch_id
-      if branchId ~= nil and branchId ~= "" then
-        bid = tostring(branchId)
-      end
-      local rv = br.restricted_view
-      if rv and rv.is_open == false then
-        isPaid = true
-      end
-    end
-    if chapter.bundle_id then isPaid = true end
-
-    local title = "Том " .. volume .. " Глава " .. number
-    if name then title = title .. " " .. name end
-    if isPaid then title = title .. " 🔒" end
-
-    local chUrl = baseUrl .. "ru/" .. slug .. "/read/v" .. volume .. "/c" .. number
-    local sep = "?"
-    if bid ~= "0" then chUrl = chUrl .. sep .. "bid=" .. bid; sep = "&" end
-    if userId then chUrl = chUrl .. sep .. "ui=" .. userId end
-
-    table.insert(raw, {
-      result = {
-        title  = string_clean(title),
-        url    = chUrl,
-        volume = "Том " .. volume
-      },
-      index = chapter.index or #raw + 1
-    })
-  end
-
-  table.sort(raw, function(a, b) return a.index < b.index end)
-
-  local chapters = {}
-  for _, item in ipairs(raw) do
-    table.insert(chapters, item.result)
-  end
-  return chapters
-end
-
-function getChapterListHash(bookUrl)
-  local slug = extractSlug(bookUrl)
-  if not slug then return nil end
-  local r = http_get(apiBase .. slug .. "/chapters", { headers = buildHeaders() })
-  if not r.success then return nil end
-  if isErrorResponse(r.body) then return nil end
-  local parsed = json_parse(r.body)
-  if not parsed or not parsed.data then return nil end
-  local chapters = parsed.data
-  local last = chapters[#chapters]
-  return last and tostring(last.item_number or last.number) or nil
-end
-
--- ── JSON → HTML (рендер структурированного контента главы) ───────────────────
-
-local function jsonToHtml(nodes, attachMap)
-  if not nodes then return "" end
-  local parts = {}
-
-  for _, node in ipairs(nodes) do
-    if type(node) ~= "table" then break end
-    local ntype   = node.type or ""
-    local content = node.content
-    local inner   = jsonToHtml(content, attachMap)
-
-    if ntype == "text" then
-      local text = node.text or ""
-      if node.marks then
-        for _, mark in ipairs(node.marks) do
-          local mt = mark.type or ""
-          if mt == "bold"      then text = "<b>"  .. text .. "</b>"  end
-          if mt == "italic"    then text = "<i>"  .. text .. "</i>"  end
-          if mt == "underline" then text = "<u>"  .. text .. "</u>"  end
-        end
-      end
-      table.insert(parts, text)
-
-    elseif ntype == "paragraph"      then table.insert(parts, "<p>"           .. inner .. "</p>")
-    elseif ntype == "heading"        then table.insert(parts, "<h2>"          .. inner .. "</h2>")
-    elseif ntype == "listItem"       then table.insert(parts, "<li>"          .. inner .. "</li>")
-    elseif ntype == "bulletList"     then table.insert(parts, "<ul>"          .. inner .. "</ul>")
-    elseif ntype == "orderedList"    then table.insert(parts, "<ol>"          .. inner .. "</ol>")
-    elseif ntype == "blockquote"     then table.insert(parts, "<blockquote>"  .. inner .. "</blockquote>")
-    elseif ntype == "hardBreak"      then table.insert(parts, "<br>")
-    elseif ntype == "horizontalRule" then table.insert(parts, "<hr>")
-
-    elseif ntype == "image" then
-      local attrs = node.attrs or {}
-      local imgId = attrs.id
-      if not imgId and attrs.images and attrs.images[1] then
-        imgId = attrs.images[1].id
-      end
-      local imgUrl = (imgId and attachMap[tostring(imgId)]) or attrs.src or ""
-      if imgUrl ~= "" then
-        table.insert(parts, "<img src=\"" .. normalizeCover(imgUrl) .. "\">")
-      end
-
-    else
-      if inner ~= "" then table.insert(parts, inner) end
-    end
-  end
-
-  return table.concat(parts, "")
-end
-
--- ── Текст главы (JSON API /api/manga/{slug}/chapter?...) ─────────────────────
-
-local function fetchChapterPages(chapterUrl)
-  if not chapterUrl or chapterUrl == "" then return {} end
-
-  local slug   = chapterUrl:match("/ru/([^/]+)/read/")
-  local volume = chapterUrl:match("/v([^/]+)/c")
-  local number = chapterUrl:match("/v[^/]+/c([^?]+)")
-  local bid    = chapterUrl:match("[?&]bid=([^&]+)")
-
-  if not slug or not volume or not number then return {} end
-
-  local apiUrl = apiBase .. slug .. "/chapter?volume=" .. volume .. "&number=" .. number
-  if bid then apiUrl = apiUrl .. "&branch_id=" .. bid end
-
-  log_error("mangalib DEBUG: apiUrl=" .. apiUrl)
-  local r = http_get(apiUrl, { headers = buildHeaders() })
-  log_error("mangalib DEBUG: success=" .. tostring(r.success) .. " code=" .. tostring(r.code) .. " bodyLen=" .. tostring(#(r.body or "")))
-  if r.body then
-    log_error("mangalib DEBUG: body(first500)=" .. tostring(r.body:sub(1, 500)))
-  end
-  if not r.success then
-    if show_error then show_error("Ошибка загрузки", "Не удалось загрузить страницы главы (HTTP " .. tostring(r.code) .. ").\nВозможно, глава не существует или требуется авторизация.") end
-    return nil
-  end
-
-  if isErrorResponse(r.body) then
-    log_error("mangalib DEBUG: isErrorResponse=true")
-    if show_error then show_error("Ошибка загрузки", "Не удалось загрузить страницы главы.\nТребуется авторизация.") end
-    return nil
-  end
-
-  local parsed = json_parse(r.body)
-  if not parsed or not parsed.data then
-    log_error("mangalib DEBUG: parse failed or no data")
-    return {}
-  end
-
-  local data = parsed.data
-  log_error("mangalib DEBUG: data keys=" .. tostring(data.pages and "has_pages" or "no_pages") .. " restricted_view=" .. tostring(data.restricted_view and "present" or "nil") .. " bundle=" .. tostring(data.bundle and "present" or "nil") .. " content=" .. tostring(data.content and "present" or "nil"))
-
-  local rv = data.restricted_view
-  if rv then
-    log_error("mangalib DEBUG: restricted_view.is_open=" .. tostring(rv.is_open) .. " price=" .. tostring(rv.price))
-  end
-  if rv and rv.is_open == false then
-    local price = rv.price or 0
-    local msg = "Эта глава является платной."
-    if price > 0 then msg = msg .. "\nЦена: " .. tostring(price) .. " ₽" end
-    msg = msg .. "\nКупить можно на mangalib.me"
-    if show_error then show_error("Платная глава", msg) end
-    return nil
-  end
-
-  if data.bundle and data.bundle.is_open == false then
-    local price = data.bundle.price or 0
-    local name = data.bundle.name or ""
-    local msg = "Эта глава является платной."
-    if name ~= "" then msg = msg .. "\nБандл: " .. name end
-    if price > 0 then msg = msg .. "\nЦена: " .. tostring(price) .. " ₽" end
-    msg = msg .. "\nКупить можно на mangalib.me"
-    if show_error then show_error("Платный том", msg) end
-    return nil
-  end
-
-  if data.pages and type(data.pages) == "table" then
-    log_error("mangalib DEBUG: data.pages count=" .. tostring(#data.pages))
-    local pages = {}
-    for _, page in ipairs(data.pages) do
-      local url = page.url
-      if url and url ~= "" then
-        if not url:find("://") then url = "https://img3.cdnlibs.org" .. url end
-        table.insert(pages, url)
-      end
-    end
-    log_error("mangalib DEBUG: returning pages count=" .. tostring(#pages))
-    return pages
-  end
-
-  local contentNode = data.content
-  local attachments = data.attachments
-  log_error("mangalib DEBUG: contentNode=" .. tostring(contentNode and "present" or "nil") .. " attachments=" .. tostring(attachments and "present" or "nil"))
-
-  local attachMap = {}
-  if attachments then
-    for _, att in ipairs(attachments) do
-      local attId  = tostring(att.id or att.name or "")
-      local attUrl = att.url or ""
-      if attId ~= "" and attUrl ~= "" then
-        attachMap[attId] = attUrl
-      end
-    end
-  end
-
-  local pages = {}
-
-  local function extractImages(node)
-    if not node then return end
-    if type(node) == "string" then return end
-    if type(node) ~= "table" then return end
-
-    if node.type == "image" then
-      local src = node.attrs and node.attrs.src
-      if src and src ~= "" then
-        local imageUrl = attachMap[src] or src
-        if not imageUrl:find("://") then imageUrl = "https:" .. imageUrl end
-        table.insert(pages, imageUrl)
-      end
-    end
-
+-- TipTap/ProseMirror node -> plain text; used by getBookDescription for
+-- the structured `summary` field.
+local function tipTapText(node)
+    if not node then return "" end
+    if type(node) == "string" then return node end
+    if type(node) ~= "table" then return "" end
+    local parts = {}
+    if node.type == "text" then parts[#parts + 1] = node.text or "" end
     if node.content and type(node.content) == "table" then
-      for _, child in ipairs(node.content) do
-        extractImages(child)
-      end
+        for _, child in ipairs(node.content) do
+            parts[#parts + 1] = tipTapText(child)
+        end
     end
-  end
-
-  if type(contentNode) == "table" and contentNode.content then
-    extractImages(contentNode)
-  end
-
-  log_error("mangalib DEBUG: final pages count=" .. tostring(#pages))
-  return pages
+    return table.concat(parts, "")
 end
 
-function getPageList(html, chapterUrl)
-  return fetchChapterPages(chapterUrl)
+local CONFIG = {
+    id            = "mangalib",
+    baseUrl       = baseUrl,
+    siteId        = "1",
+    mode          = "manga",
+    pageCdnPrefix = "https://img3.cdnlibs.org",
+    ageFilterKey  = "age",
+    textExtractor = tipTapText,
+}
+
+-- Old builds ship no require_lib: keep the plugin loadable (a top-level
+-- error would drop it from the source list) and fail with a visible
+-- message on the first call instead. setup() binds CONFIG and installs
+-- the shared entry points as globals; the wrappers below only serve
+-- until that first call.
+local family
+local function F()
+    if type(require_lib) ~= "function" then
+        show_error("Требуется обновление NoveLA", "Плагину нужны общие библиотеки")
+        error("Требуется обновление NoveLA (require_lib)", 0)
+    end
+    if not family then family = require_lib("cdnlibs").setup(CONFIG) end
+    return family
 end
 
-function getChapterText(html, chapterUrl)
-  local pages = fetchChapterPages(chapterUrl)
-  local out = {}
-  for _, p in ipairs(pages) do
-    table.insert(out, '<img src="' .. p .. '">')
-  end
-  return table.concat(out, "\n")
-end
+function getCatalogList(index) return F().getCatalogList(index) end
+function getCatalogSearch(index, query) return F().getCatalogSearch(index, query) end
+function getCatalogFiltered(index, filters) return F().getCatalogFiltered(index, filters) end
 
--- ── Список фильтров ───────────────────────────────────────────────────────────
+function getBookTitle(bookUrl) return F().getBookTitle(bookUrl) end
+function getBookCoverImageUrl(bookUrl) return F().getBookCoverImageUrl(bookUrl) end
+function getBookDescription(bookUrl) return F().getBookDescription(bookUrl) end
+function getBookGenres(bookUrl) return F().getBookGenres(bookUrl) end
+function getBookRating(bookUrl) return F().getBookRating(bookUrl) end
+function getBookStatus(bookUrl) return F().getBookStatus(bookUrl) end
+function getBookLastUpdate(bookUrl) return F().getBookLastUpdate(bookUrl) end
+
+function getChapterList(bookUrl) return F().getChapterList(bookUrl) end
+function getChapterListHash(bookUrl) return F().getChapterListHash(bookUrl) end
+function getPageList(html, chapterUrl) return F().getPageList(html, chapterUrl) end
+function getChapterText(html, chapterUrl) return F().getChapterText(html, chapterUrl) end
+
+-- Site-specific filter definitions (not part of the family lib).
 
 function getFilterList()
   return {
@@ -759,66 +227,4 @@ function getFilterList()
       }
     },
   }
-end
-
--- ── Каталог с фильтрами ───────────────────────────────────────────────────────
-
-function getCatalogFiltered(index, filters)
-  local page      = index + 1
-  local sort_by   = filters["sort_by"]   or "rating_score"
-  local sort_type = filters["sort_type"] or "desc"
-  local req_ch    = filters["require_chapters"]
-
-  local types_inc        = filters["types_included"]          or {}
-  local format_inc       = filters["format_included"]         or {}
-  local format_exc       = filters["format_excluded"]         or {}
-  local scanlate_inc     = filters["scanlateStatus_included"] or {}
-  local manga_status_inc = filters["manga_status_included"]   or {}
-  local age_inc          = filters["age_included"]            or {}
-  local genres_inc       = filters["genres_included"]         or {}
-  local genres_exc       = filters["genres_excluded"]         or {}
-
-  local url = apiBase .. "?site_id[0]=" .. siteId
-              .. "&page="      .. tostring(page)
-              .. "&sort_by="   .. sort_by
-              .. "&sort_type=" .. sort_type
-
-  if req_ch ~= "false" then
-    url = url .. "&chap_count_min=1"
-  end
-
-  for _, v in ipairs(types_inc)        do url = url .. "&types[]="            .. v end
-  for _, v in ipairs(format_inc)       do url = url .. "&format[]="           .. v end
-  for _, v in ipairs(format_exc)       do url = url .. "&format_exclude[]="   .. v end
-  for _, v in ipairs(scanlate_inc)     do url = url .. "&scanlate_status[]="  .. v end
-  for _, v in ipairs(manga_status_inc) do url = url .. "&status[]="           .. v end
-  for _, v in ipairs(age_inc)          do url = url .. "&caution[]="          .. v end
-  for _, v in ipairs(genres_inc)       do url = url .. "&genres[]="           .. v end
-  for _, v in ipairs(genres_exc)       do url = url .. "&genres_exclude[]="   .. v end
-
-  local r = http_get(url, { headers = buildHeaders() })
-  if not r.success then return { items = {}, hasNext = false } end
-
-  local parsed = json_parse(r.body)
-  if not parsed or not parsed.data then return { items = {}, hasNext = false } end
-
-  local items = {}
-  for _, manga in ipairs(parsed.data) do
-    local title = pickTitle(manga)
-    local slug  = manga.slug_url or manga.slug or ""
-    local cover = getPath(manga, "cover.default") or ""
-    if title ~= "" and slug ~= "" then
-      local item = {
-        title = string_clean(title),
-        url   = baseUrl .. "ru/" .. slug,
-        cover = (cover)
-      }
-      local avg = getPath(manga, "rating.average")
-      item.rating = formatRating(avg)
-      table.insert(items, item)
-    end
-  end
-
-  local hasNext = getPath(parsed, "meta.has_next_page")
-  return { items = items, hasNext = hasNext == true or #items > 0 }
 end
