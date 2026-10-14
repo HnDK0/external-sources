@@ -281,8 +281,9 @@ local STATUS_VALUES = {
 function M.getBookStatus(config, bookUrl)
     local html = fetchBookPage(config, bookUrl)
     if not html then return nil end
+    local lower = (type(string_lower) == "function") and string_lower or function(s) return s:lower() end
     for _, el in ipairs(html_select(html, statusSelector(config))) do
-        local v = string_clean(string_lower(el.text))
+        local v = string_clean(lower(el.text))
         if STATUS_VALUES[v] then return string_clean(el.text) end
     end
     return nil

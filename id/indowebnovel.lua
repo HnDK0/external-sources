@@ -6,6 +6,21 @@ baseUrl  = "https://indowebnovel.id/"
 language = "id"
 icon     = "https://raw.githubusercontent.com/HnDK0/external-sources/main/icons/indowebnovel.png"
 
+-- ── Guard: old app builds without require_lib ────────────────────────────────
+-- Top-level must load without require_lib (otherwise the plugin silently
+-- disappears from the sources list) — pcall-tryLib pattern (latanime M9).
+local libErr = nil
+local HAS_LIBS = type(require_lib) == "function"
+
+local function tryLib(name)
+    if not HAS_LIBS then return nil end
+    local ok, res = pcall(require_lib, name)
+    if not ok then libErr = tostring(res) return nil end
+    return res
+end
+
+local CATLIB = tryLib("catalog")
+
 -- ── Хелперы ───────────────────────────────────────────────────────────────────
 
 local function absUrl(href)
@@ -99,20 +114,20 @@ end
 -- ── Каталог ───────────────────────────────────────────────────────────────────
 
 function getCatalogList(index)
-  local page = LIB("catalog").nextIndex(index)
+  local page = CATLIB.nextIndex(index)
   local url = buildSearchUrl({ page = page })
 
   local r = http_get(url)
   if not r.success then return { items = {}, hasNext = false } end
 
   local items = parseCatalogItems(r.body)
-  return { items = items, hasNext = LIB("catalog").hasNextPage(items) }
+  return { items = items, hasNext = CATLIB.hasNextPage(items) }
 end
 
 -- ── Поиск ─────────────────────────────────────────────────────────────────────
 
 function getCatalogSearch(index, query)
-  local page = LIB("catalog").nextIndex(index)
+  local page = CATLIB.nextIndex(index)
   local url = buildSearchUrl({
     page  = page,
     title = query
@@ -124,7 +139,7 @@ function getCatalogSearch(index, query)
   if not r.success then return { items = {}, hasNext = false } end
 
   local items = parseCatalogItems(r.body)
-  return { items = items, hasNext = LIB("catalog").hasNextPage(items) }
+  return { items = items, hasNext = CATLIB.hasNextPage(items) }
 end
 
 -- ── Детали книги ──────────────────────────────────────────────────────────────
@@ -330,7 +345,7 @@ end
 -- ── Каталог с фильтрами ───────────────────────────────────────────────────────
 
 function getCatalogFiltered(index, filters)
-  local page    = LIB("catalog").nextIndex(index)
+  local page    = CATLIB.nextIndex(index)
   local order   = filters["order"]  or "popular"
   local status  = filters["status"] or ""
   local typ     = filters["type"]   or ""
@@ -351,5 +366,5 @@ function getCatalogFiltered(index, filters)
   if not r.success then return { items = {}, hasNext = false } end
 
   local items = parseCatalogItems(r.body)
-  return { items = items, hasNext = LIB("catalog").hasNextPage(items) }
+  return { items = items, hasNext = CATLIB.hasNextPage(items) }
 end

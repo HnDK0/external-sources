@@ -35,6 +35,7 @@ local DTUBE = tryLib("dtube")
 local GDRIVE = tryLib("gdriveplayer")
 local RUMBLE = tryLib("rumble")
 local MIRRORS = tryLib("mirrors")
+local CATLIB = tryLib("catalog")
 
 local function ensureEngine()
     local missing = {}
@@ -54,7 +55,7 @@ local function ensureEngine()
         error("A newer version of the app is required: require_lib", 0)
     end
     if not URLS or not OKRU or not DM or not DOOD or not SEEK
-        or not DTUBE or not GDRIVE or not RUMBLE or not MIRRORS then
+        or not DTUBE or not GDRIVE or not RUMBLE or not MIRRORS or not CATLIB then
         show_error("Libraries not loaded",
             "Open the extensions screen and tap update, then restart the app. " .. (libErr or ""))
         error("Shared libraries not loaded", 0)
@@ -217,7 +218,7 @@ end
 function getCatalogFiltered(index, filters)
     ensureEngine()
     index = tonumber(index) or 0
-    local page = LIB("catalog").nextIndex(index)
+    local page = CATLIB.nextIndex(index)
     local params = { "page=" .. page }
     local genres = filters and filters["genre_included"] or {}
     if type(genres) == "table" then
@@ -253,7 +254,7 @@ function getCatalogSearch(index, query)
     local hasNext = string.find(body, 'class="next page-numbers"', 1, true) ~= nil
     -- На первой странице блок пагинации может отсутствовать (10 результатов
     -- ровно на страницу) — тогда пустой следующий запрос просто остановит цикл.
-    if not hasNext and index == 0 then hasNext = LIB("catalog").hasNextPage(items) end
+    if not hasNext and index == 0 then hasNext = CATLIB.hasNextPage(items) end
     return { items = items, hasNext = hasNext }
 end
 

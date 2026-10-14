@@ -5,3 +5,4 @@
 .DS_Store
 /plugin-tester-jvm
 /test
+/.baseline

@@ -8,6 +8,21 @@ language = "id"
 icon     = "https://raw.githubusercontent.com/HnDK0/external-sources/main/icons/komikcast.webp"
 content_type = "manga"
 
+-- ── Guard: old app builds without require_lib ────────────────────────────────
+-- Top-level must load without require_lib (otherwise the plugin silently
+-- disappears from the sources list) — pcall-tryLib pattern (latanime M9).
+local libErr = nil
+local HAS_LIBS = type(require_lib) == "function"
+
+local function tryLib(name)
+    if not HAS_LIBS then return nil end
+    local ok, res = pcall(require_lib, name)
+    if not ok then libErr = tostring(res) return nil end
+    return res
+end
+
+local CATLIB = tryLib("catalog")
+
 -- ── Хелперы ──
 
 local _pageCache = {}
@@ -50,7 +65,7 @@ end
 -- ── Каталог ──
 
 function getCatalogList(index)
-    local page = LIB("catalog").nextIndex(index)
+    local page = CATLIB.nextIndex(index)
     local url = baseUrl .. "explore?page=" .. page
 
     local r = http_get(url)
@@ -184,7 +199,7 @@ function getFilterList()
 end
 
 function getCatalogFiltered(index, filters)
-    local page = LIB("catalog").nextIndex(index)
+    local page = CATLIB.nextIndex(index)
     local url = baseUrl .. "explore?page=" .. page
 
     local params = {}
