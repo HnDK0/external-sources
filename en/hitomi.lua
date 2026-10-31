@@ -518,13 +518,8 @@ local _galleryCache = {}
 local function galleryData(id)
 	if _galleryCache[id] then return _galleryCache[id] end
 	local url = CDN .. "/galleries/" .. id .. ".js"
-	-- Повтор при 503 (CDN иногда глючит)
-	local r = nil
-	for attempt = 1, 3 do
-		r = http_get(url)
-		if r.success then break end
-		if r.code == 503 and attempt < 3 then sleep(500 * attempt) end
-	end
+	-- Один запрос: 502/503/504 повторяет хостовая лестница ретраев.
+	local r = http_get(url)
 	if not r.success then
 		log_error("hitomi: galleryData fetch failed for id=" .. tostring(id) .. " code=" .. tostring(r.code))
 		return nil
