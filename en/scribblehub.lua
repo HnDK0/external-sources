@@ -1,7 +1,7 @@
 -- ── Метаданные ────────────────────────────────────────────────────────────────
 id       = "scribblehub"
 name     = "ScribbleHub"
-version  = "1.0.6"
+version  = "1.0.7"
 baseUrl  = "https://www.scribblehub.com/"
 language = "en"
 icon     = "https://raw.githubusercontent.com/HnDK0/external-sources/main/icons/scribblehub.png"
@@ -29,6 +29,21 @@ end
 -- Engine global url_encode delegates to the shared catalog lib.
 local url_encode = function(s) return LIB("catalog").urlEncode(s) end
 
+-- Book page is read by 5+ getters in parallel; the shared fetch cache keeps
+-- it to one request. getChapterListHash stays direct: it needs a fresh page.
+local function fetchPage(url) return LIB("fetch").page(url) end
+
+-- The page has several span.rnd_stats (Content Warning, Report Story, the
+-- real status line). html_select_first picks the wrong one: walk all matches
+-- and keep the one that actually says "Updated".
+local function findStatusLine(body)
+  for _, el in ipairs(html_select(body, "span.rnd_stats + span")) do
+    local txt = string_clean(el.text)
+    if string.find(txt, "Updated", 1, true) then return txt end
+  end
+  return nil
+end
+
 -- Standard chapter-text cleanup from the shared content lib; the local copy
 -- also stripped leading "Глава N" headers — kept as a site-specific extra.
 local function applyStandardContentTransforms(text)
@@ -40,26 +55,35 @@ end
 
 -- ── Каталог ───────────────────────────────────────────────────────────────────
 
-function getCatalogList(index)
-  local page = LIB("catalog").nextIndex(index)
-  local url = baseUrl .. "series-ranking/?sort=1&order=2&pg=" .. tostring(page)
-
-  local r = http_get(url)
-  if not r.success then return { items = {}, hasNext = false } end
-
+-- Card rating is precomputed as plain text "(4.6)" in .search_ratings.
+local function parseCatalogCards(body)
   local items = {}
-  for _, card in ipairs(html_select(r.body, ".search_main_box")) do
+  for _, card in ipairs(html_select(body, ".search_main_box")) do
     local titleEl = html_select_first(card.html, ".search_title a")
     if titleEl then
       local bookUrl = absUrl(titleEl.href)
       local cover   = html_attr(card.html, ".search_img img", "src")
       local t = string_clean(titleEl.text)
       if bookUrl ~= "" and t ~= "" then
-        table.insert(items, { title = t, url = bookUrl, cover = absUrl(cover) })
+        local item = { title = t, url = bookUrl, cover = absUrl(cover) }
+        local ratingEl = html_select_first(card.html, ".search_ratings")
+        if ratingEl then
+          local rating = string.match(string_clean(ratingEl.text), "[%d%.]+")
+          if rating then item.rating = rating end
+        end
+        table.insert(items, item)
       end
     end
   end
+  return items
+end
 
+function getCatalogList(index)
+  local page = LIB("catalog").nextIndex(index)
+  local url = baseUrl .. "series-ranking/?sort=1&order=2&pg=" .. tostring(page)
+  local r = http_get(url)
+  if not r.success then return { items = {}, hasNext = false } end
+  local items = parseCatalogCards(r.body)
   return { items = items, hasNext = LIB("catalog").hasNextPage(items) }
 end
 
@@ -77,48 +101,37 @@ function getCatalogSearch(index, query)
 
   local r = http_get(url)
   if not r.success then return { items = {}, hasNext = false } end
-
-  local items = {}
-  for _, card in ipairs(html_select(r.body, ".search_main_box")) do
-    local titleEl = html_select_first(card.html, ".search_title a")
-    if titleEl then
-      local bookUrl = absUrl(titleEl.href)
-      local cover   = html_attr(card.html, ".search_img img", "src")
-      local t = string_clean(titleEl.text)
-      if bookUrl ~= "" and t ~= "" then
-        table.insert(items, { title = t, url = bookUrl, cover = absUrl(cover) })
-      end
-    end
-  end
-
+  local items = parseCatalogCards(r.body)
   return { items = items, hasNext = LIB("catalog").hasNextPage(items) }
 end
 
 -- ── Детали книги ──────────────────────────────────────────────────────────────
 
 function getBookTitle(bookUrl)
-  local r = http_get(bookUrl)
-  if not r.success then return nil end
-  local el = html_select_first(r.body, "div.fic_title")
+  local body = fetchPage(bookUrl)
+  if not body then return nil end
+  local el = html_select_first(body, "div.fic_title")
   if el then return string_clean(el.text) end
-  return nil
+  local og = html_attr(body, "meta[property='og:title']", "content")
+  return og ~= "" and string_clean(og) or nil
 end
 
 function getBookCoverImageUrl(bookUrl)
-  local r = http_get(bookUrl)
-  if not r.success then return nil end
-  local src = html_attr(r.body, ".fic_image img", "src")
-  if src == "" then src = html_attr(r.body, ".novel-cover img", "src") end
-  if src ~= "" then return absUrl(src) end
-  return nil
+  local body = fetchPage(bookUrl)
+  if not body then return nil end
+  local src = html_attr(body, ".fic_image img", "src")
+  if src == "" then src = html_attr(body, ".novel-cover img", "src") end
+  if src == "" then src = html_attr(body, "meta[property='og:image']", "content") end
+  return src ~= "" and absUrl(src) or nil
 end
 
 function getBookDescription(bookUrl)
-  local r = http_get(bookUrl)
-  if not r.success then return nil end
-  local el = html_select_first(r.body, ".wi_fic_desc")
+  local body = fetchPage(bookUrl)
+  if not body then return nil end
+  local el = html_select_first(body, ".wi_fic_desc")
   if el then return string_trim(el.text) end
-  return nil
+  local og = html_attr(body, "meta[property='og:description']", "content")
+  return og ~= "" and string_trim(og) or nil
 end
 
 -- ── Список глав (POST AJAX) ───────────────────────────────────────────────────
@@ -149,12 +162,23 @@ function getChapterList(bookUrl)
     return {}
   end
 
+  -- Every .toc_w row may also contain the author profile link (the home
+  -- "Latest Releases" widget reuses the class). Prefer the row's own
+  -- a.toc_a, then fall back to any href containing "/chapter/".
   local chapters = {}
-  for _, a in ipairs(html_select(r.body, ".toc_w a[href]")) do
-    local chUrl = absUrl(a.href)
-    local t = string_trim(a.text)
-    if chUrl ~= "" then
-      table.insert(chapters, { title = t, url = chUrl })
+  for _, row in ipairs(html_select(r.body, ".toc_w")) do
+    local chLink = html_select_first(row.html, "a.toc_a[href]")
+    if not chLink then
+      for _, a in ipairs(html_select(row.html, "a[href]")) do
+        if string.find(a.href or "", "/chapter/", 1, true) then chLink = a break end
+      end
+    end
+    if chLink then
+      local chUrl = absUrl(chLink.href)
+      local t = string_trim(chLink.text)
+      if chUrl ~= "" and t ~= "" then
+        table.insert(chapters, { title = t, url = chUrl })
+      end
     end
   end
 
@@ -167,11 +191,12 @@ end
 -- ── Хэш для обновлений ────────────────────────────────────────────────────────
 
 function getChapterListHash(bookUrl)
+  -- Direct GET (fresh), but jitter the start: a library-wide refresh calls
+  -- this for every book at once and used to trigger Cloudflare 429s.
+  sleep(math.random(400, 2500))
   local r = http_get(bookUrl)
   if not r.success then return nil end
-  local el = html_select_first(r.body, ".fic_stats span.st_item")
-  if el then return string_clean(el.text) end
-  return nil
+  return findStatusLine(r.body)
 end
 
 -- ── Текст главы ───────────────────────────────────────────────────────────────
@@ -185,11 +210,10 @@ end
 -- ── Жанры на странице книги ───────────────────────────────────────────────────
 
 function getBookGenres(bookUrl)
-  local r = http_get(bookUrl)
-  if not r.success then return {} end
-
+  local body = fetchPage(bookUrl)
+  if not body then return {} end
   -- trim + drop empties — shared meta lib (site order kept).
-  return LIB("meta").collectGenres(html_select(r.body, ".fic_genre"))
+  return LIB("meta").collectGenres(html_select(body, ".fic_genre"))
 end
 
 -- ── Статус и дата обновления ──────────────────────────────────────────────────
@@ -215,16 +239,28 @@ local function normalizeDate(raw)
   return string.format("%04d-%02d-%02d", tonumber(y), m, tonumber(d))
 end
 
--- Статус книги: берём только слово(а) до « - Updated», иначе nil.
+local function normalizeRelativeDate(raw)
+  local n, unit = string.match(raw or "", "(%d+)%s+(%a+)%s+ago")
+  if not n then return nil end
+  local mult = {
+    min = 60, mins = 60, minute = 60, minutes = 60,
+    hour = 3600, hours = 3600, day = 86400, days = 86400,
+    week = 7 * 86400, weeks = 7 * 86400,
+    month = 30 * 86400, months = 30 * 86400,
+    year = 365 * 86400, years = 365 * 86400,
+  }
+  local secs = mult[unit]
+  if not secs then return nil end
+  return os.date("%Y-%m-%d", os.time() - tonumber(n) * secs)
+end
+
 function getBookStatus(bookUrl)
-  local r = http_get(bookUrl)
-  if not r.success then return nil end
-  local el = html_select_first(r.body, "span.rnd_stats + span")
-  if not el then return nil end
-  local txt = string_clean(el.text)
+  local body = fetchPage(bookUrl)
+  if not body then return nil end
+  local txt = findStatusLine(body)
+  if not txt then return nil end
   local status = string.match(txt, "^(.-)%s*%-%s*Updated")
-  if not status then return nil end
-  return LIB("meta").status(status)
+  return status and LIB("meta").status(status) or nil
 end
 
 -- Дата обновления живёт в том же внешнем <span>, что и статус (сосед
@@ -233,13 +269,22 @@ end
 -- «Last updated:» движок через селектор [title^=...] не выбирает, поэтому
 -- берём дату из текста внешнего span регуляркой и нормализуем в YYYY-MM-DD.
 function getBookLastUpdate(bookUrl)
-  local r = http_get(bookUrl)
-  if not r.success then return nil end
-  local el = html_select_first(r.body, "span.rnd_stats + span")
-  if not el then return nil end
-  local raw = string.match(string_clean(el.text),
-                            "Updated%s+(%a%a%a%s+%d+,%s+%d%d%d%d)")
-  return normalizeDate(raw)
+  local body = fetchPage(bookUrl)
+  if not body then return nil end
+  local txt = findStatusLine(body)
+  if not txt then return nil end
+  local raw = string.match(txt, "Updated%s+(.+)$")
+  if not raw then return nil end
+  return normalizeDate(raw) or normalizeRelativeDate(raw)
+end
+
+-- Confirmed on live HTML: #chk_ficrate .fic_rate_logged carries the computed
+-- value in a "rating" attribute ("4.6"); no star parsing needed.
+function getBookRating(bookUrl)
+  local body = fetchPage(bookUrl)
+  if not body then return nil end
+  local v = html_attr(body, "#chk_ficrate .fic_rate_logged", "rating")
+  return v ~= "" and v or nil
 end
 
 -- ── Список фильтров ───────────────────────────────────────────────────────────

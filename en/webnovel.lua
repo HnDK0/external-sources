@@ -1,7 +1,7 @@
 -- ── Metadatos ─────────────────────────────────────────────────────────────────
 id       = "webnovel"
 name     = "WebNovel"
-version  = "2.0.1"
+version  = "2.0.2"
 baseUrl  = "https://www.webnovel.com/"
 language = "en"
 icon     = "https://raw.githubusercontent.com/HnDK0/external-sources/main/icons/webnovel.png"
@@ -55,6 +55,8 @@ local M_BASE = "https://m.webnovel.com/"
 
 -- Preferencia del modo (SharedPreferences "lua_preferences"): "novel" o "fanfic".
 local PREF_MODE = "webnovel_mode"
+-- "Tag search" setting: simple (one tag + order) or advanced (the full panel).
+local PREF_SEARCH = "webnovel_search_type"
 
 -- categoryType del sitio en todas sus APIs: 1 = novelas, 4 = fanfics.
 local CATEGORY_TYPE = { novel = "1", fanfic = "4" }
@@ -66,12 +68,18 @@ local function getMode()
   return "novel"
 end
 
+local function getSearchType()
+  if get_preference(PREF_SEARCH) == "simple" then return "simple" end
+  return "advanced"
+end
+
 -- "orderBy": OJO, cada API tiene SU numeración (confirmadas en el source de fanfic).
 --   categoryAjax    (sin tags): 1=Popular 2=Recommended 3=Most collections 4=Rating 5=Time updated
 --   get-search-list (con tags): 1=Popular 2=Most collections 3=Time updated
 -- El filtro "sort" guarda una clave neutra y cada API la traduce con su tabla.
 local CATEGORY_ORDER = { popular = "1", recommended = "2", collections = "3", rating = "4", updated = "5" }
 local SEARCH_ORDER   = { popular = "1", collections = "2", updated = "3" }
+local TAGLIST_ORDER  = { popular = "1", updated = "2", collections = "3" }
 -- La v1.1 de novelas guardaba el orden como número ("1".."5", la numeración de categoryAjax).
 local LEGACY_SORT = { ["1"] = "popular", ["2"] = "recommended", ["3"] = "collections", ["4"] = "rating", ["5"] = "updated" }
 
@@ -1447,6 +1455,128 @@ local function fetchFanficHtml(page, status)
   return { items = items, hasNext = #items >= FULL_PAGE }
 end
 
+-- ── Simple tag search ─────────────────────────────────────────────────────────
+-- One tag from getTagBookList (no filters): type 1=novel, 4=fanfic; order
+-- 1=Popular, 2=Last update, 3=Collection.
+
+local function cleanTagName(v)
+  v = tostring(v or ""):lower()
+  v = v:gsub("%c", " "):gsub("%s+", " ")
+  return (v:gsub("^ ", ""):gsub(" $", ""))
+end
+
+local function tagNameParam(name)
+  local e = url_encode(name) or ""
+  return (e:gsub("%+", "%%20"))
+end
+
+local function tagSlug(name)
+  return url_encode((name:gsub(" ", "-"))) or ""
+end
+
+local function tagVariants(name)
+  local out, seen = {}, {}
+  local function add(v)
+    if v ~= "" and not seen[v] then seen[v] = true; out[#out + 1] = v end
+  end
+  add(name)
+  if name:find("-", 1, true) then add((name:gsub("%-", " "))) end
+  if name:find(" ", 1, true) then
+    add((name:gsub(" ", "-")))
+    add((name:gsub(" ", "")))
+  end
+  return out
+end
+
+local _tagVariant = {}
+
+local function fetchTagApi(mode, tagName, order, page)
+  local function request(token)
+    local url = M_BASE .. "go/pcm/seo/getTagBookList?"
+    if token ~= "" then url = url .. "_csrfToken=" .. url_encode(token) .. "&" end
+    url = url .. "type=" .. CATEGORY_TYPE[mode]
+      .. "&order=" .. order
+      .. "&pageIndex=" .. tostring(page)
+      .. "&tagName=" .. tagNameParam(tagName)
+    local r = http_get(url, { headers = {
+      ["Accept"] = "application/json",
+      ["X-Requested-With"] = "XMLHttpRequest",
+    }})
+    if not r.success then return nil, "HTTP " .. tostring(r.code), r.code end
+    local items, hasNext, err = parseCategoryJson(r.body)
+    if err then return nil, err, nil end
+    return { items = items, hasNext = hasNext }
+  end
+
+  local first = cookieToken(M_BASE)
+  local res, err, code = request(first)
+  if res then return res end
+  if code == 400 or code == 404 then
+    return { items = {}, hasNext = false }
+  end
+  if err and err:find("^code=") then
+    local token = ensureCsrfToken()
+    if token ~= "" and token ~= first then
+      res, err = request(token)
+      if res then return res end
+    end
+    return { items = {}, hasNext = false }
+  end
+  log_error("webnovel[" .. mode .. "]: getTagBookList " .. tostring(err))
+  return nil
+end
+
+local function fetchTagPageHtml(mode, tagName, page)
+  local kind = (mode == "fanfic") and "fanfic" or "novel"
+  local url = WWW_BASE .. "tags/" .. tagSlug(tagName) .. "-" .. kind
+    .. "?pageIndex=" .. tostring(page)
+  local r = http_get(url)
+  if not r.success then return { items = {}, hasNext = false } end
+  local items = parseTagPage(r.body)
+  local isLast = r.body:match('g_data%.isLast%s*=%s*"(%d)"')
+  local hasNext
+  if isLast then hasNext = (isLast == "0" and #items > 0)
+  else hasNext = #items >= FULL_PAGE end
+  return { items = items, hasNext = hasNext }
+end
+
+local function simpleCatalog(mode, page, filters)
+  local sortKey = tostring(filters["sort"] or "popular")
+  sortKey = LEGACY_SORT[sortKey] or sortKey
+  if not TAGLIST_ORDER[sortKey] then
+    sortKey = "popular"
+  end
+
+  -- The tag page supports one tag: use the last non-empty one.
+  local tags = filters["tag_included"] or {}
+  local tagName = ""
+  for i = #tags, 1, -1 do
+    local n = cleanTagName(tags[i])
+    if n ~= "" then tagName = n; break end
+  end
+  if tagName == "" then
+    return getCatalogList(page - 1)
+  end
+
+  local order = TAGLIST_ORDER[sortKey]
+  local cacheKey = mode .. "|" .. tagName
+  local variants = _tagVariant[cacheKey] and { _tagVariant[cacheKey] } or tagVariants(tagName)
+  local last = { items = {}, hasNext = false }
+  for _, name in ipairs(variants) do
+    local res = fetchTagApi(mode, name, order, page)
+    if not res then
+      if order ~= "1" then log_info("webnovel: tag HTML fallback only supports Popular") end
+      return fetchTagPageHtml(mode, name, page)
+    end
+    if #res.items > 0 then
+      _tagVariant[cacheKey] = name
+      return res
+    end
+    last = res
+  end
+  return last
+end
+
 -- ── Catálogo ──────────────────────────────────────────────────────────────────
 -- Al abrir el source: categoryAjax con "Popular" para el modo guardado (la API que alimenta
 -- las pestañas de www.webnovel.com/stories/novel y /stories/fanfic), 20 libros por página.
@@ -1511,6 +1641,16 @@ function getSettingsSchema()
         { value = "fanfic", label = "Fanfic" },
       },
     },
+    {
+      key     = PREF_SEARCH,
+      type    = "select",
+      label   = "Tag search",
+      current = getSearchType(),
+      options = {
+        { value = "simple",   label = "Simple" },
+        { value = "advanced", label = "Advanced" },
+      },
+    },
   }
 end
 
@@ -1524,6 +1664,19 @@ end
 -- pegarle a la API, porque a la API no le importa de qué categoría vino cada tag.
 
 function getFilterList()
+  if getSearchType() == "simple" then
+    return {
+      { type = "select", key = "mode", label = "Mode", defaultValue = getMode(),
+        options = { { value = "novel", label = "Novels" }, { value = "fanfic", label = "Fanfic" } } },
+      { type = "tag_input", key = "tag", label = "Tag", options = {} },
+      { type = "select", key = "sort", label = "Order", defaultValue = "popular",
+        options = {
+          { value = "popular",     label = "Popular" },
+          { value = "updated",     label = "Last update" },
+          { value = "collections", label = "Collection" },
+        } },
+    }
+  end
   local mode = getMode()
   local novelMode = (mode == "novel")
 
@@ -1673,6 +1826,10 @@ function getCatalogFiltered(index, filters)
   if mode ~= getMode() then
     set_preference(PREF_MODE, mode)
     log_info("webnovel: modo cambiado a '" .. mode .. "' desde el filtro")
+  end
+
+  if getSearchType() == "simple" then
+    return simpleCatalog(mode, page, filters)
   end
 
   -- audiencia: 1 = hombres, 2 = mujeres (en get-search-list se llama "sex")

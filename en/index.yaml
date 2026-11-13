@@ -197,14 +197,14 @@ sources:
     requires: ["urls", "catalog", "content", "meta"]
   - id: "scribblehub"
     name: "ScribbleHub"
-    version: "1.0.6"
+    version: "1.0.7"
     url: "https://raw.githubusercontent.com/HnDK0/external-sources/refs/heads/v2/en/scribblehub.lua"
     icon: "https://raw.githubusercontent.com/HnDK0/external-sources/refs/heads/v2/icons/scribblehub.png"
     language: "en"
-    requires: ["urls", "catalog", "content", "meta"]
+    requires: ["urls", "catalog", "fetch", "content", "meta"]
   - id: "webnovel"
     name: "WebNovel"
-    version: "2.0.1"
+    version: "2.0.2"
     url: "https://raw.githubusercontent.com/HnDK0/external-sources/refs/heads/v2/en/webnovel.lua"
     icon: "https://raw.githubusercontent.com/HnDK0/external-sources/refs/heads/v2/icons/webnovel.png"
     language: "en"
