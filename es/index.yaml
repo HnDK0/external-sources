@@ -27,7 +27,7 @@ sources:
     requires: ["urls", "fetch", "catalog", "meta"]
   - id: "latanime"
     name: "Latanime"
-    version: "2.3.2"
+    version: "2.3.3"
     url: "https://raw.githubusercontent.com/HnDK0/external-sources/refs/heads/v2/es/latanime.lua"
     icon: "https://raw.githubusercontent.com/HnDK0/external-sources/refs/heads/v2/icons/latanime.png"
     language: "es"

@@ -3,7 +3,7 @@
 --      nextIndex/pageUrl (dominant "?page=N" scheme), urlEncode.
 -- Loaded via require_lib("catalog"). No dependencies on other libs.
 -- =====================================================================
-local version = "1.0.0"
+local version = "1.0.1"
 
 local M = {}
 
@@ -45,12 +45,24 @@ end
 -- "%XX" uppercase over UTF-8 bytes, "\n" normalized to "\r\n" first).
 -- The 73 plugin call sites use the engine global directly; this copy
 -- exists for shared libs and parity tests outside the engine.
+-- Byte-wise whitelist: LuaJ's %w matches Latin-1 letters (0xC0-0xFF), so a
+-- UTF-8 byte like 0xE3 would stay raw and corrupt the query (CJK/Cyrillic
+-- search returned 0). Java URLEncoder keeps only A-Z a-z 0-9 . - * _.
+local function unreserved(b)
+    return (b >= 48 and b <= 57)
+        or (b >= 65 and b <= 90)
+        or (b >= 97 and b <= 122)
+        or b == 45 or b == 46 or b == 42 or b == 95
+end
+
 function M.urlEncode(s)
     if type(s) ~= "string" then return s end
     s = s:gsub("\n", "\r\n")
-    return (s:gsub("[^%w%.%-_*]", function(c)
-        if c == " " then return "+" end
-        return string.format("%%%02X", string.byte(c))
+    return (s:gsub(".", function(c)
+        local b = string.byte(c)
+        if b == 32 then return "+" end
+        if unreserved(b) then return c end
+        return string.format("%%%02X", b)
     end))
 end
 

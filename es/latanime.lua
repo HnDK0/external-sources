@@ -26,7 +26,7 @@
 
 id           = "latanime"
 name         = "Latanime"
-version      = "2.3.2"
+version      = "2.3.3"
 baseUrl      = "https://latanime.org"
 language     = "es"
 content_type = "video"
@@ -106,15 +106,9 @@ end
 local string_clean = cleanText
 local string_trim = cleanText
 
-local function urlEncode(str)
-    if type(str) ~= "string" then return str end
-    str = str:gsub("\n", "\r\n")
-    str = str:gsub("([^%w%-%.%_%~])", function(c)
-        return string.format("%%%02X", string.byte(c))
-    end)
-    return str
-end
-local url_encode = urlEncode
+-- Shared byte-safe encoder: the old local copy used LuaJ %w, which treats
+-- UTF-8 bytes as letters and corrupts accented search queries.
+local url_encode = function(str) return CATLIB.urlEncode(str) end
 
 -- Session cache in the shared fetch lib (it also logs the HTTP failure);
 -- the site timeout stays here.

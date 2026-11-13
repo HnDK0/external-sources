@@ -50,7 +50,7 @@ libraries:
     sha256: "a407be32b1aeb9ffc5224ea30e90517096f00541909c087502b46a4cc48e3b9b"
   - id: "catalog"
     url: "https://raw.githubusercontent.com/HnDK0/external-sources/refs/heads/v2/libs/helpers/catalog.lua"
-    sha256: "895d15caca9d56e43f51e37b309b9a291e6ddb11086cebb542527c0f5944fd71"
+    sha256: "523ce16ca30baea3f2722b4ef4da487e205202b9df66a3f8e2bd3586e10e04f4"
   - id: "content"
     url: "https://raw.githubusercontent.com/HnDK0/external-sources/refs/heads/v2/libs/helpers/content.lua"
     sha256: "6c5975c91e4c85fafc86551f189ca0236d7ab5981051b3a4ec0979347540d3b0"
