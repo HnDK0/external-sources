@@ -89,7 +89,7 @@ sources:
     requires: ["urls", "catalog", "content", "fetch", "meta"]
   - id: "NovelArrow"
     name: "Novel Arrow"
-    version: "1.0.6"
+    version: "1.0.7"
     url: "https://raw.githubusercontent.com/HnDK0/external-sources/refs/heads/v2/en/novelarrow.lua"
     icon: "https://raw.githubusercontent.com/HnDK0/external-sources/refs/heads/v2/icons/novelarrow.png"
     language: "en"
@@ -152,7 +152,7 @@ sources:
     requires: ["novelfire"]
   - id: "NovelPing"
     name: "Novel Ping"
-    version: "1.0.2"
+    version: "1.0.3"
     url: "https://raw.githubusercontent.com/HnDK0/external-sources/refs/heads/v2/en/novelping.lua"
     icon: "https://raw.githubusercontent.com/HnDK0/external-sources/refs/heads/v2/icons/novelping.png"
     language: "en"

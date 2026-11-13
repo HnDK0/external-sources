@@ -1,7 +1,7 @@
 -- ── Метаданные ────────────────────────────────────────────────────────────────
 id       = "NovelArrow"
 name     = "Novel Arrow"
-version  = "1.0.6"
+version  = "1.0.7"
 baseUrl  = "https://novelarrow.com/"
 language = "en"
 icon     = "https://raw.githubusercontent.com/HnDK0/external-sources/main/icons/novelarrow.png"
@@ -66,17 +66,20 @@ local function fetchBookPage(url)
     return LIB("fetch").page(url)
 end
 
--- Извлекает novel_id (slug) из URL книги:
--- https://novelarrow.com/novel/weapons-of-mass-destruction → "weapons-of-mass-destruction"
+-- Извлекает novel_id (slug) из URL книги. Канонический путь NovelPing —
+-- /book/<slug>; старые сохранённые URL /novel/<slug> тоже поддерживаем.
 local function extractNovelId(bookUrl)
-    return bookUrl:match("/novel/([^/?#]+)")
+    return bookUrl:match("/book/([^/?#]+)") or bookUrl:match("/novel/([^/?#]+)")
 end
 
 -- Извлекает novel_id и chapter_id из URL главы:
--- https://novelarrow.com/chapter/weapons-of-mass-destruction/chapter-1
+-- https://novelping.com/book/<novel>/<chapter> (новый) или
+-- https://novelarrow.com/chapter/<novel>/<chapter> (старый сохранённый).
 local function extractChapterParts(chapterUrl)
-    local novelId, chapterId = chapterUrl:match("/chapter/([^/?#]+)/([^/?#]+)")
-    return novelId, chapterId
+    local nid, chId = chapterUrl:match("/book/([^/?#]+)/([^/?#]+)")
+    if not nid then nid, chId = chapterUrl:match("/chapter/([^/?#]+)/([^/?#]+)") end
+    if not nid then nid, chId = chapterUrl:match("/novel/([^/?#]+)/([^/?#]+)") end
+    return nid, chId
 end
 
 -- Строит URL обложки для каталога (240x360)
@@ -217,16 +220,15 @@ end
 
 -- ── Rating ─────────────────────────────────────────────────────────────
 
--- Рейтинг со страницы книги: <meta itemProp="ratingValue" content="4.4"/>
--- (значение уже округлено сайтом до 1 знака, шкала 0-5).
--- Прямой http_get страницы книги — без fetchBookData и без парсинга глав.
+-- Рейтинг из API (avgPoint, шкала 0–5, один десятичный знак): тот же источник,
+-- что у карточек каталога, без чтения HTML (после редиректа на NovelPing
+-- разметка страницы книги уже не совпадает со старой NovelArrow).
 function getBookRating(bookUrl)
-    local r = http_get(bookUrl)
-    if not r.success then return nil end
-    local v = html_attr(r.body, "meta[itemprop='ratingValue']", "content")
-    -- "0" = нет голосов: сайт число не показывает, и мы не возвращаем
-    if v == "" or v == "0" then return nil end
-    return v
+    local nid = extractNovelId(bookUrl)
+    if not nid then return nil end
+    local data = fetchBookData(nid)
+    if not data then return nil end
+    return extractRating(data)
 end
 
 -- ── Status / Last update ────────────────────────────────────────────────────
@@ -236,19 +238,23 @@ end
 function getBookStatus(bookUrl)
     local html = fetchBookPage(bookUrl)
     if not html then return nil end
-    local v = html_attr(html, "meta[name='og:novel:status']", "content")
-    return v ~= "" and LIB("meta").status(v) or nil
+    local v = html_attr(html, "meta[property='og:novel:status']", "content")
+    v = string_trim(v)
+    if v == "" then return nil end
+    -- NovelPing отдаёт "OnGoing"/"Completed" — приводим к обычному виду.
+    local l = v:lower()
+    if l == "ongoing" then return "Ongoing" end
+    if l == "completed" then return "Completed" end
+    return LIB("meta").status(v)
 end
 
--- Дата обновления последней главы: <meta property="article:modified_time"
--- content="2026-08-18T23:00:15.751Z"/> — сайт всегда отдаёт ISO-дату со
--- временем (это же значение показывает на странице книги), оставляем
--- только YYYY-MM-DD.
+-- Дата обновления последней главы: NovelPing отдаёт
+-- <meta property="og:novel:update_time" content="2026-11-13T...Z">;
+-- оставляем только YYYY-MM-DD.
 function getBookLastUpdate(bookUrl)
     local html = fetchBookPage(bookUrl)
     if not html then return nil end
-    local v = html_attr(html, "meta[property='article:modified_time']", "content")
-    -- ISO 8601 from the meta tag -> "YYYY-MM-DD" (shared meta lib).
+    local v = html_attr(html, "meta[property='og:novel:update_time']", "content")
     return LIB("meta").normalizeDate(v)
 end
 

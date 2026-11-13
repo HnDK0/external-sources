@@ -1,7 +1,7 @@
 -- ── Метаданные ───────────────────────────────────────────────────────────────
 id        = "NovelPing"
 name      = "Novel Ping"
-version   = "1.0.2"
+version   = "1.0.3"
 baseUrl   = "https://novelping.com/"
 language  = "en"
 icon      = "https://raw.githubusercontent.com/HnDK0/external-sources/main/icons/novelping.png"
@@ -36,6 +36,71 @@ end
 -- Engine global url_encode delegates to the shared catalog lib.
 local url_encode = function(s) return LIB("catalog").urlEncode(s) end
 
+-- ── JSON API ──────────────────────────────────────────────────────────────────
+-- novelping.com/api-web (тот же бэкенд, что у novelarrow.com) отдаёт каталог,
+-- поиск и фильтры одним JSON: rating (avgPoint, 0–5), totalPages и обложки,
+-- которые собираются из slug. HTML каталога рейтинга не содержит вовсе.
+
+local apiBase = baseUrl:gsub("/$", "") .. "/api-web/"
+
+local function apiGet(path)
+  local r = http_get(apiBase .. path, { headers = { ["Accept"] = "application/json" } })
+  if not r.success then
+    log_error("apiGet: HTTP " .. tostring(r.code) .. " " .. path)
+    return nil
+  end
+  local ok, data = pcall(json_parse, r.body)
+  if not ok or type(data) ~= "table" then
+    log_error("apiGet: bad JSON " .. path)
+    return nil
+  end
+  return data
+end
+
+-- avgPoint приходит как число или {"$numberDecimal":"4.47"}; 0 = нет голосов.
+local function apiRating(item)
+  local raw = item.avgPoint
+  if type(raw) == "table" then raw = raw["$numberDecimal"] end
+  local v = tonumber(raw)
+  if not v or v <= 0 then return nil end
+  return string.format("%.1f", v)
+end
+
+local function coverUrl(id)
+  -- Полный размер вместо миниатюры novel_200_89: хост и путь стабильны.
+  return "https://images.novelping.com/novel/" .. id .. ".jpg"
+end
+
+-- Элементы API → CatalogItem-таблица плагина.
+local function apiCatalogPage(data)
+  local items = {}
+  if type(data) ~= "table" or type(data.items) ~= "table" then
+    return { items = {}, hasNext = false }
+  end
+  for _, it in ipairs(data.items) do
+    local id = it.novel_id
+    local title = it.novel_name
+    if type(id) == "string" and id ~= "" and type(title) == "string" and title ~= "" then
+      table.insert(items, {
+        title  = string_clean(title),
+        url    = baseUrl .. "book/" .. id,
+        cover  = coverUrl(id),
+        rating = apiRating(it),
+      })
+    end
+  end
+  local pagination = data.pagination
+  local totalPages = type(pagination) == "table" and tonumber(pagination.totalPages) or nil
+  local page = type(pagination) == "table" and tonumber(pagination.page) or nil
+  local hasNext
+  if totalPages and page then
+    hasNext = page < totalPages
+  else
+    hasNext = #items > 0
+  end
+  return { items = items, hasNext = hasNext }
+end
+
 -- Standard chapter-text cleanup from the shared content lib, plus the site's
 -- own "Remove Ads From $N" watermark.
 local function applyStandardContentTransforms(text)
@@ -43,32 +108,6 @@ local function applyStandardContentTransforms(text)
   if text == "" then return "" end
   text = regex_replace(text, "(?i)Remove\\s+Ads\\s+From\\s+\\$\\d+", "")
   return string_trim(text)
-end
-
--- Карточка каталога: div.row → h3.novel-title > a[href][title] + img.cover
--- (src лежит в div.col-xs-3, обложки уже абсолютные, трансформация не нужна).
-local function parseCatalogItems(body, useDataSrc)
-  local items = {}
-  for _, row in ipairs(html_select(body, "div.row")) do
-    local titleEl = html_select_first(row.html, ".novel-title a")
-    if titleEl then
-      local cover = ""
-      if useDataSrc then
-        cover = html_attr(row.html, "img[data-src]", "data-src")
-      end
-      if cover == "" then
-        cover = html_attr(row.html, "img[src]", "src")
-      end
-      -- ponytail: полный размер обложки вместо миниатюры novel_200_89/novel_80_113
-      cover = cover:gsub("novel_%d+_%d+/", "novel/")
-      table.insert(items, {
-        title = string_trim(titleEl.text),
-        url   = absUrl(titleEl.href),
-        cover = cover
-      })
-    end
-  end
-  return items
 end
 
 -- ── Извлечение novelId из URL книги (slug) ──────────────────────────────────
@@ -121,28 +160,20 @@ end
 
 function getCatalogList(index)
   local page = LIB("catalog").nextIndex(index)
-  local url = baseUrl .. "sort/updates"
-  if page > 1 then url = url .. "?page=" .. page end
-
-  local r = http_get(url)
-  if not r.success then return { items = {}, hasNext = false } end
-
-  local items = parseCatalogItems(r.body, true)
-  return { items = items, hasNext = LIB("catalog").hasNextPage(items) }
+  local data = apiGet("novels?page=" .. page .. "&limit=20&sort=LASTEST&status=all&genre=ALL")
+  if not data then return { items = {}, hasNext = false } end
+  return apiCatalogPage(data)
 end
 
 -- ── Поиск ─────────────────────────────────────────────────────────────────────
 
 function getCatalogSearch(index, query)
   local page = LIB("catalog").nextIndex(index)
-  local url = baseUrl .. "search?keyword=" .. url_encode(query)
-  if page > 1 then url = url .. "&page=" .. page end
-
-  local r = http_get(url)
-  if not r.success then return { items = {}, hasNext = false } end
-
-  local items = parseCatalogItems(r.body, false)
-  return { items = items, hasNext = LIB("catalog").hasNextPage(items) }
+  local data = apiGet(
+    "search?keyword=" .. url_encode(query) .. "&page=" .. page .. "&limit=20"
+  )
+  if not data then return { items = {}, hasNext = false } end
+  return apiCatalogPage(data)
 end
 
 -- ── Детали книги (все через кэш — 1 запрос) ──────────────────────────────────
@@ -181,11 +212,35 @@ function getBookGenres(bookUrl)
   return {}
 end
 
+function getBookAuthor(bookUrl)
+  local body = fetchPage(bookUrl)
+  if not body then return nil end
+  local author = html_attr(body, "meta[property='og:novel:author']", "content")
+  author = string_trim(author)
+  return author ~= "" and author or nil
+end
+
+function getBookLastUpdate(bookUrl)
+  local body = fetchPage(bookUrl)
+  if not body then return nil end
+  -- <meta property="og:novel:update_time" content="2026-11-13T06:08:46.343Z">
+  local raw = html_attr(body, "meta[property='og:novel:update_time']", "content")
+  return raw:match("^(%d%d%d%d%-%d%d%-%d%d)")
+end
+
 function getBookRating(bookUrl)
   local body = fetchPage(bookUrl)
   if not body then return nil end
   local el = html_select_first(body, "span[itemprop='ratingValue']")
-  return el and string_trim(el.text) or nil
+  if not el then return nil end
+  local value = string_trim(el.text)
+  if value == "" or tonumber(value) == nil then return nil end
+  -- Сайт отдаёт шкалу 0–10 ("8.8"), а приложение без "/10" считает число
+  -- оценкой из 5 и молча скрывает рейтинг. bestRating на странице = 10.
+  local bestEl = html_select_first(body, "span[itemprop='bestRating']")
+  local scale = bestEl and string_trim(bestEl.text) or ""
+  if tonumber(scale) == nil then scale = "10" end
+  return value .. "/" .. scale
 end
 
 function getBookStatus(bookUrl)
@@ -238,11 +293,39 @@ function getChapterText(html)
 end
 
 -- ── Список фильтров ───────────────────────────────────────────────────────────
--- Advanced search: /search?advanced=1 с параметрами формы сайта.
--- Значения жанров — верхним регистром, как в форме продвинутого поиска.
+-- Жанры и теги — из API (те же списки, что рендерит search?advanced=1):
+-- genres ~55, tags ~1466. Держать их в коде бессмысленно: сайт добавляет теги
+-- постоянно. API недоступен → эти секции просто скрываются, остальное работает.
+
+local function apiOptions(path, valueKey, labelKey)
+  local data = apiGet(path)
+  local out = {}
+  if type(data) ~= "table" or type(data.items) ~= "table" then
+    log_error("getFilterList: no options from " .. path)
+    return out
+  end
+  for _, it in ipairs(data.items) do
+    local value, label
+    if type(it) == "table" then
+      value = it[valueKey]
+      label = it[labelKey] or value
+    else
+      value = it
+      label = it
+    end
+    if type(value) == "string" and value ~= "" then
+      table.insert(out, { value = value, label = label })
+    end
+  end
+  return out
+end
+
+local _filterList
 
 function getFilterList()
-  return {
+  if _filterList then return _filterList end
+
+  local filters = {
     {
       type         = "select",
       key          = "sort",
@@ -291,68 +374,22 @@ function getFilterList()
         { value = "OR",  label = "Match any" },
       }
     },
-    {
+  }
+
+  local genres = apiOptions("genres", "genre_id", "genre_name")
+  if #genres > 0 then
+    table.insert(filters, {
       type        = "checkbox",
       key         = "genres",
       label       = "Genres",
       multiselect = true,
-      options = {
-        { value = "ACTION",          label = "Action"          },
-        { value = "ADULT",           label = "Adult"           },
-        { value = "ADVENTURE",       label = "Adventure"       },
-        { value = "ANIME & COMICS",  label = "Anime & Comics"  },
-        { value = "COMEDY",          label = "Comedy"          },
-        { value = "DRAMA",           label = "Drama"           },
-        { value = "EASTERN",         label = "Eastern"         },
-        { value = "ECCHI",           label = "Ecchi"           },
-        { value = "FAN-FICTION",     label = "Fan-fiction"     },
-        { value = "FANTASY",         label = "Fantasy"         },
-        { value = "GAME",            label = "Game"            },
-        { value = "GENDER BENDER",   label = "Gender Bender"   },
-        { value = "HAREM",           label = "Harem"           },
-        { value = "HISTORICAL",      label = "Historical"      },
-        { value = "HORROR",          label = "Horror"          },
-        { value = "ISEKAI",          label = "Isekai"          },
-        { value = "JOSEI",           label = "Josei"           },
-        { value = "LGBT+",           label = "LGBT+"           },
-        { value = "LITRPG",          label = "LitRPG"          },
-        { value = "MAGIC",           label = "Magic"           },
-        { value = "MAGICAL REALISM", label = "Magical Realism" },
-        { value = "MARTIAL ARTS",    label = "Martial Arts"    },
-        { value = "MATURE",          label = "Mature"          },
-        { value = "MECHA",           label = "Mecha"           },
-        { value = "MILITARY",        label = "Military"        },
-        { value = "MODERN LIFE",     label = "Modern Life"     },
-        { value = "MYSTERY",         label = "Mystery"         },
-        { value = "PSYCHOLOGICAL",   label = "Psychological"   },
-        { value = "REALISTIC",       label = "Realistic"       },
-        { value = "REINCARNATION",   label = "Reincarnation"   },
-        { value = "ROMANCE",         label = "Romance"         },
-        { value = "SCHOOL LIFE",     label = "School Life"     },
-        { value = "SCI-FI",          label = "Sci-Fi"          },
-        { value = "SEINEN",          label = "Seinen"          },
-        { value = "SHOUJO",          label = "Shoujo"          },
-        { value = "SHOUJO AI",       label = "Shoujo Ai"       },
-        { value = "SHOUNEN",         label = "Shounen"         },
-        { value = "SHOUNEN AI",      label = "Shounen Ai"      },
-        { value = "SLICE OF LIFE",   label = "Slice of Life"   },
-        { value = "SMUT",            label = "Smut"            },
-        { value = "SPORTS",          label = "Sports"          },
-        { value = "SUPERNATURAL",    label = "Supernatural"    },
-        { value = "SYSTEM",          label = "System"          },
-        { value = "THRILLER",        label = "Thriller"        },
-        { value = "TRAGEDY",         label = "Tragedy"         },
-        { value = "URBAN",           label = "Urban"           },
-        { value = "VIDEO GAMES",     label = "Video Games"     },
-        { value = "WAR",             label = "War"             },
-        { value = "WUXIA",           label = "Wuxia"           },
-        { value = "XIANXIA",         label = "Xianxia"         },
-        { value = "XUANHUAN",        label = "Xuanhuan"        },
-        { value = "YAOI",            label = "Yaoi"            },
-        { value = "YURI",            label = "Yuri"            },
-      }
-    },
-    {
+      options     = genres,
+    })
+  end
+
+  local tags = apiOptions("tags")
+  if #tags > 0 then
+    table.insert(filters, {
       type         = "select",
       key          = "tag_mode",
       label        = "Tag Mode",
@@ -361,188 +398,69 @@ function getFilterList()
         { value = "AND", label = "Match all" },
         { value = "OR",  label = "Match any" },
       }
-    },
-    {
+    })
+    table.insert(filters, {
       type        = "checkbox",
       key         = "tags",
       label       = "Tags",
       multiselect = true,
-      options = {
-        { value = "MALE PROTAGONIST",             label = "Male Protagonist"             },
-        { value = "SYSTEM",                        label = "System"                        },
-        { value = "WEAK TO STRONG",                label = "Weak to Strong"                },
-        { value = "OVERPOWERED PROTAGONIST",       label = "Overpowered Protagonist"       },
-        { value = "GAME ELEMENTS",                 label = "Game Elements"                 },
-        { value = "TRANSMIGRATION",                label = "Transmigration"                },
-        { value = "CULTIVATION",                   label = "Cultivation"                   },
-        { value = "SURVIVAL",                      label = "Survival"                      },
-        { value = "LEVEL SYSTEM",                  label = "Level System"                  },
-        { value = "R-18",                          label = "R-18"                          },
-        { value = "MODERN DAY",                    label = "Modern Day"                    },
-        { value = "REINCARNATION",                 label = "Reincarnation"                 },
-        { value = "SPECIAL ABILITIES",             label = "Special Abilities"             },
-        { value = "MAGIC",                         label = "Magic"                         },
-        { value = "ALTERNATE WORLD",               label = "Alternate World"               },
-        { value = "MONSTERS",                      label = "Monsters"                      },
-        { value = "DRAGONS",                       label = "Dragons"                       },
-        { value = "ANTIHERO PROTAGONIST",          label = "Antihero Protagonist"          },
-        { value = "POOR TO RICH",                  label = "Poor to Rich"                  },
-        { value = "WARS",                          label = "Wars"                          },
-        { value = "DEMONS",                        label = "Demons"                        },
-        { value = "GENIUS PROTAGONIST",            label = "Genius Protagonist"            },
-        { value = "HANDSOME MALE LEAD",            label = "Handsome Male Lead"            },
-        { value = "BLOODLINES",                    label = "Bloodlines"                    },
-        { value = "REVENGE",                       label = "Revenge"                       },
-        { value = "HARD-WORKING PROTAGONIST",      label = "Hard-Working Protagonist"      },
-        { value = "IMMORTALS",                     label = "Immortals"                     },
-        { value = "HAREM-SEEKING PROTAGONIST",     label = "Harem-Seeking Protagonist"     },
-        { value = "FAMILY",                        label = "Family"                        },
-        { value = "FEMALE PROTAGONIST",            label = "Female Protagonist"            },
-        { value = "SCHEMES AND CONSPIRACIES",      label = "Schemes and Conspiracies"      },
-        { value = "APOCALYPSE",                    label = "Apocalypse"                    },
-        { value = "HIDING TRUE ABILITIES",         label = "Hiding True Abilities"         },
-        { value = "GODS",                          label = "Gods"                          },
-        { value = "ARTIFACTS",                     label = "Artifacts"                     },
-        { value = "CAUTIOUS PROTAGONIST",          label = "Cautious Protagonist"          },
-        { value = "ALCHEMY",                       label = "Alchemy"                       },
-        { value = "KINGDOM BUILDING",              label = "Kingdom Building"              },
-        { value = "BUSINESS MANAGEMENT",           label = "Business Management"           },
-        { value = "NOBLES",                        label = "Nobles"                        },
-        { value = "POOR PROTAGONIST",              label = "Poor Protagonist"              },
-        { value = "POST-APOCALYPTIC",              label = "Post-Apocalyptic"              },
-        { value = "RUTHLESS PROTAGONIST",          label = "Ruthless Protagonist"          },
-        { value = "COLD PROTAGONIST",              label = "Cold Protagonist"              },
-        { value = "EVOLUTION",                     label = "Evolution"                     },
-        { value = "ROMANTIC SUBPLOT",              label = "Romantic Subplot"              },
-        { value = "ACADEMY",                       label = "Academy"                       },
-        { value = "UNDERESTIMATED PROTAGONIST",    label = "Underestimated Protagonist"    },
-        { value = "CALM PROTAGONIST",              label = "Calm Protagonist"              },
-        { value = "LUCKY PROTAGONIST",             label = "Lucky Protagonist"             },
-        { value = "GRINDING",                      label = "Grinding"                      },
-        { value = "POLYGAMY",                      label = "Polygamy"                      },
-        { value = "DOCTORS",                       label = "Doctors"                       },
-        { value = "FARMING",                       label = "Farming"                       },
-        { value = "HEARTWARMING",                  label = "Heartwarming"                  },
-        { value = "MARRIAGE",                      label = "Marriage"                      },
-        { value = "MEDICAL KNOWLEDGE",             label = "Medical Knowledge"             },
-        { value = "CUNNING PROTAGONIST",           label = "Cunning Protagonist"           },
-        { value = "BEAST COMPANIONS",              label = "Beast Companions"              },
-        { value = "BEAUTIFUL FEMALE LEAD",         label = "Beautiful Female Lead"         },
-        { value = "SYSTEM ADMINISTRATOR",          label = "System Administrator"          },
-        { value = "HIDING TRUE IDENTITY",          label = "Hiding True Identity"          },
-        { value = "ARRANGED MARRIAGE",             label = "Arranged Marriage"             },
-        { value = "HIDDEN ABILITIES",              label = "Hidden Abilities"              },
-        { value = "BETRAYAL",                      label = "Betrayal"                      },
-        { value = "ABILITY STEAL",                 label = "Ability Steal"                 },
-        { value = "FANTASY WORLD",                 label = "Fantasy World"                 },
-        { value = "UNIQUE CULTIVATION TECHNIQUE",  label = "Unique Cultivation Technique"  },
-        { value = "SURVIVAL GAME",                 label = "Survival Game"                 },
-        { value = "NOT-HAREM",                     label = "Not-Harem"                     },
-        { value = "ARROGANT CHARACTERS",           label = "Arrogant Characters"           },
-        { value = "SECT DEVELOPMENT",              label = "Sect Development"              },
-        { value = "SLOW GROWTH AT START",          label = "Slow Growth at Start"          },
-        { value = "MULTIPLE REALMS",               label = "Multiple Realms"               },
-        { value = "MODERN KNOWLEDGE",              label = "Modern Knowledge"              },
-        { value = "ARTIFICIAL INTELLIGENCE",       label = "Artificial Intelligence"       },
-        { value = "VIRTUAL REALITY",               label = "Virtual Reality"               },
-        { value = "WEALTHY CHARACTERS",            label = "Wealthy Characters"            },
-        { value = "FACE SLAPPING",                 label = "Face Slapping"                 },
-        { value = "COOKING",                       label = "Cooking"                       },
-        { value = "SUDDEN STRENGTH GAIN",          label = "Sudden Strength Gain"          },
-        { value = "COMEDIC UNDERTONE",             label = "Comedic Undertone"             },
-        { value = "REINCARNATED IN A GAME WORLD",  label = "Reincarnated in a Game World"  },
-        { value = "VILLAIN",                       label = "Villain"                       },
-        { value = "CLEVER PROTAGONIST",            label = "Clever Protagonist"            },
-        { value = "UNLIMITED FLOW",                label = "Unlimited Flow"                },
-        { value = "DAOISM",                        label = "Daoism"                        },
-        { value = "HEAVENLY TRIBULATION",          label = "Heavenly Tribulation"          },
-        { value = "MAGIC BEASTS",                  label = "Magic Beasts"                  },
-        { value = "REINCARNATED IN ANOTHER WORLD", label = "Reincarnated in Another World" },
-        { value = "DESTINY",                       label = "Destiny"                       },
-        { value = "GODDESSES",                     label = "Goddesses"                     },
-        { value = "SWORD WIELDER",                 label = "Sword Wielder"                 },
-        { value = "CRAFTING",                      label = "Crafting"                      },
-        { value = "TRANSPORTED TO ANOTHER WORLD",  label = "Transported to Another World"  },
-        { value = "GHOSTS",                        label = "Ghosts"                        },
-        { value = "CHEATS",                        label = "Cheats"                        },
-        { value = "GORE",                          label = "Gore"                          },
-        { value = "BODY TEMPERING",                label = "Body Tempering"                },
-        { value = "COLLEGE/UNIVERSITY",            label = "College/University"            },
-      }
-    },
-    {
-      type         = "text",
-      key          = "min_chapters",
-      label        = "Min Chapters",
-      defaultValue = ""
-    },
-    {
-      type         = "text",
-      key          = "max_chapters",
-      label        = "Max Chapters",
-      defaultValue = ""
-    },
-  }
+      options     = tags,
+    })
+  end
+
+  table.insert(filters, {
+    type         = "text",
+    key          = "min_chapters",
+    label        = "Min Chapters",
+    defaultValue = ""
+  })
+  table.insert(filters, {
+    type         = "text",
+    key          = "max_chapters",
+    label        = "Max Chapters",
+    defaultValue = ""
+  })
+
+  _filterList = filters
+  return _filterList
 end
 
--- ── Каталог с фильтрами (advanced search) ─────────────────────────────────────
+-- ── Каталог с фильтрами (JSON API) ────────────────────────────────────────────
 
 function getCatalogFiltered(index, filters)
-  local page       = LIB("catalog").nextIndex(index)
-  local sort       = filters["sort"]       or ""
-  local status     = filters["status"]     or "all"
-  local language   = filters["language"]   or "ALL"
-  local genre_mode = filters["genre_mode"] or "AND"
-  local genres_inc = filters["genres_included"] or {}
-  local genres_exc = filters["genres_excluded"] or {}
-
-  local tag_mode   = filters["tag_mode"]   or "AND"
-  local tags_inc   = filters["tags_included"] or {}
-  local tags_exc   = filters["tags_excluded"] or {}
-
-  local url = baseUrl .. "search?advanced=1"
-  -- Сервер рендерит список только при наличии хотя бы одного активирующего
-  -- параметра (status/language/genres/tags/min_chapters/max_chapters).
-  -- sort, genre_mode и tag_mode сами по себе список не активируют — если
-  -- фильтров нет, добавляем нейтральный активатор &min_chapters=1.
-  local hadFilter = false
-  -- Значения жанров/тегов содержат пробелы и спецсимволы
-  -- ("ANIME & COMICS", "ANTIHERO PROTAGONIST") — всё кодируем через url_encode.
-  if sort ~= ""       then url = url .. "&sort="       .. url_encode(sort)       end
-  if status ~= "all"  then url = url .. "&status="     .. url_encode(status); hadFilter = true end
-  if language ~= "ALL" then url = url .. "&language="  .. url_encode(language); hadFilter = true end
-  if genre_mode ~= "AND" then url = url .. "&genre_mode=" .. url_encode(genre_mode) end
-  if tag_mode ~= "AND" then url = url .. "&tag_mode=" .. url_encode(tag_mode)   end
-
-  for _, g in ipairs(genres_inc) do
-    url = url .. "&genres=" .. url_encode(g); hadFilter = true
-  end
-  for _, g in ipairs(genres_exc) do
-    url = url .. "&genres_exclude=" .. url_encode(g); hadFilter = true
-  end
-  for _, t in ipairs(tags_inc) do
-    url = url .. "&tags=" .. url_encode(t); hadFilter = true
-  end
-  for _, t in ipairs(tags_exc) do
-    url = url .. "&tags_exclude=" .. url_encode(t); hadFilter = true
+  local page = LIB("catalog").nextIndex(index)
+  local parts = { "page=" .. page, "limit=20" }
+  local function add(key, value)
+    if value == nil or value == "" then return end
+    table.insert(parts, key .. "=" .. url_encode(tostring(value)))
   end
 
-  -- Числовые ограничения по числу глав (пусто = фильтр не применяется)
-  if filters["min_chapters"] and filters["min_chapters"] ~= "" then
-    url = url .. "&min_chapters=" .. url_encode(filters["min_chapters"]); hadFilter = true
-  end
-  if filters["max_chapters"] and filters["max_chapters"] ~= "" then
-    url = url .. "&max_chapters=" .. url_encode(filters["max_chapters"]); hadFilter = true
-  end
+  local sort = filters["sort"]
+  if sort and sort ~= "" then add("sort", sort) end
 
-  -- Активный фильтр не выбран — нейтральный активатор вместо пустой страницы
-  if not hadFilter then url = url .. "&min_chapters=1" end
+  local status = filters["status"]
+  if status and status ~= "all" then add("status", status) end
 
-  url = url .. "&page=" .. page
+  local language = filters["language"]
+  if language and language ~= "ALL" then add("language", language) end
 
-  local r = http_get(url)
-  if not r.success then return { items = {}, hasNext = false } end
+  local genre_mode = filters["genre_mode"]
+  if genre_mode and genre_mode ~= "AND" then add("genre_mode", genre_mode) end
 
-  local items = parseCatalogItems(r.body, false)
-  return { items = items, hasNext = LIB("catalog").hasNextPage(items) }
+  local tag_mode = filters["tag_mode"]
+  if tag_mode and tag_mode ~= "AND" then add("tag_mode", tag_mode) end
+
+  for _, g in ipairs(filters["genres_included"] or {}) do add("genres", g) end
+  for _, g in ipairs(filters["genres_excluded"] or {}) do add("genres_exclude", g) end
+  for _, t in ipairs(filters["tags_included"] or {}) do add("tags", t) end
+  for _, t in ipairs(filters["tags_excluded"] or {}) do add("tags_exclude", t) end
+
+  add("min_chapters", filters["min_chapters"])
+  add("max_chapters", filters["max_chapters"])
+
+  -- Пустая форма = обычный каталог: API без параметров отдаёт популярное,
+  -- а не пустую страницу (в отличие от HTML advanced search).
+  local data = apiGet("novels?" .. table.concat(parts, "&"))
+  if not data then return { items = {}, hasNext = false } end
+  return apiCatalogPage(data)
 end
