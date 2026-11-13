@@ -1,7 +1,7 @@
 id       = "asurascans"
 name     = "Asura Scans"
--- Version: 1.7.1
-version  = "1.7.1"
+-- Version: 1.7.2
+version  = "1.7.2"
 baseUrl  = "https://asurascans.com"
 language = "en"
 icon     = "https://raw.githubusercontent.com/HnDK0/external-sources/main/icons/asurascans.webp"
@@ -20,11 +20,22 @@ content_type = "manga"
 -- round-trip) + doc.location(); the escaped props attribute (&quot;…&quot;)
 -- survives the round-trip, so the primary path works in-app as-is.
 
+-- Old builds ship no require_lib: keep the plugin loadable (a top-level error
+-- would drop it from the source list) and fail with a visible message on the
+-- first call instead. Shared libs load lazily and are cached per session.
+local _libs
+local function LIB(id)
+    if type(require_lib) ~= "function" then
+        show_error("Requires NoveLA update", "This plugin needs the shared libraries")
+        error("Requires NoveLA update (require_lib)", 0)
+    end
+    if not _libs then _libs = {} end
+    if not _libs[id] then _libs[id] = require_lib(id) end
+    return _libs[id]
+end
+
 local function absUrl(href)
-    if not href or href == "" then return "" end
-    if string_starts_with(href, "http") then return href end
-    if string_starts_with(href, "//") then return "https:" .. href end
-    return url_resolve(baseUrl, href)
+    return LIB("urls").absUrl(baseUrl, href)
 end
 
 -- Cloudflare-protected: requests without browser-like headers get a JS
@@ -37,22 +48,22 @@ local CHROME_HEADERS = {
     ["Accept-Language"] = "en-US,en;q=0.9",
 }
 
-local function fetch(url)
-    local r = http_get(url, { headers = CHROME_HEADERS })
+-- Uncached GET for the catalog, search and chapter list: the shared lib caches
+-- for the whole process, and a chapter list served from that cache never sees
+-- chapters published after the first read.
+local CHROME_CONFIG = { headers = CHROME_HEADERS }
+
+local function fetchDirect(url)
+    local r = http_get(url, CHROME_CONFIG)
     if not r.success then return nil end
     return r.body
 end
 
--- Сессионный кэш страницы книги: движок вызывает 4+ detail-функции
--- параллельно, но в рамках одного вызова повторный fetch одного и того же
--- bookUrl не нужен.
-local _pageCache = {}
-
-local function fetchBookPage(url)
-    if _pageCache[url] then return _pageCache[url] end
-    local body = fetch(url)
-    if body then _pageCache[url] = body end
-    return body
+-- Book detail page: shared session cache (the engine calls the 4+ getBook*
+-- functions in parallel). The header set is part of the lib's cache key, so a
+-- CF-protected page never shares a cached body with a headerless request.
+local function fetch(url)
+    return LIB("fetch").page(url, CHROME_CONFIG)
 end
 
 local function cleanChapterTitle(text)
@@ -143,34 +154,34 @@ local function parseCards(body)
 end
 
 function getCatalogList(index)
-    local page = index + 1
+    local page = LIB("catalog").nextIndex(index)
     local url = baseUrl .. "/browse"
     if page > 1 then url = url .. "?page=" .. tostring(page) end
-    local body = fetch(url)
+    local body = fetchDirect(url)
     if not body then return { items = {}, hasNext = false } end
     local items = parseCards(body)
     -- Past the last page the site renders an empty grid — stop paginating
     -- instead of letting the app scroll into endless empty pages.
-    return { items = items, hasNext = #items > 0 }
+    return { items = items, hasNext = LIB("catalog").hasNextPage(items) }
 end
 
 function getCatalogSearch(index, query)
     if index > 0 then return { items = {}, hasNext = false } end
-    local url = baseUrl .. "/browse?search=" .. url_encode(query)
-    local body = fetch(url)
+    local url = baseUrl .. "/browse?search=" .. LIB("catalog").urlEncode(query)
+    local body = fetchDirect(url)
     if not body then return { items = {}, hasNext = false } end
     return { items = parseCards(body), hasNext = false }
 end
 
 function getBookTitle(bookUrl)
-    local body = fetchBookPage(bookUrl)
+    local body = fetch(bookUrl)
     if not body then return nil end
     local h1 = html_select_first(body, "h1")
     return h1 and string_clean(h1.text) or nil
 end
 
 function getBookCoverImageUrl(bookUrl)
-    local body = fetchBookPage(bookUrl)
+    local body = fetch(bookUrl)
     if not body then return nil end
     local src = html_attr(body, "img[src*='asura-images/covers/']", "src")
     if src == "" then src = html_attr(body, "meta[property='og:image']", "content") end
@@ -178,7 +189,7 @@ function getBookCoverImageUrl(bookUrl)
 end
 
 function getBookDescription(bookUrl)
-    local body = fetchBookPage(bookUrl)
+    local body = fetch(bookUrl)
     if not body then return nil end
     local el = html_select_first(body,
         ".summary__content, .summary, .description, .synopsis, .about, .series-description")
@@ -192,7 +203,7 @@ function getBookDescription(bookUrl)
 end
 
 function getBookGenres(bookUrl)
-    local body = fetchBookPage(bookUrl)
+    local body = fetch(bookUrl)
     if not body then return {} end
     local genres = {}
     for _, a in ipairs(html_select(body, "a[href*='genres=']")) do
@@ -206,7 +217,7 @@ end
 -- шкале bestRating ("9.6"/"10"). Формат "9.6/10" — рейтинговый парсер
 -- приложения нормализует её в 5-балльную ("4.8"); голое "9.6" он бы отклонил.
 function getBookRating(bookUrl)
-    local body = fetchBookPage(bookUrl)
+    local body = fetch(bookUrl)
     if not body then return nil end
     for _, script in ipairs(html_select(body, "script[type='application/ld+json']")) do
         local raw = script.html
@@ -231,7 +242,7 @@ end
 -- Статус (ongoing / completed / …) — текст span.capitalize в блоке "Status"
 -- на странице книги (div.flex.gap-3.pt-4). Значения не маппятся, отдаём как есть.
 function getBookStatus(bookUrl)
-    local body = fetchBookPage(bookUrl)
+    local body = fetch(bookUrl)
     if not body then return nil end
     local el = html_select_first(body, "div.flex.gap-3.pt-4 span.capitalize")
     if el then
@@ -246,15 +257,14 @@ end
 -- реальной странице), поэтому берём dateModified из JSON-LD. ВНИМАНИЕ: это
 -- время модификации СТРАНИЦЫ, а не время выхода последней главы.
 function getBookLastUpdate(bookUrl)
-    local body = fetchBookPage(bookUrl)
+    local body = fetch(bookUrl)
     if not body then return nil end
     for _, script in ipairs(html_select(body, "script[type='application/ld+json']")) do
         local raw = script.html
         if raw and string.find(raw, "dateModified", 1, true) then
             local ok, data = pcall(json_parse, raw)
             if ok and data and data.dateModified then
-                local m = regex_match(tostring(data.dateModified), "(\\d\\d\\d\\d-\\d\\d-\\d\\d)")
-                if m and m[1] then return m[1] end
+                return LIB("meta").normalizeDate(tostring(data.dateModified))
             end
         end
     end
@@ -262,7 +272,7 @@ function getBookLastUpdate(bookUrl)
 end
 
 function getChapterList(bookUrl)
-    local body = fetch(bookUrl)
+    local body = fetchDirect(bookUrl)
     if not body then return {} end
     local chapters = {}
     local seen = {}

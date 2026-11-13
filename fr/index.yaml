@@ -3,7 +3,8 @@ name: "Fr"
 sources:
   - id: "novelfrance"
     name: "NovelFrance"
-    version: "1.0.9"
+    version: "1.0.10"
     url: "https://raw.githubusercontent.com/HnDK0/external-sources/refs/heads/v2/fr/novelfrance.lua"
     icon: "https://raw.githubusercontent.com/HnDK0/external-sources/refs/heads/v2/icons/novelfrance.png"
     language: "fr"
+    requires: ["urls", "catalog"]

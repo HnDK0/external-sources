@@ -4,12 +4,26 @@
 
 id         = "doujindesu"
 name       = "Doujindesu"
-version    = "1.0.0"
+version    = "1.0.1"
 baseUrl    = "https://doujin.desu.xxx"
 language   = "id"
 content_type = "manga"
 icon       = "https://raw.githubusercontent.com/HnDK0/external-sources/refs/heads/main/icons/doujindesu.png"
 referer    = "https://doujin.desu.xxx/"
+
+-- Old builds ship no require_lib: keep the plugin loadable (a top-level error
+-- would drop it from the source list) and fail with a visible message on the
+-- first call instead. Shared libs load lazily and are cached per session.
+local _libs
+local function LIB(id)
+    if type(require_lib) ~= "function" then
+        show_error("Requires NoveLA update", "This plugin needs the shared libraries")
+        error("Requires NoveLA update (require_lib)", 0)
+    end
+    if not _libs then _libs = {} end
+    if not _libs[id] then _libs[id] = require_lib(id) end
+    return _libs[id]
+end
 
 local LIMIT = 24
 
@@ -105,7 +119,7 @@ local _bookCache = {}
 -- Book details are shared by every getBook* call
 local function fetch_book(slug)
     if _bookCache[slug] then return _bookCache[slug] end
-    local d = api_get("/api/manga/" .. url_encode(slug))
+    local d = api_get("/api/manga/" .. LIB("catalog").urlEncode(slug))
     if d then _bookCache[slug] = d end
     return d
 end
@@ -117,13 +131,13 @@ local function catalog_url(index, search, genre, status, mtype, sort)
     local params = {
         "limit=" .. LIMIT,
         "offset=" .. (index or 0) * LIMIT,
-        "sort=" .. url_encode(sort or "latest_chapter"),
+        "sort=" .. LIB("catalog").urlEncode(sort or "latest_chapter"),
     }
     if search and search ~= "" then
-        params[#params + 1] = "search=" .. url_encode(search)
+        params[#params + 1] = "search=" .. LIB("catalog").urlEncode(search)
     end
     if genre and genre ~= "" then
-        params[#params + 1] = "genre=" .. url_encode(genre)
+        params[#params + 1] = "genre=" .. LIB("catalog").urlEncode(genre)
     end
     if status and status ~= "" then
         params[#params + 1] = "status=" .. status
@@ -356,7 +370,7 @@ function getChapterListHash(bookUrl)
     -- Direct http_get, never fetch_book: the hash must notice new chapters
     local slug = bookUrl:match("/manga/([^/]+)")
     if not slug then return "" end
-    local r = http_get(baseUrl .. "/api/manga/" .. url_encode(slug))
+    local r = http_get(baseUrl .. "/api/manga/" .. LIB("catalog").urlEncode(slug))
     if not r or not r.success then return "" end
     local d = decrypt_body(r.body)
     if type(d) ~= "table" then return "" end

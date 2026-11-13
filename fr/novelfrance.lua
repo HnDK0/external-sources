@@ -1,18 +1,32 @@
 -- ── Метаданные ───────────────────────────────────────────────────────────────
 id       = "novelfrance"
 name     = "NovelFrance"
-version  = "1.0.9"
+version  = "1.0.10"
 baseUrl  = "https://novelfrance.fr"
 language = "fr"
 icon     = "https://raw.githubusercontent.com/HnDK0/external-sources/main/icons/novelfrance.png"
 
 -- ── Хелперы ──────────────────────────────────────────────────────────────────
-local function absUrl(href)
-    if not href or href == "" then return "" end
-    if string.sub(href, 1, 4) == "http" then return href end
-    if string.sub(href, 1, 2) == "//" then return "https:" .. href end
-    return baseUrl .. href
+
+-- Старые сборки не содержат require_lib: top-level error выкинул бы плагин из
+-- списка источников, поэтому либы грузятся лениво и кэшируются на сессию.
+local _libs
+local function LIB(id)
+    if type(require_lib) ~= "function" then
+        show_error("Requires NoveLA update", "This plugin needs the shared libraries")
+        error("Requires NoveLA update (require_lib)", 0)
+    end
+    if not _libs then _libs = {} end
+    if not _libs[id] then _libs[id] = require_lib(id) end
+    return _libs[id]
 end
+
+local function absUrl(href)
+    return LIB("urls").absUrl(baseUrl, href)
+end
+
+-- Глобал движка url_encode делегирован общей либе каталога.
+local url_encode = function(s) return LIB("catalog").urlEncode(s) end
 
 local function applyStandardContentTransforms(text)
     if not text or text == "" then return "" end
@@ -66,7 +80,7 @@ end
 
 -- ── Каталог ──────────────────────────────────────────────────────────────────
 function getCatalogList(index)
-    local page = index + 1
+    local page = LIB("catalog").nextIndex(index)
     local url = baseUrl .. "/browse?page=" .. tostring(page)
     local r = httpGet(url)
     if not r or not r.success then return { items = {}, hasNext = false } end
@@ -359,7 +373,7 @@ function getFilterList()
 end
 
 function getCatalogFiltered(index, filters)
-    local page = index + 1
+    local page = LIB("catalog").nextIndex(index)
     
     local sort        = filters["sort"]          or "updated"
     local status      = filters["status"]        or "all"

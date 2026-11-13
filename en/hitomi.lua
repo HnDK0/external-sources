@@ -9,7 +9,7 @@
 -- ── Метаданные ──
 id           = "hitomi"
 name         = "Hitomi"
-version  = "1.15.0"
+version  = "1.15.1"
 baseUrl      = "https://hitomi.la/"
 language     = "en"
 content_type = "manga"
@@ -36,13 +36,21 @@ end
 
 -- ── Хелперы ──
 
--- Превращает любую ссылку с сайта в абсолютную.
-local function absUrl(href)
-	if href == nil or href == "" then return "" end
-	if string.sub(href, 1, 2) == "//" then return "https:" .. href end
-	if string.match(href, "^https?://") then return href end
-	return url_resolve(baseUrl, href)
+-- GUARD: старые сборки без require_lib. Ленивая загрузка и кэш на сессию:
+-- top-level не трогает require_lib, иначе плагин молча исчезнет из списка.
+local _libs
+local function LIB(id)
+	if type(require_lib) ~= "function" then
+		show_error("Please update NoveLA", "This plugin needs the shared libraries")
+		error("A newer version of the application is required (require_lib)", 0)
+	end
+	_libs = _libs or {}
+	if not _libs[id] then _libs[id] = require_lib(id) end
+	return _libs[id]
 end
+
+-- Кодирование тега в URL — через общую либу (побайтовый mirror url_encode).
+local url_encode = function(s) return LIB("catalog").urlEncode(s) end
 
 -- ID галереи из URL вида /<type>/<slug>-<123456>.html
 local function galleryIdFromUrl(url)

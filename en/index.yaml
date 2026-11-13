@@ -3,11 +3,12 @@ name: "English"
 sources:
   - id: "asurascans"
     name: "Asura Scans"
-    version: "1.7.1"
+    version: "1.7.2"
     url: "https://raw.githubusercontent.com/HnDK0/external-sources/refs/heads/v2/en/asurascans.lua"
     icon: "https://raw.githubusercontent.com/HnDK0/external-sources/refs/heads/v2/icons/asurascans.webp"
     language: "en"
     content_type: "manga"
+    requires: ["urls", "fetch", "catalog", "meta"]
   - id: "chikari"
     name: "Chikari Novel"
     version: "1.0.11"
@@ -61,11 +62,12 @@ sources:
     requires: ["otaku"]
   - id: "hitomi"
     name: "Hitomi"
-    version: "1.15.0"
+    version: "1.15.1"
     url: "https://raw.githubusercontent.com/HnDK0/external-sources/refs/heads/v2/en/hitomi.lua"
     icon: "https://raw.githubusercontent.com/HnDK0/external-sources/refs/heads/v2/icons/hitomi.png"
     language: "en"
     content_type: "manga"
+    requires: ["catalog"]
   - id: "lunoxscans"
     name: "Lunox Novels"
     version: "1.0.1"

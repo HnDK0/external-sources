@@ -2,7 +2,7 @@
 
 id       = "komikdewasa"
 name     = "Komik Dewasa"
-version  = "1.0.0"
+version  = "1.0.1"
 baseUrl  = "https://komikdewasa.art/"
 language = "id"
 icon     = "https://raw.githubusercontent.com/HnDK0/external-sources/main/icons/komikdewasa.png"
@@ -10,24 +10,22 @@ content_type = "manga"
 
 -- ── Хелперы ──
 
-local _pageCache = {}
-
-local function absUrl(href)
-    if not href or href == "" then return "" end
-    if href:find("^http") then return href end
-    if href:find("^//") then return "https:" .. href end
-    return url_resolve(baseUrl, href)
+-- Old builds ship no require_lib: keep the plugin loadable (a top-level error
+-- would drop it from the source list) and fail with a visible message on the
+-- first call instead. Shared libs load lazily and are cached per session.
+local _libs
+local function LIB(id)
+    if type(require_lib) ~= "function" then
+        show_error("Requires NoveLA update", "This plugin needs the shared libraries")
+        error("Requires NoveLA update (require_lib)", 0)
+    end
+    if not _libs then _libs = {} end
+    if not _libs[id] then _libs[id] = require_lib(id) end
+    return _libs[id]
 end
 
--- Страницы книги кэшируем: движок вызывает функции деталей параллельно
-local function fetchBookPage(url)
-    if _pageCache[url] then return _pageCache[url] end
-    local r = http_get(url)
-    if r.success then
-        _pageCache[url] = r.body
-        return r.body
-    end
-    return nil
+local function absUrl(href)
+    return LIB("urls").absUrl(baseUrl, href)
 end
 
 -- URL книги как есть, если пустой/заканчивается на / или .html, иначе + "/".
@@ -73,7 +71,7 @@ function getCatalogList(index)
     -- index 0 → /komik/, index N → /komik/?page=N+1
     local url = baseUrl .. "komik/"
     if index > 0 then
-        url = url .. "?page=" .. (index + 1)
+        url = url .. "?page=" .. LIB("catalog").nextIndex(index)
     end
 
     local r = http_get(url)
@@ -89,7 +87,7 @@ function getCatalogSearch(index, query)
     if index >= 1 then return { items = {}, hasNext = false } end
 
     -- title-фильтр каталога; обычный ?s= закрыт Cloudflare-челленджем
-    local url = baseUrl .. "komik/?title=" .. url_encode(query)
+    local url = baseUrl .. "komik/?title=" .. LIB("catalog").urlEncode(query)
 
     local r = http_get(url)
     if not r.success then return { items = {}, hasNext = false } end
@@ -183,7 +181,7 @@ function getCatalogFiltered(index, filters)
     if order ~= "update" and order ~= "" then table.insert(params, "order=" .. order) end
 
     if index > 0 then
-        table.insert(params, "page=" .. (index + 1))
+        table.insert(params, "page=" .. LIB("catalog").nextIndex(index))
     end
 
     local url = baseUrl .. "komik/"
@@ -202,28 +200,28 @@ end
 -- ── Детали книги ──
 
 function getBookTitle(bookUrl)
-    local html = fetchBookPage(normalizeBookUrl(bookUrl))
+    local html = LIB("fetch").page(normalizeBookUrl(bookUrl))
     if not html then return nil end
     local el = html_select_first(html, "h1.entry-title")
     return el and string_clean(el.text) or nil
 end
 
 function getBookCoverImageUrl(bookUrl)
-    local html = fetchBookPage(normalizeBookUrl(bookUrl))
+    local html = LIB("fetch").page(normalizeBookUrl(bookUrl))
     if not html then return nil end
     local el = html_select_first(html, ".thumb img")
     return el and (el.src or "") ~= "" and absUrl(el.src) or nil
 end
 
 function getBookDescription(bookUrl)
-    local html = fetchBookPage(normalizeBookUrl(bookUrl))
+    local html = LIB("fetch").page(normalizeBookUrl(bookUrl))
     if not html then return nil end
     local el = html_select_first(html, ".entry-content.entry-content-single")
     return el and html_text(el.html) or nil
 end
 
 function getBookGenres(bookUrl)
-    local html = fetchBookPage(normalizeBookUrl(bookUrl))
+    local html = LIB("fetch").page(normalizeBookUrl(bookUrl))
     if not html then return {} end
     local genres = {}
     local els = html_select(html, ".seriestugenre a[rel='tag']")
@@ -236,7 +234,7 @@ end
 -- ── Rating ──
 
 function getBookRating(bookUrl)
-    local html = fetchBookPage(normalizeBookUrl(bookUrl))
+    local html = LIB("fetch").page(normalizeBookUrl(bookUrl))
     if not html then return nil end
     -- На странице рейтинг в div.num[itemprop='ratingValue'][content] (шкала 10)
     local el = html_select_first(html, "[itemprop='ratingValue']")
@@ -251,7 +249,7 @@ end
 -- ── Status / Last update ──
 
 function getBookStatus(bookUrl)
-    local html = fetchBookPage(normalizeBookUrl(bookUrl))
+    local html = LIB("fetch").page(normalizeBookUrl(bookUrl))
     if not html then return nil end
     local rows = html_select(html, ".infotable tr")
     for _, row in ipairs(rows) do
@@ -264,7 +262,7 @@ function getBookStatus(bookUrl)
 end
 
 function getBookLastUpdate(bookUrl)
-    local html = fetchBookPage(normalizeBookUrl(bookUrl))
+    local html = LIB("fetch").page(normalizeBookUrl(bookUrl))
     if not html then return nil end
     local v = html_attr(html, "time[itemprop='dateModified']", "datetime")
     if v ~= "" then
@@ -277,7 +275,7 @@ end
 -- ── Список глав ──
 
 function getChapterList(bookUrl)
-    local html = fetchBookPage(normalizeBookUrl(bookUrl))
+    local html = LIB("fetch").page(normalizeBookUrl(bookUrl))
     if not html then return {} end
 
     local chapters = {}
@@ -304,7 +302,7 @@ function getChapterList(bookUrl)
 end
 
 function getChapterListHash(bookUrl)
-    -- Прямой http_get, не fetchBookPage: кэш делает хеш неактуальным
+    -- Прямой http_get, не LIB("fetch"): кэш делает хеш неактуальным
     local r = http_get(normalizeBookUrl(bookUrl))
     if not r.success then return "" end
     local li = html_select_first(r.body, "ul.clstyle li[data-num]")

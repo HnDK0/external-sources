@@ -34,11 +34,12 @@ sources:
     requires: ["catalog"]
   - id: "doujindesu"
     name: "Doujindesu"
-    version: "1.0.0"
+    version: "1.0.1"
     url: "https://raw.githubusercontent.com/HnDK0/external-sources/refs/heads/v2/id/doujindesu.lua"
     icon: "https://raw.githubusercontent.com/HnDK0/external-sources/refs/heads/v2/icons/doujindesu.png"
     language: "id"
     content_type: "manga"
+    requires: ["catalog"]
   - id: "indowebnovel"
     name: "Indowebnovel"
     version: "1.1.1"
@@ -56,11 +57,12 @@ sources:
     requires: ["catalog"]
   - id: "komikdewasa"
     name: "Komik Dewasa"
-    version: "1.0.0"
+    version: "1.0.1"
     url: "https://raw.githubusercontent.com/HnDK0/external-sources/refs/heads/v2/id/komikdewasa.lua"
     icon: "https://raw.githubusercontent.com/HnDK0/external-sources/refs/heads/v2/icons/komikdewasa.png"
     language: "id"
     content_type: "manga"
+    requires: ["urls", "catalog", "fetch"]
   - id: "komiku"
     name: "Komiku"
     version: "1.0.0"
