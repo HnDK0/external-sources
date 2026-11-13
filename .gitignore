@@ -6,3 +6,4 @@
 /plugin-tester-jvm
 /test
 /.baseline
+__pycache__/
