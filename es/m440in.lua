@@ -8,7 +8,7 @@ version  = "1.1.1"
 baseUrl  = "https://m440.in"
 language = "es"
 content_type = "manga"
-icon = "https://raw.githubusercontent.com/HnDK0/external-sources/main/icons/m440in.png"
+icon = "https://cdn.jsdelivr.net/gh/HnDK0/external-sources@jsdelivr-v2/icons/m440in.png"
 
 -- GUARD: старые сборки приложения без движковых API (md5/aes_decrypt) и
 -- без require_lib (общие библиотеки). Вызывается из каждой публичной функции;

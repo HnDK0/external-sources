@@ -5,7 +5,7 @@ name     = "WuxiaWorld.site"
 version  = "1.1.2"
 baseUrl  = "https://wuxiaworld.site/"
 language = "en"
-icon     = "https://raw.githubusercontent.com/HnDK0/external-sources/main/icons/wuxiaworld.site.png"
+icon     = "https://cdn.jsdelivr.net/gh/HnDK0/external-sources@jsdelivr-v2/icons/wuxiaworld.site.png"
 
 -- ── Хелперы ───────────────────────────────────────────────────────────────────
 

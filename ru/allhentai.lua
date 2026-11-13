@@ -7,7 +7,7 @@ name     = "AllHentai"
 version  = "1.1.0"
 baseUrl  = "https://20.allhen.online"
 language = "ru"
-icon     = "https://raw.githubusercontent.com/HnDK0/external-sources/main/icons/allhentai.png"
+icon     = "https://cdn.jsdelivr.net/gh/HnDK0/external-sources@jsdelivr-v2/icons/allhentai.png"
 content_type = "manga"
 
 -- AllHentai keeps its own filter sheet: different genre/category ids and

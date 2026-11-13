@@ -6,7 +6,7 @@ version      = "1.0.1"
 baseUrl      = "https://mangalik.net/"
 language     = "ar"
 content_type = "manga"
-icon         = "https://raw.githubusercontent.com/HnDK0/external-sources/main/icons/mangalik.png"
+icon         = "https://cdn.jsdelivr.net/gh/HnDK0/external-sources@jsdelivr-v2/icons/mangalik.png"
 
 -- WordPress + тема Madara (WP-Manga). Каталог/поиск/детали — обычный HTML,
 -- страницы глав — картинки (CDN s2solo.mangalik.net), список глав рендерится

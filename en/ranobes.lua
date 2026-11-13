@@ -27,7 +27,7 @@ name     = "Ranobes"
 version  = "1.1.1"
 baseUrl  = "https://ranobes.net"
 language = "en"
-icon     = "https://raw.githubusercontent.com/HnDK0/external-sources/refs/heads/main/icons/ranobes.png"
+icon     = "https://cdn.jsdelivr.net/gh/HnDK0/external-sources@jsdelivr-v2/icons/ranobes.png"
 
 -- Marcadores del "Security check" propio del sitio (la app los usa para activar su verificación en WebView)
 cf_options = {

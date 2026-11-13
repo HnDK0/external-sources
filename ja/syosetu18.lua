@@ -4,7 +4,7 @@ name     = "Syosetu R18"
 version  = "1.0.0"
 baseUrl  = "https://novel18.syosetu.com/"
 language = "ja"
-icon     = "https://raw.githubusercontent.com/HnDK0/external-sources/main/icons/narou.png"
+icon     = "https://cdn.jsdelivr.net/gh/HnDK0/external-sources@jsdelivr-v2/icons/narou.png"
 
 -- 18+ section of Syosetu (ノクターンノベルズ). Works live on
 -- novel18.syosetu.com; catalog and search live on noc.syosetu.com, which is

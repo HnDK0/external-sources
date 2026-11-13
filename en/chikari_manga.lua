@@ -5,7 +5,7 @@ version      = "1.0.0"
 baseUrl      = "https://chikari.moe/"
 language     = "en"
 content_type = "manga"
-icon         = "https://raw.githubusercontent.com/HnDK0/external-sources/main/icons/chikari.png"
+icon         = "https://cdn.jsdelivr.net/gh/HnDK0/external-sources@jsdelivr-v2/icons/chikari.png"
 
 -- Comics on chikari.moe (manhwa/manhua/manga) share the engine with the novel
 -- plugin: libs/family/chikari.lua. The only differences are the type filter,

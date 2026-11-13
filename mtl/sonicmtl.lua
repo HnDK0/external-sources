@@ -3,7 +3,7 @@ name     = "Sonic MTL"
 version  = "1.8.2"
 baseUrl  = "https://www.sonicmtl.com"
 language = "Mtl"
-icon     = "https://raw.githubusercontent.com/HnDK0/external-sources/main/icons/sonicmtl.png"
+icon     = "https://cdn.jsdelivr.net/gh/HnDK0/external-sources@jsdelivr-v2/icons/sonicmtl.png"
 
 -- ── Хелперы ───────────────────────────────────────────────────────────────────
 

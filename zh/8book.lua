@@ -4,7 +4,7 @@ name     = "8book 無限小說"
 version  = "1.0.0"
 baseUrl  = "https://8book.com"
 language = "zh"
-icon     = "https://raw.githubusercontent.com/HnDK0/external-sources/refs/heads/v2/icons/8book.png"
+icon     = "https://cdn.jsdelivr.net/gh/HnDK0/external-sources@jsdelivr-v2/icons/8book.png"
 
 -- Traditional Chinese web novels on 8book.com (no "www"), the mirror of
 -- 8novel.com with its own catalogue and its own category numbering. The shared

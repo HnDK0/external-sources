@@ -4,7 +4,7 @@ name     = "AllNovel"
 version  = "1.0.7"
 baseUrl  = "https://allnovel.org/"
 language = "en"
-icon     = "https://raw.githubusercontent.com/HnDK0/external-sources/main/icons/allnovel.png"
+icon     = "https://cdn.jsdelivr.net/gh/HnDK0/external-sources@jsdelivr-v2/icons/allnovel.png"
 -- status = "dead"  -- домен allnovel.org мёртв: редиректит на novelfull.com,
 --                    который покрыт отдельным плагином en/novelfull.lua
 status   = "dead"

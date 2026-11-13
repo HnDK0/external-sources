@@ -4,7 +4,7 @@ name     = "NovelHi"
 version  = "1.1.1"
 baseUrl  = "https://novelhi.com"
 language = "en"
-icon     = "https://raw.githubusercontent.com/HnDK0/external-sources/main/icons/novelhi.png"
+icon     = "https://cdn.jsdelivr.net/gh/HnDK0/external-sources@jsdelivr-v2/icons/novelhi.png"
 
 -- =====================================================================
 -- GUARD: old app builds without require_lib / libs/text.

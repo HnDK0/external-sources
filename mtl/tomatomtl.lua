@@ -8,7 +8,7 @@ name = "TomatoMTL"
 version = "1.1.1"
 baseUrl = "https://tomatomtl.com"
 language = "MTL"
-icon = "https://raw.githubusercontent.com/HnDK0/external-sources/main/icons/tomatomtl.png"
+icon = "https://cdn.jsdelivr.net/gh/HnDK0/external-sources@jsdelivr-v2/icons/tomatomtl.png"
 
 -- GUARD: old app builds without the engine APIs (base64_decode_bytes/aes_decrypt).
 -- Called from every public function; show_error is async in prod, hence the

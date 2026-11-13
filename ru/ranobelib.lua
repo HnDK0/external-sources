@@ -8,7 +8,7 @@ name     = "RanobeLib"
 version  = "1.1.0"
 baseUrl  = "https://ranobelib.me/"
 language = "ru"
-icon     = "https://raw.githubusercontent.com/HnDK0/external-sources/main/icons/ranobelib.png"
+icon     = "https://cdn.jsdelivr.net/gh/HnDK0/external-sources@jsdelivr-v2/icons/ranobelib.png"
 
 local function normalizeCover(raw)
   if not raw or raw == "" then return "" end

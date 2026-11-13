@@ -4,7 +4,7 @@ name     = "Quanben5"
 version  = "1.0.6"
 baseUrl  = "https://big5.quanben5.com/"
 language = "zh"
-icon     = "https://raw.githubusercontent.com/HnDK0/external-sources/main/icons/quanben5.png"
+icon     = "https://cdn.jsdelivr.net/gh/HnDK0/external-sources@jsdelivr-v2/icons/quanben5.png"
 
 -- ── Хелперы ───────────────────────────────────────────────────────────────────
 
