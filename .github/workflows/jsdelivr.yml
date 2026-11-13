@@ -1,17 +1,18 @@
 name: jsDelivr index branch
 
-# Ветка jsdelivr: полная копия main, но все ссылки в index.yaml, */index.yaml
+# Ветка jsdelivr-v2: полная копия v2, но все ссылки в index.yaml, */index.yaml
 # и README переписаны на cdn.jsdelivr.net. Пользователи, у которых заблокирован
 # raw.githubusercontent.com, берут индекс отсюда:
-#   https://cdn.jsdelivr.net/gh/HnDK0/external-sources@jsdelivr/index.yaml
-# Ветка self-contained: ссылки ведут на @jsdelivr, поэтому там лежат и .lua,
+#   https://cdn.jsdelivr.net/gh/HnDK0/external-sources@jsdelivr-v2/index.yaml
+# Ветка self-contained: ссылки ведут на @jsdelivr-v2, поэтому там лежат и .lua,
 # и иконки. В самих .lua строки icon = тоже переписаны на cdn.jsdelivr.net.
-# Обновляется на каждый push в main.
+# Ветка jsdelivr (для старого приложения) не трогается.
+# Обновляется на каждый push в v2.
 
 on:
   push:
     branches:
-      - main
+      - v2
   workflow_dispatch:
 
 permissions:
@@ -37,13 +38,13 @@ jobs:
 
       - name: Rewrite index to jsDelivr base
         env:
-          SYNC_BASE_URL: https://cdn.jsdelivr.net/gh/HnDK0/external-sources@jsdelivr
+          SYNC_BASE_URL: https://cdn.jsdelivr.net/gh/HnDK0/external-sources@jsdelivr-v2
         run: python scripts/sync_index.py .
 
       - name: Rewrite plugin icon URLs to jsDelivr base
         run: |
           git ls-files -z '*.lua' | xargs -0 perl -i -pe \
-            's|https://raw\.githubusercontent\.com/[^/]+/[^/]+/(refs/heads/)?[^/"]+|https://cdn.jsdelivr.net/gh/HnDK0/external-sources\@jsdelivr|g'
+            's|https://raw\.githubusercontent\.com/[^/]+/[^/]+/(refs/heads/)?[^/"]+|https://cdn.jsdelivr.net/gh/HnDK0/external-sources\@jsdelivr-v2|g'
 
       - name: Commit rewritten index
         run: |
@@ -57,4 +58,4 @@ jobs:
       - name: Push branch
         # --force: ветка — рабочая копия индексов, её история намеренно
         # разойдётся с main из-за коммита с переписанными ссылками
-        run: git push --force origin HEAD:jsdelivr
+        run: git push --force origin HEAD:jsdelivr-v2

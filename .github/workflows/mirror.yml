@@ -1,17 +1,18 @@
 name: Mirror to Codeberg
 
-# Держит зеркало репозитория на Codeberg в актуальном состоянии.
+# Держит зеркало v2-ветки на Codeberg в актуальном состоянии.
 # Отличие от обычного push: индекс переписывается на базу зеркала
 # (SYNC_BASE_URL), иначе index.yaml на зеркале продолжит вести на
 # raw.githubusercontent.com, недоступный у части пользователей.
 # Переписываются index.yaml, */index.yaml, README.md и строки icon =
 # в .lua (иначе иконки в скачиваемых плагинах ведут на raw.githubusercontent).
+# Зеркало кладётся в ветку v2, ветка main на Codeberg остаётся у старого приложения.
 
 
 on:
   push:
     branches:
-      - main
+      - v2
   workflow_dispatch: # ручной повтор, если push на зеркало сорвался
 
 permissions:
@@ -37,13 +38,13 @@ jobs:
 
       - name: Rewrite index to mirror base
         env:
-          SYNC_BASE_URL: https://codeberg.org/HnDK0/external-sources/raw/branch/main
+          SYNC_BASE_URL: https://codeberg.org/HnDK0/external-sources/raw/branch/v2
         run: python scripts/sync_index.py .
 
       - name: Rewrite plugin icon URLs to mirror base
         run: |
           git ls-files -z '*.lua' | xargs -0 perl -i -pe \
-            's|https://raw\.githubusercontent\.com/[^/]+/[^/]+/(refs/heads/)?[^/"]+|https://codeberg.org/HnDK0/external-sources/raw/branch/main|g'
+            's|https://raw\.githubusercontent\.com/[^/]+/[^/]+/(refs/heads/)?[^/"]+|https://codeberg.org/HnDK0/external-sources/raw/branch/v2|g'
 
       - name: Commit rewritten index
         run: |
@@ -70,4 +71,4 @@ jobs:
           # --force: зеркало — реплика, история намеренно разойдётся
           # из-за коммита с переписанным индексом
           GIT_SSH_COMMAND="ssh -i $HOME/.ssh/mirror_key -o IdentitiesOnly=yes" \
-            git push --force mirror HEAD:main
+            git push --force mirror HEAD:v2
