@@ -1,6 +1,20 @@
 language: "zh"
 name: "Chinese"
 sources:
+  - id: "8book"
+    name: "8book 無限小說"
+    version: "1.0.0"
+    url: "https://raw.githubusercontent.com/HnDK0/external-sources/refs/heads/v2/zh/8book.lua"
+    icon: "https://raw.githubusercontent.com/HnDK0/external-sources/refs/heads/v2/icons/8book.png"
+    language: "zh"
+    requires: ["eightnovel"]
+  - id: "8novel"
+    name: "8novel 無限輕小說"
+    version: "1.0.0"
+    url: "https://raw.githubusercontent.com/HnDK0/external-sources/refs/heads/v2/zh/8novel.lua"
+    icon: "https://raw.githubusercontent.com/HnDK0/external-sources/refs/heads/v2/icons/8novel.png"
+    language: "zh"
+    requires: ["eightnovel"]
   - id: "biquge_company"
     name: "BiqugeCompany"
     version: "1.0.3"
