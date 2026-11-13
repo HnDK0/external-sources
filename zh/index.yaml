@@ -71,3 +71,10 @@ sources:
     icon: "https://raw.githubusercontent.com/HnDK0/external-sources/refs/heads/v2/icons/xbiquge.png"
     language: "zh"
     requires: ["urls", "fetch", "catalog", "content", "meta"]
+  - id: "xsw"
+    name: "台灣小說網"
+    version: "1.0.0"
+    url: "https://raw.githubusercontent.com/HnDK0/external-sources/refs/heads/v2/zh/xsw.lua"
+    icon: "https://raw.githubusercontent.com/HnDK0/external-sources/refs/heads/v2/icons/xsw.png"
+    language: "zh"
+    requires: ["urls", "fetch", "catalog", "content"]
