@@ -9,12 +9,20 @@ sources:
     language: "en"
     content_type: "manga"
   - id: "chikari"
-    name: "Chikari"
-    version: "1.0.10"
+    name: "Chikari Novel"
+    version: "1.0.11"
     url: "https://raw.githubusercontent.com/HnDK0/external-sources/refs/heads/v2/en/chikari.lua"
     icon: "https://raw.githubusercontent.com/HnDK0/external-sources/refs/heads/v2/icons/chikari.png"
     language: "en"
-    requires: ["urls", "catalog", "meta"]
+    requires: ["chikari"]
+  - id: "chikari_manga"
+    name: "Chikari Manga"
+    version: "1.0.0"
+    url: "https://raw.githubusercontent.com/HnDK0/external-sources/refs/heads/v2/en/chikari_manga.lua"
+    icon: "https://raw.githubusercontent.com/HnDK0/external-sources/refs/heads/v2/icons/chikari.png"
+    language: "en"
+    content_type: "manga"
+    requires: ["chikari"]
   - id: "empirenovel"
     name: "Empire Novel"
     version: "2.4.2"
