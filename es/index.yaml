@@ -8,6 +8,7 @@ sources:
     icon: "https://raw.githubusercontent.com/HnDK0/external-sources/refs/heads/v2/icons/doujinhentai.png"
     language: "es"
     content_type: "manga"
+    requires: ["urls", "fetch", "catalog", "meta"]
   - id: "hentaila"
     name: "Hentaila"
     version: "1.1.1"
@@ -15,6 +16,7 @@ sources:
     icon: "https://raw.githubusercontent.com/HnDK0/external-sources/refs/heads/v2/icons/hentaila.png"
     language: "es"
     content_type: "video"
+    requires: ["mp4upload", "pixeldrain", "fetch", "urls", "catalog"]
   - id: "hmanga_asia"
     name: "HManga"
     version: "1.2.3"
@@ -22,6 +24,7 @@ sources:
     icon: "https://raw.githubusercontent.com/HnDK0/external-sources/refs/heads/v2/icons/hmanga_asia.png"
     language: "es"
     content_type: "manga"
+    requires: ["urls", "fetch", "catalog", "meta"]
   - id: "latanime"
     name: "Latanime"
     version: "2.3.2"
@@ -29,6 +32,7 @@ sources:
     icon: "https://raw.githubusercontent.com/HnDK0/external-sources/refs/heads/v2/icons/latanime.png"
     language: "es"
     content_type: "video"
+    requires: ["urls", "embeds", "fetch", "catalog", "meta"]
   - id: "m440in"
     name: "M440"
     version: "1.1.1"
@@ -36,6 +40,7 @@ sources:
     icon: "https://raw.githubusercontent.com/HnDK0/external-sources/refs/heads/v2/icons/m440in.png"
     language: "es"
     content_type: "manga"
+    requires: ["urls", "fetch", "catalog", "meta"]
   - id: "tmohentai"
     name: "TMOHentai"
     version: "5.1.1"
@@ -43,6 +48,7 @@ sources:
     icon: "https://raw.githubusercontent.com/HnDK0/external-sources/refs/heads/v2/icons/tmohentai.png"
     language: "es"
     content_type: "manga"
+    requires: ["urls", "fetch", "catalog"]
   - id: "veohentai"
     name: "Veohentai"
     version: "1.0.2"
@@ -50,3 +56,4 @@ sources:
     icon: "https://raw.githubusercontent.com/HnDK0/external-sources/refs/heads/v2/icons/veohentai.png"
     language: "es"
     content_type: "video"
+    requires: ["urls", "fetch", "catalog"]

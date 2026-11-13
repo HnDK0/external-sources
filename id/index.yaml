@@ -8,6 +8,7 @@ sources:
     icon: "https://raw.githubusercontent.com/HnDK0/external-sources/refs/heads/v2/icons/anichin.png"
     language: "id"
     content_type: "video"
+    requires: ["urls", "okru", "dailymotion", "dood", "dtube", "mirrors", "catalog"]
   - id: "animexin"
     name: "Animexin"
     version: "1.1.0"
@@ -15,6 +16,7 @@ sources:
     icon: "https://raw.githubusercontent.com/HnDK0/external-sources/refs/heads/v2/icons/animexin.png"
     language: "id"
     content_type: "video"
+    requires: ["urls", "okru", "dailymotion", "dood", "seekplayer", "dtube", "gdriveplayer", "rumble", "mirrors", "catalog"]
   - id: "bacakomik"
     name: "BacaKomik"
     version: "1.0.0"
@@ -22,12 +24,14 @@ sources:
     icon: "https://raw.githubusercontent.com/HnDK0/external-sources/refs/heads/v2/icons/bacakomik.png"
     language: "id"
     content_type: "manga"
+    requires: ["catalog"]
   - id: "baca_lightnovel"
     name: "Baca Lightnovel"
     version: "1.1.1"
     url: "https://raw.githubusercontent.com/HnDK0/external-sources/refs/heads/v2/id/bacalightnovel.lua"
     icon: "https://raw.githubusercontent.com/HnDK0/external-sources/refs/heads/v2/icons/bacalightnovel.png"
     language: "id"
+    requires: ["catalog"]
   - id: "doujindesu"
     name: "Doujindesu"
     version: "1.0.0"
@@ -41,6 +45,7 @@ sources:
     url: "https://raw.githubusercontent.com/HnDK0/external-sources/refs/heads/v2/id/indowebnovel.lua"
     icon: "https://raw.githubusercontent.com/HnDK0/external-sources/refs/heads/v2/icons/indowebnovel.png"
     language: "id"
+    requires: ["catalog"]
   - id: "komikcast"
     name: "Komikcast"
     version: "1.1.0"
@@ -48,6 +53,7 @@ sources:
     icon: "https://raw.githubusercontent.com/HnDK0/external-sources/refs/heads/v2/icons/komikcast.webp"
     language: "id"
     content_type: "manga"
+    requires: ["catalog"]
   - id: "komikdewasa"
     name: "Komik Dewasa"
     version: "1.0.0"
@@ -62,12 +68,14 @@ sources:
     icon: "https://raw.githubusercontent.com/HnDK0/external-sources/refs/heads/v2/icons/komiku.png"
     language: "id"
     content_type: "manga"
+    requires: ["catalog"]
   - id: "meionovels"
     name: "MeioNovels"
     version: "1.1.0"
     url: "https://raw.githubusercontent.com/HnDK0/external-sources/refs/heads/v2/id/meionovels.lua"
     icon: "https://raw.githubusercontent.com/HnDK0/external-sources/refs/heads/v2/icons/meionovels.png"
     language: "id"
+    requires: ["catalog"]
   - id: "voratoon"
     name: "VoraToon"
     version: "1.0.2"
@@ -75,3 +83,4 @@ sources:
     icon: "https://raw.githubusercontent.com/HnDK0/external-sources/refs/heads/v2/icons/voratoon.webp"
     language: "id"
     content_type: "manga"
+    requires: ["catalog"]

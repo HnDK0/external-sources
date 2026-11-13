@@ -96,9 +96,84 @@ def get_branch() -> str:
         pass
     return "main"
 
+# ── Зависимости от общих либ ─────────────────────────────────────────────────
+
+# A bare function call with one string argument: `require_lib("urls")`,
+# `LIB("catalog")`, `tryLib('fetch')`. Methods (`low:find("dood")`) and fields
+# are not library loaders and stay out.
+_CALL_WITH_STRING = re.compile(
+    r'(?<![\w.:$])[A-Za-z_][A-Za-z0-9_]*\s*\(\s*["\']([a-z0-9_]+)["\']\s*\)'
+)
+
+def library_ids(root: Path) -> set[str]:
+    return {f.stem for f in sorted((root / "libs").glob("**/*.lua"))}
+
+def strip_comments(text: str) -> tuple[str, list[tuple[int, int]]]:
+    """Комментарии — проза: `-- Loaded via require_lib("urls")` не зависимость.
+
+    Комментарии заменяются пробелами той же длины, поэтому индексы в
+    результате совпадают с исходником, а второй элемент — диапазоны строковых
+    литералов: вызов, попавший ВНУТРЬ строки, — это текст, а не код.
+    """
+    out = list(text)
+    spans: list[tuple[int, int]] = []
+    i, n = 0, len(text)
+    while i < n:
+        c = text[i]
+        if text.startswith("--", i):
+            i += 2
+            m = re.match(r"\[(=*)\[", text[i:])
+            if m:
+                close = "]" + m.group(1) + "]"
+                end = text.find(close, i + len(m.group(0)))
+                j = n if end < 0 else end + len(close)
+            else:
+                end = text.find("\n", i)
+                j = n if end < 0 else end
+            for k in range(i - 2, j):
+                out[k] = " "
+            i = j
+        elif c in "\"'":
+            j = i + 1
+            while j < n and text[j] != c:
+                if text[j] == "\\":
+                    j += 1
+                j += 1
+            j = min(j + 1, n)
+            spans.append((i, j))
+            i = j
+        elif c == "[":
+            m = re.match(r"\[(=*)\[", text[i:])
+            if m:
+                close = "]" + m.group(1) + "]"
+                end = text.find(close, i + len(m.group(0)))
+                j = n if end < 0 else end + len(close)
+                for k in range(i, j):
+                    out[k] = " "
+                i = j
+            else:
+                i += 1
+        else:
+            i += 1
+    return "".join(out), spans
+
+def scan_requires(text: str, lib_ids: set[str]) -> list[str]:
+    """id либ, которые скрипт передаёт строкой в вызов функции (require_lib(id),
+    LIB(id), локальные обёртки). Источник правды — код плагина, не ручной список."""
+    code, spans = strip_comments(text)
+    seen: list[str] = []
+    for m in _CALL_WITH_STRING.finditer(code):
+        # `local msg = "call require_lib('x') first"` is text, not a dependency.
+        if any(start <= m.start() < end for start, end in spans):
+            continue
+        lib = m.group(1)
+        if lib in lib_ids and lib not in seen:
+            seen.append(lib)
+    return seen
+
 # ── Парсинг .lua ──────────────────────────────────────────────────────────────
 
-def parse_lua(filepath: Path) -> dict | None:
+def parse_lua(filepath: Path, lib_ids: set[str] = frozenset()) -> dict | None:
     try:
         text = filepath.read_text(encoding="utf-8-sig").replace("\r\n", "\n")
     except Exception as e:
@@ -122,6 +197,7 @@ def parse_lua(filepath: Path) -> dict | None:
         "icon":         field("icon") or "",
         "status":       field("status"),  # None, если поля нет; "dead" если плагин мёртв
         "content_type": field("content_type"),
+        "requires":     scan_requires(text, lib_ids),
     }
 
 # ── Генерация index.yaml ──────────────────────────────────────────────────────
@@ -170,6 +246,8 @@ def build_lang_index(plugins: list[dict], lang_code: str, lang_name: str, librar
         ]
         if p.get("content_type"):
             lines.append(f'    content_type: "{p["content_type"]}"')
+        if p.get("requires"):
+            lines.append("    requires: [" + ", ".join(f'"{r}"' for r in p["requires"]) + "]")
     return "\n".join(lines) + "\n"
 
 def build_root_index(langs: list[dict], raw_base: str, libraries: str = "") -> str:
@@ -211,6 +289,7 @@ def sync(root: Path):
     print(f"Репозиторий : {repo}")
     print(f"Raw base    : {raw_base}\n")
 
+    lib_ids = library_ids(root)
     lang_dirs = find_lang_dirs(root)
     if not lang_dirs:
         print("[WARN] Не найдено ни одной папки с .lua файлами.")
@@ -227,7 +306,7 @@ def sync(root: Path):
 
         plugins = []
         for lua_file in lua_files:
-            meta = parse_lua(lua_file)
+            meta = parse_lua(lua_file, lib_ids)
             if not meta:
                 continue
 
@@ -248,6 +327,7 @@ def sync(root: Path):
                 "url":          f"{raw_base}/{lang_dir}/{lua_file.name}",
                 "icon":         icon,
                 "content_type": meta["content_type"],
+                "requires":     meta["requires"],
             })
             print(f"  {meta['id']} v{meta['version']}")
 

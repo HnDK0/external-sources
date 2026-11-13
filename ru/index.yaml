@@ -8,6 +8,7 @@ sources:
     icon: "https://raw.githubusercontent.com/HnDK0/external-sources/refs/heads/v2/icons/allhentai.png"
     language: "ru"
     content_type: "manga"
+    requires: ["readmanga"]
   - id: "aniliberty"
     name: "AniLiberty"
     version: "1.0.1"
@@ -15,12 +16,14 @@ sources:
     icon: "https://raw.githubusercontent.com/HnDK0/external-sources/refs/heads/v2/icons/aniliberty.png"
     language: "ru"
     content_type: "video"
+    requires: ["fetch", "filters"]
   - id: "bookhamster"
     name: "Bookhamster"
     version: "1.2.1"
     url: "https://raw.githubusercontent.com/HnDK0/external-sources/refs/heads/v2/ru/bookhamster.lua"
     icon: "https://raw.githubusercontent.com/HnDK0/external-sources/refs/heads/v2/icons/bookhamster.png"
     language: "ru"
+    requires: ["urls", "content", "fetch", "catalog", "meta"]
   - id: "desu"
     name: "Desu"
     version: "1.1.4"
@@ -28,6 +31,7 @@ sources:
     icon: "https://raw.githubusercontent.com/HnDK0/external-sources/refs/heads/v2/icons/desu.png"
     language: "ru"
     content_type: "manga"
+    requires: ["urls", "fetch", "catalog"]
   - id: "hentailib"
     name: "HentaiLib"
     version: "1.1.0"
@@ -35,18 +39,21 @@ sources:
     icon: "https://raw.githubusercontent.com/HnDK0/external-sources/refs/heads/v2/icons/hentailib.png"
     language: "ru"
     content_type: "manga"
+    requires: ["cdnlibs"]
   - id: "ifreedom"
     name: "iFreedom"
     version: "1.1.7"
     url: "https://raw.githubusercontent.com/HnDK0/external-sources/refs/heads/v2/ru/ifreedom.lua"
     icon: "https://raw.githubusercontent.com/HnDK0/external-sources/refs/heads/v2/icons/ifreedom.png"
     language: "ru"
+    requires: ["urls", "fetch", "content", "catalog", "meta"]
   - id: "jaomix"
     name: "Jaomix"
     version: "1.0.6"
     url: "https://raw.githubusercontent.com/HnDK0/external-sources/refs/heads/v2/ru/jaomix.lua"
     icon: "https://raw.githubusercontent.com/HnDK0/external-sources/refs/heads/v2/icons/jaomix.png"
     language: "ru"
+    requires: ["urls", "fetch", "meta", "content", "catalog"]
   - id: "mangalib"
     name: "MangaLib"
     version: "1.1.0"
@@ -54,6 +61,7 @@ sources:
     icon: "https://raw.githubusercontent.com/HnDK0/external-sources/refs/heads/v2/icons/mangalib.png"
     language: "ru"
     content_type: "manga"
+    requires: ["cdnlibs"]
   - id: "mintmanga"
     name: "MintManga"
     version: "1.1.0"
@@ -61,24 +69,28 @@ sources:
     icon: "https://raw.githubusercontent.com/HnDK0/external-sources/refs/heads/v2/icons/mintmanga.png"
     language: "ru"
     content_type: "manga"
+    requires: ["readmanga"]
   - id: "ranobehub"
     name: "Ranobehub"
     version: "1.2.0"
     url: "https://raw.githubusercontent.com/HnDK0/external-sources/refs/heads/v2/ru/ranobehub.lua"
     icon: "https://raw.githubusercontent.com/HnDK0/external-sources/refs/heads/v2/icons/ranobehub.png"
     language: "ru"
+    requires: ["ranobehub"]
   - id: "ranobelib"
     name: "RanobeLib"
     version: "1.1.0"
     url: "https://raw.githubusercontent.com/HnDK0/external-sources/refs/heads/v2/ru/ranobelib.lua"
     icon: "https://raw.githubusercontent.com/HnDK0/external-sources/refs/heads/v2/icons/ranobelib.png"
     language: "ru"
+    requires: ["cdnlibs"]
   - id: "ranobespace"
     name: "Ranobe.space"
     version: "1.2.0"
     url: "https://raw.githubusercontent.com/HnDK0/external-sources/refs/heads/v2/ru/ranobespace.lua"
     icon: "https://raw.githubusercontent.com/HnDK0/external-sources/refs/heads/v2/icons/ranobespace.png"
     language: "ru"
+    requires: ["ranobehub"]
   - id: "readmanga"
     name: "ReadManga"
     version: "1.1.0"
@@ -86,6 +98,7 @@ sources:
     icon: "https://raw.githubusercontent.com/HnDK0/external-sources/refs/heads/v2/icons/readmanga.png"
     language: "ru"
     content_type: "manga"
+    requires: ["readmanga"]
   - id: "rumix"
     name: "RuMix"
     version: "1.1.0"
@@ -93,6 +106,7 @@ sources:
     icon: "https://raw.githubusercontent.com/HnDK0/external-sources/refs/heads/v2/icons/readmanga.png"
     language: "ru"
     content_type: "manga"
+    requires: ["readmanga"]
   - id: "seimanga"
     name: "SeiManga"
     version: "1.1.0"
@@ -100,6 +114,7 @@ sources:
     icon: "https://raw.githubusercontent.com/HnDK0/external-sources/refs/heads/v2/icons/readmanga.png"
     language: "ru"
     content_type: "manga"
+    requires: ["readmanga"]
   - id: "selfmanga"
     name: "SelfManga"
     version: "1.1.0"
@@ -107,6 +122,7 @@ sources:
     icon: "https://raw.githubusercontent.com/HnDK0/external-sources/refs/heads/v2/icons/readmanga.png"
     language: "ru"
     content_type: "manga"
+    requires: ["readmanga"]
   - id: "senkognito"
     name: "Senkognito"
     version: "1.1.0"
@@ -114,6 +130,7 @@ sources:
     icon: "https://raw.githubusercontent.com/HnDK0/external-sources/refs/heads/v2/icons/senkognito.png"
     language: "ru"
     content_type: "manga"
+    requires: ["senklb"]
   - id: "senkuro"
     name: "Senkuro"
     version: "1.1.0"
@@ -121,6 +138,7 @@ sources:
     icon: "https://raw.githubusercontent.com/HnDK0/external-sources/refs/heads/v2/icons/senkuro.png"
     language: "ru"
     content_type: "manga"
+    requires: ["senklb"]
   - id: "yummyanime"
     name: "YummyAnime"
     version: "1.1.1"
@@ -128,3 +146,4 @@ sources:
     icon: "https://raw.githubusercontent.com/HnDK0/external-sources/refs/heads/v2/icons/yummyanime.png"
     language: "ru"
     content_type: "video"
+    requires: ["text", "sources", "fetch", "kodik", "alloha", "aksor", "sibnet", "cvh"]
