@@ -1,7 +1,7 @@
 -- ── Метаданные ───────────────────────────────────────────────────────────────
 id       = "syosetu"
 name     = "Syosetu"
-version  = "1.1.1"
+version  = "1.1.2"
 baseUrl  = "https://ncode.syosetu.com/"
 language = "ja"
 icon     = "https://raw.githubusercontent.com/HnDK0/external-sources/main/icons/narou.png"
@@ -29,16 +29,6 @@ end
 local function absUrl(href)
     return LIB("urls").absUrl(baseUrl, href)
 end
-
--- Session-cached GET with the site's desktop UA (shared fetch lib); the same
--- book page is requested by several book-detail functions in one adapter run.
--- getChapterListHash stays on a direct http_get: the hash must see a fresh page.
-local function fetchPage(url)
-    return LIB("fetch").page(url, { headers = HEADERS })
-end
-
--- Engine global url_encode delegates to the shared catalog lib.
-local url_encode = function(s) return LIB("catalog").urlEncode(s) end
 
 -- ── Каталог (Ранкинг) ────────────────────────────────────────────────────────
 function getCatalogList(index)
@@ -120,104 +110,38 @@ function getCatalogSearch(index, query)
     return { items = items, hasNext = hasNext }
 end
 
--- ── Детали книги ─────────────────────────────────────────────────────────────
+-- ── Детали книги, главы, текст ────────────────────────────────────────────────
+-- Book/chapter markup is shared with novel18.syosetu.com; the engine lives in
+-- libs/family/syosetu.lua and takes the site headers from CONFIG.
+
+local CONFIG = {
+    id      = "syosetu",
+    baseUrl = baseUrl,
+    headers = HEADERS,
+}
+
 function getBookTitle(bookUrl)
-    local body = fetchPage(bookUrl)
-    if not body then return nil end
-    local el = html_select_first(body, ".p-novel__title")
-    return el and string_trim(el.text) or nil
+    return LIB("syosetu").title(CONFIG, bookUrl)
 end
 
 function getBookCoverImageUrl(bookUrl)
-    return nil
+    return LIB("syosetu").cover(CONFIG, bookUrl)
 end
 
 function getBookDescription(bookUrl)
-    local body = fetchPage(bookUrl)
-    if not body then return nil end
-    local el = html_select_first(body, "#novel_ex")
-    if el and string_trim(el.text) ~= "" then return string_trim(el.text) end
-    el = html_select_first(body, ".p-novel__summary")
-    return el and string_trim(el.text) or nil
+    return LIB("syosetu").description(CONFIG, bookUrl)
 end
 
--- ── Список глав ──────────────────────────────────────────────────────────────
 function getChapterList(bookUrl)
-    bookUrl = bookUrl:gsub("/+$", "") .. "/"
-    local chapters = {}
-    local body = fetchPage(bookUrl)
-    if not body then
-        log_error("syosetu getChapterList failed: " .. bookUrl)
-        return {}
-    end
-
-    -- Проверка на однотомник
-    local hasText = html_select_first(body, ".p-novel__text")
-    local hasEplist = html_select_first(body, ".p-eplist")
-    
-    if hasText and not hasEplist then
-        local titleEl = html_select_first(body, ".p-novel__title")
-        local title = titleEl and string_trim(titleEl.text) or "Chapter 1"
-        log_info("syosetu getChapterList: single-chapter novel")
-        table.insert(chapters, { title = title, url = bookUrl })
-        return chapters
-    end
-
-    -- Пагинация
-    local totalPages = 1
-    local lastLink = html_select_first(body, ".c-pager__item--last")
-    if lastLink and lastLink.href then
-        local p = string.match(lastLink.href, "p=(%d+)")
-        if p then totalPages = tonumber(p) end
-    end
-
-    local function parsePage(html)
-        for _, a in ipairs(html_select(html, ".p-eplist__subtitle")) do
-            local href = a.href or ""
-            if href ~= "" then
-                table.insert(chapters, {
-                    title = string_trim(a.text),
-                    url   = absUrl(href)
-                })
-            end
-        end
-    end
-
-    parsePage(body)
-
-    for p = 2, totalPages do
-        sleep(300)
-        local pr = http_get(bookUrl .. "?p=" .. tostring(p), { headers = HEADERS })
-        if pr.success then parsePage(pr.body) end
-    end
-
-    log_info("syosetu getChapterList: loaded " .. #chapters .. " chapters")
-    return chapters
+    return LIB("syosetu").chapters(CONFIG, bookUrl)
 end
 
--- ── Хэш для обновлений ───────────────────────────────────────────────────────
 function getChapterListHash(bookUrl)
-    local r = http_get(bookUrl, { headers = HEADERS })
-    if not r.success then return nil end
-    local el = html_select_first(r.body, ".p-novel__date-published")
-    return el and string_trim(el.text) or nil
+    return LIB("syosetu").chapterHash(CONFIG, bookUrl)
 end
 
--- ── Текст главы ──────────────────────────────────────────────────────────────
 function getChapterText(html, url)
-    local cleaned = html_remove(html, 
-        "script", "style", 
-        ".c-ad", ".c-pager", ".p-reaction", 
-        ".p-bookmark-bar", ".l-footer", "header", ".p-adjust-layout"
-    )
-    
-    local el = html_select_first(cleaned, ".p-novel__body")
-    if not el then return "" end
-    
-    local text = html_text(el.html)
-    text = string_normalize(text)
-    text = string_trim(text)
-    return text
+    return LIB("syosetu").chapterText(CONFIG, html, url)
 end
 
 -- ── Фильтры ──────────────────────────────────────────────────────────────────
