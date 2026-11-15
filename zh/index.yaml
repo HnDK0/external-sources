@@ -78,6 +78,13 @@ sources:
     icon: "https://raw.githubusercontent.com/HnDK0/external-sources/refs/heads/v2/icons/twkan.png"
     language: "zh"
     requires: ["urls", "fetch", "content", "catalog", "meta"]
+  - id: "wcshuba"
+    name: "Wucuo Shuba"
+    version: "1.0.0"
+    url: "https://raw.githubusercontent.com/HnDK0/external-sources/refs/heads/v2/zh/wcshuba.lua"
+    icon: "https://raw.githubusercontent.com/HnDK0/external-sources/refs/heads/v2/icons/wcshuba.png"
+    language: "zh"
+    requires: ["urls", "catalog", "meta", "content"]
   - id: "xbiquge"
     name: "XBiquge"
     version: "1.0.4"
