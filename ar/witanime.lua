@@ -7,7 +7,7 @@ name         = "WitAnime"
 version      = "1.1.1"
 baseUrl      = "https://witanime.site"
 language     = "ar"
-icon         = "https://raw.githubusercontent.com/HnDK0/external-sources/refs/heads/main/icons/witanime.png"
+icon         = "https://cdn.jsdelivr.net/gh/HnDK0/external-sources@jsdelivr-v2/icons/witanime.png"
 
 local EPISODE_MARK = "الحلقة" -- арабская метка «серия» в заголовках эпизодов
 

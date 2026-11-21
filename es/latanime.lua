@@ -31,7 +31,7 @@ baseUrl      = "https://latanime.org"
 language     = "es"
 content_type = "video"
 libs         = { "urls", "embeds", "fetch", "catalog", "meta" }
-icon         = "https://raw.githubusercontent.com/HnDK0/external-sources/main/icons/latanime.png"
+icon         = "https://cdn.jsdelivr.net/gh/HnDK0/external-sources@jsdelivr-v2/icons/latanime.png"
 
 -- Таймауты: страницы сайта и эмбеды (сеть в эмуляторе без таймаута зависала).
 -- EMBED_TIMEOUT: бюджет должен перекрывать авто-обход CF (15с) — иначе движок

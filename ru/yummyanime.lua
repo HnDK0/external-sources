@@ -10,7 +10,7 @@ name        = "YummyAnime"
 version     = "1.1.1"
 baseUrl     = "https://ru.yummyani.me"
 language    = "ru"
-icon        = "https://raw.githubusercontent.com/HnDK0/external-sources/refs/heads/main/icons/yummyanime.png"
+icon        = "https://cdn.jsdelivr.net/gh/HnDK0/external-sources@jsdelivr-v2/icons/yummyanime.png"
 
 -- ── GUARD: старые сборки приложения без require_lib/либ и base64_decode ──
 -- Top-level обязан загрузиться без новых API (иначе плагин молча исчезает

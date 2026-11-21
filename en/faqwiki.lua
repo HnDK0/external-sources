@@ -4,7 +4,7 @@ name     = "FAQ Wiki"
 version  = "1.6.7"
 baseUrl  = "https://faqwiki.us/novel"
 language = "en"
-icon     = "https://raw.githubusercontent.com/HnDK0/external-sources/main/icons/faqwiki.png"
+icon     = "https://cdn.jsdelivr.net/gh/HnDK0/external-sources@jsdelivr-v2/icons/faqwiki.png"
 
 -- ── Helpers ───────────────────────────────────────────────────────────────────
 

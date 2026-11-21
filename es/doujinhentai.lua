@@ -5,7 +5,7 @@ id = "doujinhentai"
 name = "DoujinHentai"
 version = "1.0.2"
 baseUrl = "https://doujinhentai.net/"
-icon = "https://raw.githubusercontent.com/HnDK0/external-sources/main/icons/doujinhentai.png"
+icon = "https://cdn.jsdelivr.net/gh/HnDK0/external-sources@jsdelivr-v2/icons/doujinhentai.png"
 language = "es"
 content_type = "manga"
 

@@ -4,7 +4,7 @@ name     = "Chikari Novel"
 version  = "1.0.11"
 baseUrl  = "https://chikari.moe/"
 language = "en"
-icon     = "https://raw.githubusercontent.com/HnDK0/external-sources/main/icons/chikari.png"
+icon     = "https://cdn.jsdelivr.net/gh/HnDK0/external-sources@jsdelivr-v2/icons/chikari.png"
 
 -- Text novels on chikari.moe. The shared engine lives in
 -- libs/family/chikari.lua (require_lib("chikari")); this file only carries

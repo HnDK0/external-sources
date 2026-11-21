@@ -7,7 +7,7 @@ name     = "Ranobehub"
 version  = "1.2.0"
 baseUrl  = "https://ranobehub.org/"
 language = "ru"
-icon     = "https://raw.githubusercontent.com/HnDK0/external-sources/main/icons/ranobehub.png"
+icon     = "https://cdn.jsdelivr.net/gh/HnDK0/external-sources@jsdelivr-v2/icons/ranobehub.png"
 
 local CONFIG = {
     baseUrl = baseUrl,

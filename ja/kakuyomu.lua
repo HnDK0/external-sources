@@ -10,7 +10,7 @@ name     = "カクヨム (Kakuyomu)"
 version  = "1.0.1"
 baseUrl  = "https://kakuyomu.jp/"
 language = "ja"
-icon     = "https://raw.githubusercontent.com/HnDK0/external-sources/main/icons/kakuyomu.png"
+icon     = "https://cdn.jsdelivr.net/gh/HnDK0/external-sources@jsdelivr-v2/icons/kakuyomu.png"
 
 -- Old builds ship no require_lib: keep the plugin loadable (a top-level error
 -- would drop it from the source list) and fail with a visible message on the

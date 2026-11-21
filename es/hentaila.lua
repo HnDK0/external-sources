@@ -8,7 +8,7 @@ version      = "1.1.1"
 baseUrl      = "https://hentaila.com"
 language     = "es"
 content_type = "video"
-icon         = "https://raw.githubusercontent.com/HnDK0/external-sources/main/icons/hentaila.png"
+icon         = "https://cdn.jsdelivr.net/gh/HnDK0/external-sources@jsdelivr-v2/icons/hentaila.png"
 
 -- ── Guard: old app builds without require_lib ────────────────────────────────
 -- Top-level must load without require_lib (otherwise the plugin silently

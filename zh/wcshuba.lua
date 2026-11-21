@@ -5,7 +5,7 @@ version  = "1.0.0"
 baseUrl  = "https://www.wcshuba.com/"
 language = "zh"
 charset  = "UTF-8"
-icon     = "https://raw.githubusercontent.com/HnDK0/external-sources/refs/heads/v2/icons/wcshuba.png"
+icon     = "https://cdn.jsdelivr.net/gh/HnDK0/external-sources@jsdelivr-v2/icons/wcshuba.png"
 
 -- The slider WAF answers 403 with `server: cloudflare`, which the core's
 -- challenge detector reads as a CF challenge by headers alone — the plugin

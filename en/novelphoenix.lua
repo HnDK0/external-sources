@@ -7,7 +7,7 @@ name     = "Novel Phoenix"
 version  = "1.1.0"
 baseUrl  = "https://novelphoenix.com"
 language = "en"
-icon     = "https://raw.githubusercontent.com/HnDK0/external-sources/main/icons/novelphoenix.png"
+icon     = "https://cdn.jsdelivr.net/gh/HnDK0/external-sources@jsdelivr-v2/icons/novelphoenix.png"
 
 local CONFIG = {
     baseUrl = baseUrl,

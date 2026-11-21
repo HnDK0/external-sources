@@ -4,7 +4,7 @@ name     = "Empire Novel"
 version  = "2.4.2"
 baseUrl  = "https://www.empirenovel.com/"
 language = "en"
-icon     = "https://raw.githubusercontent.com/HnDK0/external-sources/main/icons/empirenovel.png"
+icon     = "https://cdn.jsdelivr.net/gh/HnDK0/external-sources@jsdelivr-v2/icons/empirenovel.png"
 
 -- ── Хелперы ───────────────────────────────────────────────────────────────────
 

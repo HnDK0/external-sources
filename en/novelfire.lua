@@ -7,7 +7,7 @@ name     = "NovelFire"
 version  = "1.1.0"
 baseUrl  = "https://novelfire.net"
 language = "en"
-icon     = "https://raw.githubusercontent.com/HnDK0/external-sources/main/icons/novelfire.png"
+icon     = "https://cdn.jsdelivr.net/gh/HnDK0/external-sources@jsdelivr-v2/icons/novelfire.png"
 
 local CONFIG = {
     baseUrl = baseUrl,

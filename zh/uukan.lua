@@ -4,7 +4,7 @@ name     = "UUkan"
 version  = "1.0.0"
 baseUrl  = "https://www.uukan.org/"
 language = "zh"
-icon     = "https://raw.githubusercontent.com/HnDK0/external-sources/main/icons/uukan.png"
+icon     = "https://cdn.jsdelivr.net/gh/HnDK0/external-sources@jsdelivr-v2/icons/uukan.png"
 
 -- ── Helpers ─────────────────────────────────────────────────────────────────
 

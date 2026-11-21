@@ -3,7 +3,7 @@ name     = "FreeWebNovel"
 version  = "1.1.1"
 baseUrl  = "https://freewebnovel.com"
 language = "en"
-icon     = "https://raw.githubusercontent.com/HnDK0/external-sources/main/icons/freewebnovel.png"
+icon     = "https://cdn.jsdelivr.net/gh/HnDK0/external-sources@jsdelivr-v2/icons/freewebnovel.png"
 
 -- Old builds ship no require_lib: keep the plugin loadable (a top-level error
 -- would drop it from the source list) and fail with a visible message on the

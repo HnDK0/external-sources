@@ -4,7 +4,7 @@ name     = "Asura Scans"
 version  = "1.7.2"
 baseUrl  = "https://asurascans.com"
 language = "en"
-icon     = "https://raw.githubusercontent.com/HnDK0/external-sources/main/icons/asurascans.webp"
+icon     = "https://cdn.jsdelivr.net/gh/HnDK0/external-sources@jsdelivr-v2/icons/asurascans.webp"
 content_type = "manga"
 
 -- Manga/manhwa source: chapters are image pages. getPageList returns the

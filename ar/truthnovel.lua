@@ -3,7 +3,7 @@ name     = "Truth Novel"
 version  = "1.1.3"
 baseUrl  = "https://truthnovel.top"
 language = "ar"
-icon     = "https://raw.githubusercontent.com/HnDK0/external-sources/main/icons/truthnovel.png"
+icon     = "https://cdn.jsdelivr.net/gh/HnDK0/external-sources@jsdelivr-v2/icons/truthnovel.png"
 
 -- Old builds ship no require_lib: keep the plugin loadable (a top-level error
 -- would drop it from the source list) and fail with a visible message on the

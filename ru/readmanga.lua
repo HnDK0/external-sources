@@ -7,7 +7,7 @@ name     = "ReadManga"
 version  = "1.1.0"
 baseUrl  = "https://readmanga.me"
 language = "ru"
-icon     = "https://raw.githubusercontent.com/HnDK0/external-sources/main/icons/readmanga.png"
+icon     = "https://cdn.jsdelivr.net/gh/HnDK0/external-sources@jsdelivr-v2/icons/readmanga.png"
 content_type = "manga"
 
 local CONFIG = {

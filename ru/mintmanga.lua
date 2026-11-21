@@ -7,7 +7,7 @@ name     = "MintManga"
 version  = "1.1.0"
 baseUrl  = "https://mintmanga.com"
 language = "ru"
-icon     = "https://raw.githubusercontent.com/HnDK0/external-sources/main/icons/mintmanga.png"
+icon     = "https://cdn.jsdelivr.net/gh/HnDK0/external-sources@jsdelivr-v2/icons/mintmanga.png"
 content_type = "manga"
 
 local CONFIG = {
