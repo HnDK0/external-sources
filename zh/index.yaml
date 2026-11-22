@@ -80,7 +80,7 @@ sources:
     requires: ["urls", "fetch", "content", "catalog", "meta"]
   - id: "uukan"
     name: "UUkan"
-    version: "1.0.0"
+    version: "1.0.1"
     url: "https://raw.githubusercontent.com/HnDK0/external-sources/refs/heads/v2/zh/uukan.lua"
     icon: "https://raw.githubusercontent.com/HnDK0/external-sources/refs/heads/v2/icons/uukan.png"
     language: "zh"

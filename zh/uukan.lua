@@ -1,7 +1,7 @@
 -- ── Metadata ────────────────────────────────────────────────────────────────
 id       = "uukan"
 name     = "UUkan"
-version  = "1.0.0"
+version  = "1.0.1"
 baseUrl  = "https://www.uukan.org/"
 language = "zh"
 icon     = "https://raw.githubusercontent.com/HnDK0/external-sources/main/icons/uukan.png"
@@ -190,7 +190,12 @@ function getChapterText(html, url)
     html = r.body
   end
 
-  -- #content holds only <p> paragraphs (ads/notes sit outside it).
+  -- Every line of the body is its own <p>; anything else inside #content is
+  -- injected markup — some chapters carry a hidden promo <span
+  -- style="display:none"> inside a paragraph, and html_text() reads hidden
+  -- nodes too, so the junk would land in the text.
+  html = html_remove(html, "div#content :not(p)")
+
   local paragraphs = html_select(html, "div#content p")
   if #paragraphs == 0 then return "" end
 
