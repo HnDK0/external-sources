@@ -171,6 +171,32 @@ def scan_requires(text: str, lib_ids: set[str]) -> list[str]:
             seen.append(lib)
     return seen
 
+# ── Иконки ────────────────────────────────────────────────────────────────────
+
+# Любая ссылка raw.githubusercontent.com/<owner>/<repo>/<ref>/… — репо и ветку
+# в ней переписываем на текущую базу, иначе в форке/на ветке иконки ведут на
+# чужой репозиторий или на удалённую ветку (404).
+_RAW_URL = re.compile(r"https://raw\.githubusercontent\.com/[^/]+/[^/]+/(?:refs/heads/)?[^/\"]+")
+_ICON_LINE = re.compile(r'^([ \t]*icon[ \t]*=[ \t]*")([^"]*)(")', re.MULTILINE)
+
+def rebase_url(url: str, raw_base: str) -> str:
+    if not url.startswith("https://raw.githubusercontent.com/"):
+        return url
+    return _RAW_URL.sub(raw_base, url)
+
+def fix_plugin_icon(lua_file: Path, raw_base: str) -> bool:
+    """Переписывает icon в самом .lua — индекс берёт иконку отсюда, и файл
+    плагина должен с ним совпадать (иначе у установленных источников битая иконка)."""
+    text = lua_file.read_text(encoding="utf-8-sig")
+    new = _ICON_LINE.sub(
+        lambda m: m.group(1) + rebase_url(m.group(2), raw_base) + m.group(3),
+        text, count=1,
+    )
+    if new == text:
+        return False
+    lua_file.write_text(new, encoding="utf-8")
+    return True
+
 # ── Парсинг .lua ──────────────────────────────────────────────────────────────
 
 def parse_lua(filepath: Path, lib_ids: set[str] = frozenset()) -> dict | None:
@@ -310,16 +336,15 @@ def sync(root: Path):
             if not meta:
                 continue
 
+            if fix_plugin_icon(lua_file, raw_base):
+                print(f"  → {lua_file.name}: icon переписан на текущую базу")
+
             if meta["status"] == "dead":
                 print(f"  [SKIP] {meta['id']} — status=dead, не включаем в индекс")
                 continue
 
             icon = meta["icon"] or f"{raw_base}/icons/{meta['id']}.png"
-            # переписываем захардкоженный owner/ветку в иконке на текущий repo/ветку,
-            # иначе в форке иконки ведут на чужой репозиторий
-            if icon.startswith("https://raw.githubusercontent.com/"):
-                icon = re.sub(r"https://raw\.githubusercontent\.com/[^/]+/[^/]+/(?:refs/heads/)?[^/]+",
-                              raw_base, icon)
+            icon = rebase_url(icon, raw_base)
             plugins.append({
                 "id":           meta["id"],
                 "name":         meta["name"],

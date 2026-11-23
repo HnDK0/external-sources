@@ -41,11 +41,6 @@ jobs:
           SYNC_BASE_URL: https://codeberg.org/HnDK0/external-sources/raw/branch/v2
         run: python scripts/sync_index.py .
 
-      - name: Rewrite plugin icon URLs to mirror base
-        run: |
-          git ls-files -z '*.lua' | xargs -0 perl -i -pe \
-            's|https://raw\.githubusercontent\.com/[^/]+/[^/]+/(refs/heads/)?[^/"]+|https://codeberg.org/HnDK0/external-sources/raw/branch/v2|g'
-
       - name: Commit rewritten index
         run: |
           git add "index.yaml" "*/index.yaml" "README.md" "*.lua"

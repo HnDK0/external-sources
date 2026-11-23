@@ -5,7 +5,7 @@ name     = "Komiku"
 version  = "1.0.0"
 baseUrl  = "https://komiku.org/"
 language = "id"
-icon     = "https://raw.githubusercontent.com/HnDK0/external-sources/main/icons/komiku.png"
+icon     = "https://raw.githubusercontent.com/HnDK0/external-sources/refs/heads/v2/icons/komiku.png"
 content_type = "manga"
 
 -- ── Guard: old app builds without require_lib ────────────────────────────────

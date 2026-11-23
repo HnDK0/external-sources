@@ -3,7 +3,7 @@ name     = "WuxiaBox"
 version  = "1.0.2"
 baseUrl  = "https://www.wuxiabox.com/"
 language = "en"
-icon     = "https://raw.githubusercontent.com/HnDK0/external-sources/main/icons/wuxiabox.png"
+icon     = "https://raw.githubusercontent.com/HnDK0/external-sources/refs/heads/v2/icons/wuxiabox.png"
 
 -- ── Хелперы ──
 

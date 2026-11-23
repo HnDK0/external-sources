@@ -4,7 +4,7 @@ name      = "Novel Ping"
 version   = "1.0.3"
 baseUrl   = "https://novelping.com/"
 language  = "en"
-icon      = "https://raw.githubusercontent.com/HnDK0/external-sources/main/icons/novelping.png"
+icon      = "https://raw.githubusercontent.com/HnDK0/external-sources/refs/heads/v2/icons/novelping.png"
 
 -- ── Хелперы ───────────────────────────────────────────────────────────────────
 

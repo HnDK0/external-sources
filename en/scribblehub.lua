@@ -4,7 +4,7 @@ name     = "ScribbleHub"
 version  = "1.0.7"
 baseUrl  = "https://www.scribblehub.com/"
 language = "en"
-icon     = "https://raw.githubusercontent.com/HnDK0/external-sources/main/icons/scribblehub.png"
+icon     = "https://raw.githubusercontent.com/HnDK0/external-sources/refs/heads/v2/icons/scribblehub.png"
 
 -- ── Хелперы ───────────────────────────────────────────────────────────────────
 

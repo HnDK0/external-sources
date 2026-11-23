@@ -4,7 +4,7 @@ name     = "BiqugeCompany"
 version  = "1.0.3"
 baseUrl  = "https://www.biquge.company/"
 language = "zh"
-icon     = "https://raw.githubusercontent.com/HnDK0/external-sources/main/icons/biquge_company.png"
+icon     = "https://raw.githubusercontent.com/HnDK0/external-sources/refs/heads/v2/icons/biquge_company.png"
 
 -- ── Site notes ──────────────────────────────────────────────────────────────
 -- biquge.company (笔趣阁) is a Simplified-Chinese biquge-family novel site.

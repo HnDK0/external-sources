@@ -24,7 +24,7 @@ version      = "1.0.2"
 baseUrl      = "https://veohentai.com"
 language     = "es"
 content_type = "video"
-icon         = "https://raw.githubusercontent.com/HnDK0/external-sources/main/icons/veohentai.png"
+icon         = "https://raw.githubusercontent.com/HnDK0/external-sources/refs/heads/v2/icons/veohentai.png"
 
 local SERIE_SEL = 'a[href*="/serie/"]'
 local EP_SEL    = 'a[href*="/ver/"]'

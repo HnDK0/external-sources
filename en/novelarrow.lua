@@ -4,7 +4,7 @@ name     = "Novel Arrow"
 version  = "1.0.7"
 baseUrl  = "https://novelarrow.com/"
 language = "en"
-icon     = "https://raw.githubusercontent.com/HnDK0/external-sources/main/icons/novelarrow.png"
+icon     = "https://raw.githubusercontent.com/HnDK0/external-sources/refs/heads/v2/icons/novelarrow.png"
 
 -- ── Константы ─────────────────────────────────────────────────────────────────
 

@@ -2,8 +2,9 @@ name: Sync index.yaml
 
 # Запускается на push в ЛЮБУЮ ветку (не только main), чтобы index.yaml
 # пересобирался и на тестовых ветках. Также подставляет в README.md имя
-# текущей ветки в Plugin Index URL (на main — no-op). Один коммит с [skip ci],
-# чтобы не было петли и чтобы не гоняться за push-ем с другими воркфлоу.
+# текущей ветки в Plugin Index URL (на main — no-op) и переписывает icon
+# ссылки в .lua на текущую ветку. Один коммит с [skip ci], чтобы не было
+# петли и чтобы не гоняться за push-ем с другими воркфлоу.
 
 on:
   push:
@@ -42,6 +43,6 @@ jobs:
           git diff --quiet && exit 0
           git config user.name  "${{ github.actor }}"
           git config user.email "${{ github.actor_id }}+${{ github.actor }}@users.noreply.github.com"
-          git add "index.yaml" "*/index.yaml" "README.md"
+          git add "index.yaml" "*/index.yaml" "README.md" "*.lua"
           git commit -m "chore: sync index.yaml & README [skip ci]"
           git push

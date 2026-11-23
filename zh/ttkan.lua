@@ -4,7 +4,7 @@ name     = "TTKan"
 version  = "1.1.2"
 baseUrl  = "https://www.ttkan.co/"
 language = "zh"
-icon     = "https://raw.githubusercontent.com/HnDK0/external-sources/main/icons/ttkan.png"
+icon     = "https://raw.githubusercontent.com/HnDK0/external-sources/refs/heads/v2/icons/ttkan.png"
 
 -- ── Changelog (1.0.0 → 1.1.0) ───────────────────────────────────────────────
 -- FIX: Catalog pagination infinite loop. The site ignores `?page=N` and

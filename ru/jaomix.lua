@@ -4,7 +4,7 @@ name     = "Jaomix"
 version  = "1.0.6"
 baseUrl  = "https://jaomix.ru/"
 language = "ru"
-icon     = "https://raw.githubusercontent.com/HnDK0/external-sources/main/icons/jaomix.png"
+icon     = "https://raw.githubusercontent.com/HnDK0/external-sources/refs/heads/v2/icons/jaomix.png"
 
 -- ── Хелперы ───────────────────────────────────────────────────────────────────
 

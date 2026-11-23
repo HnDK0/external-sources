@@ -8,7 +8,7 @@ version      = "1.1.0"
 baseUrl      = "https://hianimes.se"
 language     = "en"
 content_type = "video"
-icon         = "https://raw.githubusercontent.com/HnDK0/external-sources/main/icons/hianimes.png"
+icon         = "https://raw.githubusercontent.com/HnDK0/external-sources/refs/heads/v2/icons/hianimes.png"
 
 local API = "https://animehot.cc/api"
 

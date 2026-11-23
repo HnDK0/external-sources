@@ -4,7 +4,7 @@ name     = "BotiTranslation"
 version  = "1.0.0"
 baseUrl  = "https://botitranslation.com/"
 language = "en"
-icon     = "https://raw.githubusercontent.com/HnDK0/external-sources/main/icons/botitranslation.png"
+icon     = "https://raw.githubusercontent.com/HnDK0/external-sources/refs/heads/v2/icons/botitranslation.png"
 charset  = "UTF-8"
 
 -- ── Libraries ──────────────────────────────────────────────────────────────────

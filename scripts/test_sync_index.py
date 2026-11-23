@@ -4,6 +4,7 @@ Run: python3 -m unittest discover -s scripts -p 'test_*.py'
 """
 
 import re
+import tempfile
 import unittest
 from pathlib import Path
 
@@ -91,6 +92,41 @@ class ParsedDataTest(unittest.TestCase):
             for raw in re.findall(r"^    requires: \[(.+)\]$", text, re.MULTILINE):
                 for lib in re.findall(r'"([^"]+)"', raw):
                     self.assertIn(lib, lib_ids, f"{index.name}: unknown library '{lib}'")
+
+
+class IconRewriteTest(unittest.TestCase):
+    """icon в .lua должен вести на текущую базу: старая ветка отдаёт 404."""
+
+    BASE = "https://raw.githubusercontent.com/HnDK0/external-sources/refs/heads/v2"
+
+    def setUp(self):
+        tmp = tempfile.TemporaryDirectory()
+        self.addCleanup(tmp.cleanup)
+        self.dir = Path(tmp.name)
+
+    def _plugin(self, icon_line):
+        p = self.dir / "x.lua"
+        p.write_text(f'id = "x"\nversion = "1.0.0"\n{icon_line}\n', encoding="utf-8")
+        return p
+
+    def test_old_branch_icon_is_rebased_in_the_plugin_file(self):
+        p = self._plugin('icon     = "https://raw.githubusercontent.com/HnDK0/external-sources/main/icons/x.png"')
+        self.assertTrue(s.fix_plugin_icon(p, self.BASE))
+        self.assertIn(f'icon     = "{self.BASE}/icons/x.png"', p.read_text(encoding="utf-8"))
+
+    def test_refs_heads_form_is_rebased_too(self):
+        p = self._plugin('icon = "https://raw.githubusercontent.com/HnDK0/external-sources/refs/heads/main/icons/x.png"')
+        self.assertTrue(s.fix_plugin_icon(p, self.BASE))
+        self.assertIn(f'icon = "{self.BASE}/icons/x.png"', p.read_text(encoding="utf-8"))
+
+    def test_already_correct_icon_is_left_untouched(self):
+        p = self._plugin(f'icon = "{self.BASE}/icons/x.png"')
+        self.assertFalse(s.fix_plugin_icon(p, self.BASE))
+
+    def test_non_raw_icon_is_left_untouched(self):
+        p = self._plugin('icon = "https://example.com/icons/x.png"')
+        self.assertFalse(s.fix_plugin_icon(p, self.BASE))
+        self.assertIn("https://example.com/icons/x.png", p.read_text(encoding="utf-8"))
 
 
 if __name__ == "__main__":

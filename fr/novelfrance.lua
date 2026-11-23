@@ -4,7 +4,7 @@ name     = "NovelFrance"
 version  = "1.0.10"
 baseUrl  = "https://novelfrance.fr"
 language = "fr"
-icon     = "https://raw.githubusercontent.com/HnDK0/external-sources/main/icons/novelfrance.png"
+icon     = "https://raw.githubusercontent.com/HnDK0/external-sources/refs/heads/v2/icons/novelfrance.png"
 
 -- ── Хелперы ──────────────────────────────────────────────────────────────────
 

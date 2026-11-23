@@ -4,7 +4,7 @@ name     = "Indowebnovel"
 version  = "1.1.1"
 baseUrl  = "https://indowebnovel.id/"
 language = "id"
-icon     = "https://raw.githubusercontent.com/HnDK0/external-sources/main/icons/indowebnovel.png"
+icon     = "https://raw.githubusercontent.com/HnDK0/external-sources/refs/heads/v2/icons/indowebnovel.png"
 
 -- ── Guard: old app builds without require_lib ────────────────────────────────
 -- Top-level must load without require_lib (otherwise the plugin silently

@@ -3,7 +3,7 @@ name     = "MVLEMPYR"
 version  = "1.0.7"
 baseUrl  = "https://www.mvlempyr.io"
 language = "en"
-icon     = "https://raw.githubusercontent.com/HnDK0/external-sources/main/icons/mvlempyr.webp"
+icon     = "https://raw.githubusercontent.com/HnDK0/external-sources/refs/heads/v2/icons/mvlempyr.webp"
 
 local chapSite = "https://chap.heliosarchive.online/"
 

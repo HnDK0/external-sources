@@ -4,7 +4,7 @@ name     = "Royal Road"
 version  = "1.1.8"
 baseUrl  = "https://www.royalroad.com"
 language = "en"
-icon     = "https://raw.githubusercontent.com/HnDK0/external-sources/main/icons/royalroad.png"
+icon     = "https://raw.githubusercontent.com/HnDK0/external-sources/refs/heads/v2/icons/royalroad.png"
 
 -- ── Хелперы ───────────────────────────────────────────────────────────────────
 

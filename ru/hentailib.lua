@@ -7,7 +7,7 @@ name     = "HentaiLib"
 version  = "1.1.0"
 baseUrl  = "https://hentailib.me/"
 language = "ru"
-icon     = "https://raw.githubusercontent.com/HnDK0/external-sources/main/icons/hentailib.png"
+icon     = "https://raw.githubusercontent.com/HnDK0/external-sources/refs/heads/v2/icons/hentailib.png"
 content_type = "manga"
 
 -- TipTap/ProseMirror node -> plain text; used by getBookDescription for
