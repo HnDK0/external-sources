@@ -9,6 +9,13 @@ sources:
     language: "en"
     content_type: "manga"
     requires: ["urls", "fetch", "catalog", "meta"]
+  - id: "botitranslation"
+    name: "BotiTranslation"
+    version: "1.0.0"
+    url: "https://raw.githubusercontent.com/HnDK0/external-sources/refs/heads/v2/en/botitranslation.lua"
+    icon: "https://raw.githubusercontent.com/HnDK0/external-sources/main/icons/botitranslation.png"
+    language: "en"
+    requires: ["urls", "fetch", "content", "catalog"]
   - id: "chikari"
     name: "Chikari Novel"
     version: "1.0.11"
