@@ -1,12 +1,12 @@
--- ── Метаданные ────────────────────────────────────────────────────────────────
+-- ── Metadata ────────────────────────────────────────────────────────────────
 id       = "twkan"
 name     = "TWKan"
-version  = "1.0.2"
+version  = "1.0.3"
 baseUrl  = "https://twkan.com/"
 language = "zh"
 icon     = "https://raw.githubusercontent.com/HnDK0/external-sources/refs/heads/v2/icons/twkan.png"
 
--- ── Хелперы ───────────────────────────────────────────────────────────────────
+-- ── Helpers ─────────────────────────────────────────────────────────────────
 
 -- Old builds ship no require_lib: keep the plugin loadable (a top-level error
 -- would drop it from the source list) and fail with a visible message on the
@@ -26,142 +26,149 @@ local function absUrl(href)
   return LIB("urls").absUrl(baseUrl, href)
 end
 
--- Session-cached book page (shared fetch lib): the book details are read by
--- several functions in one adapter run. getChapterListHash stays on a direct
--- http_get — the hash must see a fresh page.
+-- Session-cached book page (shared fetch lib): the book page is read by the
+-- title/cover/description/author/status/genres/date functions in one adapter
+-- run. getChapterListHash stays on a direct http_get — the hash must see a
+-- fresh page.
 local function fetchPage(url)
   return LIB("fetch").page(url)
 end
 
--- Standard chapter-text cleanup (domain lines, leading "第N章" heading,
--- translator/editor credit lines) from the shared content lib.
-local function applyStandardContentTransforms(text)
-  return LIB("content").standardTransforms(text, { domain = baseUrl, lang = "zh" })
+local function parseBookCards(body)
+  local items = {}
+  for _, el in ipairs(html_select(body, "#article_list_content li a.imgbox")) do
+    local cover = html_attr(el.html, "img", "data-src")
+    local title = html_attr(el.html, "img", "alt")
+    table.insert(items, {
+      cover = cover and absUrl(cover) or nil,
+      title = string_clean(title),
+      url = absUrl(el.href),
+    })
+  end
+  return items
 end
 
--- Engine global url_encode delegates to the shared catalog lib.
-local url_encode = function(s) return LIB("catalog").urlEncode(s) end
+local function hasNextPage(body)
+  return html_select_first(body, "#pagelink a.next") ~= nil
+end
 
--- ── Каталог ───────────────────────────────────────────────────────────────────
+local function getMetaContent(body, property)
+  local s = html_attr(body, string.format("meta[property='%s']", property), "content")
+  return s ~= "" and string_clean(s) or nil
+end
+
+-- ── Catalog ─────────────────────────────────────────────────────────────────
 
 function getCatalogList(index)
   local page = LIB("catalog").nextIndex(index)
-  local url
-  if page == 1 then
-    url = "https://twkan.com/novels/newhot_2_0_1.html"
-  else
-    url = "https://twkan.com/novels/newhot_2_0_" .. tostring(page) .. ".html"
-  end
+  local url = baseUrl .. "novels/newhot_0_0_" .. tostring(page) .. ".html"
 
   local r = http_get(url)
   if not r.success then return { items = {}, hasNext = false } end
 
-  local items = {}
-  for _, li in ipairs(html_select(r.body, "#article_list_content li")) do
-    local titleEl = html_select_first(li.html, "h3 a")
-    if titleEl then
-      local bookUrl = absUrl(titleEl.href)
-      local cover   = html_attr(li.html, "img", "data-src")
-      local t = string_clean(titleEl.text)
-      if bookUrl ~= "" and t ~= "" then
-        table.insert(items, { title = t, url = bookUrl, cover = absUrl(cover) })
-      end
-    end
-  end
-
-  return { items = items, hasNext = LIB("catalog").hasNextPage(items) }
+  return { items = parseBookCards(r.body), hasNext = hasNextPage(r.body) }
 end
 
--- ── Поиск ─────────────────────────────────────────────────────────────────────
+-- ── Search ──────────────────────────────────────────────────────────────────
 
 function getCatalogSearch(index, query)
   local page = LIB("catalog").nextIndex(index)
   local encoded = url_encode(query)
-  local url = "https://twkan.com/search/" .. encoded .. "/" .. tostring(page) .. ".html"
+  local url = baseUrl .. "search/" .. encoded .. "/" .. tostring(page) .. ".html"
 
   local r = http_get(url)
   if not r.success then return { items = {}, hasNext = false } end
 
-  local items = {}
-  for _, li in ipairs(html_select(r.body, "#article_list_content li, .search-result li, li")) do
-    local titleEl = html_select_first(li.html, "h3 a, h3")
-    local aEl     = html_select_first(li.html, "a[href*='/book/']")
-    if titleEl and aEl then
-      local bookUrl = absUrl(aEl.href)
-      local cover   = html_attr(li.html, "img", "data-src")
-      local t = string_clean(titleEl.text)
-      if bookUrl ~= "" and t ~= "" then
-        table.insert(items, { title = t, url = bookUrl, cover = absUrl(cover) })
-      end
-    end
+  -- when the search only finds one book, it will be automatically redirected to the book page
+  if html_select_first(r.body, "meta[property='og:book_id']") ~= nil then
+    local item = {
+      title = getMetaContent(r.body, "og:novel:book_name"),
+      url = absUrl(getMetaContent(r.body, "og:url")),
+      cover = absUrl(getMetaContent(r.body, "og:image")),
+    }
+    return { items = {item}, hasNext = false }
+  else
+    return { items = parseBookCards(r.body), hasNext = hasNextPage(r.body) }
   end
-
-  return { items = items, hasNext = LIB("catalog").hasNextPage(items) }
 end
 
--- ── Детали книги ──────────────────────────────────────────────────────────────
+-- ── Book details ────────────────────────────────────────────────────────────
 
-function getBookTitle(bookUrl)
+local function getMetaContentWithFetch(bookUrl, property)
   local body = fetchPage(bookUrl)
   if not body then return nil end
-  local el = html_select_first(body, "h1 a")
-  if el then return string_clean(el.text) end
-  return nil
+  return getMetaContent(body, property)
+end
+
+function getBookTitle(bookUrl)
+  return getMetaContentWithFetch(bookUrl, "og:novel:book_name")
 end
 
 function getBookCoverImageUrl(bookUrl)
-  local body = fetchPage(bookUrl)
-  if not body then return nil end
-  local src = html_attr(body, ".bookimg2 img", "src")
-  if src ~= "" then return absUrl(src) end
-  return nil
+  local src = getMetaContentWithFetch(bookUrl, "og:image")
+  return src and absUrl(src) or nil
 end
 
 function getBookDescription(bookUrl)
-  local body = fetchPage(bookUrl)
-  if not body then return nil end
-  local el = html_select_first(body, "#tab_info .navtxt p")
-  if el then return string_trim(el.text) end
-  return nil
+  return getMetaContentWithFetch(bookUrl, "og:description")
 end
 
--- ── Статус и дата обновления ──────────────────────────────────────────────
+function getBookAuthor(bookUrl)
+    return getMetaContentWithFetch(bookUrl, "og:novel:author")
+end
 
--- Статус книги — мета-тег og:novel:status (напр. «連載»).
+local statusMap = {
+  ["連載"] = "Ongoing",
+  ["全本"] = "Complete",
+}
 function getBookStatus(bookUrl)
-  local body = fetchPage(bookUrl)
-  if not body then return nil end
-  local s = html_attr(body, "meta[property='og:novel:status']", "content")
-  if s and s ~= "" then return s end
-  return nil
+  return statusMap[getMetaContentWithFetch(bookUrl, "og:novel:status")]
 end
 
--- Дата обновления — мета-тег og:novel:update_time (формат «YYYY-MM-DD» или
--- «YYYY-MM-DD HH:MM:SS»). Берём только часть YYYY-MM-DD.
-function getBookLastUpdate(bookUrl)
+-- the tags is available in the script
+-- <script>
+--    var bookinfo = {
+--    ...
+--        tags: '穿越,分身,火影,價值,科技,老師,無敵,系統,修仙,'
+--    };
+-- if it's not available we use category instead
+function getBookGenres(bookUrl)
   local body = fetchPage(bookUrl)
-  if not body then return nil end
-  local dt = html_attr(body, "meta[property='og:novel:update_time']", "content")
-  if dt and dt ~= "" then
-    local d = LIB("meta").normalizeDate(dt)
-    if d then return d end
+  if not body then return {} end
+  local genres = {}
+  local s = body:match("tags: ['\"]([^'\"]+)")
+  if s then
+    for tag in s:gmatch("[^,]+") do
+      table.insert(genres, tag)
+    end
+  else
+    local cat = getMetaContent(body, "og:novel:category")
+    if cat then
+      table.insert(genres, cat)
+    end
   end
-  return nil
+  return #genres > 0 and genres or nil
 end
 
--- ── Список глав (AJAX) ────────────────────────────────────────────────────────
+-- "2026-11-24 07:17:06"
+function getBookLastUpdate(bookUrl)
+  local update_time = getMetaContentWithFetch(bookUrl, "og:novel:update_time")
+  return update_time and LIB("meta").normalizeDate(update_time) or nil
+end
+
+-- ── Chapter list ────────────────────────────────────────────────────────────
 
 function getChapterList(bookUrl)
   local bookId = string.match(bookUrl, "/book/([^/.]+)%.html")
   if not bookId then
-    log_error("twkan: cannot extract bookId from " .. bookUrl)
+    log_error(id .. ": cannot extract bookId from " .. bookUrl)
     return {}
   end
 
-  local ajaxUrl = "https://twkan.com/ajax_novels/chapterlist/" .. bookId .. ".html"
+  local ajaxUrl = baseUrl .. "ajax_novels/chapterlist/" .. bookId .. ".html"
   local r = http_get(ajaxUrl)
   if not r.success then
-    log_error("twkan: AJAX failed " .. tostring(r.code))
+    log_error(id .. ": AJAX failed " .. tostring(r.code))
     return {}
   end
 
@@ -177,21 +184,28 @@ function getChapterList(bookUrl)
   return chapters
 end
 
--- ── Хэш для обновлений ────────────────────────────────────────────────────────
-
+-- "2026-11-24 07:17:06"
 function getChapterListHash(bookUrl)
   local r = http_get(bookUrl)
   if not r.success then return nil end
-  local el = html_select_first(r.body, ".infolist li:nth-child(2)")
-  if el then return string_clean(el.text) end
-  return nil
+  return getMetaContent(r.body, "og:novel:update_time")
 end
 
--- ── Текст главы ───────────────────────────────────────────────────────────────
+-- ── Chapter text ────────────────────────────────────────────────────────────
 
 function getChapterText(html, url)
-  local cleaned = html_remove(html, "script", ".txtad")
+  if not html or html == "" then
+    local r = http_get(url)
+    if not r.success then return "" end
+    html = r.body
+  end
+
+  -- ads/promo either in div or script
+  local cleaned = html_remove(html, "#txtcontent0 :is(div, script)")
   local el = html_select_first(cleaned, "#txtcontent0")
   if not el then return "" end
-  return applyStandardContentTransforms(html_text(el.html))
+  return LIB("content").standardTransforms(html_text(el.html), {
+    domain = baseUrl,
+    lang   = "zh"
+  })
 end

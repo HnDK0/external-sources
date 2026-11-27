@@ -1,6 +1,13 @@
 language: "zh"
 name: "Chinese"
 sources:
+  - id: "101kks"
+    name: "101看書"
+    version: "1.0.1"
+    url: "https://raw.githubusercontent.com/HnDK0/external-sources/refs/heads/v2/zh/101kks.lua"
+    icon: "https://raw.githubusercontent.com/HnDK0/external-sources/refs/heads/v2/icons/101kks.png"
+    language: "zh"
+    requires: ["urls", "fetch", "catalog", "meta", "content"]
   - id: "8book"
     name: "8book 無限小說"
     version: "1.0.0"
@@ -73,11 +80,11 @@ sources:
     requires: ["urls", "fetch", "catalog", "content"]
   - id: "twkan"
     name: "TWKan"
-    version: "1.0.2"
+    version: "1.0.3"
     url: "https://raw.githubusercontent.com/HnDK0/external-sources/refs/heads/v2/zh/twkan.lua"
     icon: "https://raw.githubusercontent.com/HnDK0/external-sources/refs/heads/v2/icons/twkan.png"
     language: "zh"
-    requires: ["urls", "fetch", "content", "catalog", "meta"]
+    requires: ["urls", "fetch", "catalog", "meta", "content"]
   - id: "uukan"
     name: "UUkan"
     version: "1.0.1"
