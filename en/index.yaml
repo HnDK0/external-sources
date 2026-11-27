@@ -176,7 +176,7 @@ sources:
     requires: ["fetch", "urls", "catalog", "content", "meta"]
   - id: "ranobes"
     name: "Ranobes"
-    version: "1.1.1"
+    version: "1.1.2"
     url: "https://raw.githubusercontent.com/HnDK0/external-sources/refs/heads/v2/en/ranobes.lua"
     icon: "https://raw.githubusercontent.com/HnDK0/external-sources/refs/heads/v2/icons/ranobes.png"
     language: "en"

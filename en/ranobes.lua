@@ -24,7 +24,7 @@
 --   4) Ajuste opcional "Chapter list = Lite": no recorre las ~N/25 páginas de capítulos (ver más abajo).
 id       = "ranobes"
 name     = "Ranobes"
-version  = "1.1.1"
+version  = "1.1.2"
 baseUrl  = "https://ranobes.net"
 language = "en"
 icon     = "https://raw.githubusercontent.com/HnDK0/external-sources/refs/heads/v2/icons/ranobes.png"
@@ -425,14 +425,74 @@ function getBookStatus(bookUrl)
     return nil
 end
 
--- ── Capítulos ─────────────────────────────────────────────────────────────────
--- /chapters/<id>/ (y /chapters/<id>/page/N/) embebe window.__DATA__ = { chapters:[…], pages_count,
--- count_all, limit:25, … } con el capítulo MÁS NUEVO primero. La página 1 del sitio = los 25 más nuevos.
--- El motor quiere la página 1 = los más VIEJOS, así que parsePage invierte páginas y orden interno.
+-- Autor(es): fila "Authors:" de la ficha (los nombres van en enlaces separados por comas)
+function getBookAuthor(bookUrl)
+    local body = fetchPage(bookUrl)
+    if not body then return nil end
+    for _, li in ipairs(html_select(body, ".r-fullstory-spec li")) do
+        if string_starts_with(string_clean(li.text), "Authors:") then
+            local names = {}
+            for _, a in ipairs(html_select(li.html, "a")) do
+                local name = string_clean(a.text)
+                if name ~= "" then table.insert(names, name) end
+            end
+            if #names > 0 then return table.concat(names, ", ") end
+        end
+    end
+    return nil
+end
 
--- JSON de window.__DATA__: desde la primera "{" hasta la última "}" antes de </script>
+-- Filas de la ficha que no tienen función propia del motor: van a BookMeta.extras (extensión MiruTime)
+function getBookExtras(bookUrl)
+    local body = fetchPage(bookUrl)
+    if not body then return {} end
+    local extras = {}
+
+    local sub = html_select_first(body, "h1.title span.subtitle")
+    if sub then
+        local alt = string_clean(html_text(html_remove(sub.html, "p")))
+        if alt ~= "" then extras["Alt Title"] = alt end
+    end
+
+    local labels = {
+        ["Status in COO"]      = "Status in COO",
+        ["In original"]        = "In Original",
+        ["Translated"]         = "Translated",
+        ["Year of publishing"] = "Year",
+        ["Language"]           = "Language",
+        ["Translator"]         = "Translator",
+        ["Publishers"]         = "Publishers",
+    }
+    for _, li in ipairs(html_select(body, ".r-fullstory-spec li")) do
+        local k, v = string_clean(li.text):match("^([^:]+):%s*(.+)$")
+        if k and v and labels[k] then extras[labels[k]] = v end
+    end
+
+    return extras
+end
+
+-- ── Capítulos ─────────────────────────────────────────────────────────────────
+-- /chapters/<id>/ (y /chapters/<id>/page/N/) embebe el JSON de los capítulos en
+-- <script id="chapters-data"> (y window.__DATA__, que ahora es un JSON.parse de ese bloque): { chapters:[…],
+-- pages_count, count_all, limit:25, … } con el capítulo MÁS NUEVO primero. La página 1 del sitio = los 25
+-- más nuevos. El motor quiere la página 1 = los más VIEJOS, así que parsePage invierte páginas y orden interno.
+
+-- JSON de los capítulos. El sitio sirve el bloque <script id="chapters-data">{…}</script> y deja
+-- window.__DATA__ como un JSON.parse de ese mismo bloque; las versiones viejas incrustaban el JSON
+-- directamente en window.__DATA__ = {…}. Se aceptan las dos formas.
 local function extractData(body)
     if not body then return nil end
+
+    local tag = body:find('id="chapters-data"', 1, true)
+    if tag then
+        local open = body:find(">", tag, true)
+        local close = open and body:find("</script>", open, true)
+        if close then
+            local ok, data = pcall(json_parse, body:sub(open + 1, close - 1))
+            if ok and type(data) == "table" then return data end
+        end
+    end
+
     local s = body:find("window.__DATA__", 1, true)
     if not s then return nil end
     local open = body:find("{", s, true)
@@ -441,7 +501,8 @@ local function extractData(body)
     local chunk = close and body:sub(open, close - 1) or body:sub(open)
     local last = chunk:match("^.*()}")
     if not last then return nil end
-    return json_parse(chunk:sub(1, last))
+    local ok, data = pcall(json_parse, chunk:sub(1, last))
+    return ok and type(data) == "table" and data or nil
 end
 
 -- Filas { title, url, date } en el orden del sitio (más nuevo primero)
