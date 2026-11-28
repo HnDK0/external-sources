@@ -4,7 +4,7 @@ name     = "TWKan"
 version  = "1.0.3"
 baseUrl  = "https://twkan.com/"
 language = "zh"
-icon     = "https://raw.githubusercontent.com/HnDK0/external-sources/refs/heads/v2/icons/twkan.png"
+icon     = "https://cdn.jsdelivr.net/gh/HnDK0/external-sources@jsdelivr-v2/icons/twkan.png"
 
 -- ── Helpers ─────────────────────────────────────────────────────────────────
 

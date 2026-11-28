@@ -4,7 +4,7 @@ name     = "台灣小說網"
 version  = "1.0.0"
 baseUrl  = "https://www.xsw.tw"
 language = "zh"
-icon     = "https://raw.githubusercontent.com/HnDK0/external-sources/refs/heads/v2/icons/xsw.png"
+icon     = "https://cdn.jsdelivr.net/gh/HnDK0/external-sources@jsdelivr-v2/icons/xsw.png"
 
 -- The site runs two hosts with different jobs:
 --   www — catalog, search and the full chapter list (/book/<id>/);

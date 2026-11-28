@@ -4,7 +4,7 @@ name     = "101看書"
 version  = "1.0.1"
 baseUrl  = "https://101kks.com/"
 language = "zh"
-icon     = "https://raw.githubusercontent.com/HnDK0/external-sources/refs/heads/v2/icons/101kks.png"
+icon     = "https://cdn.jsdelivr.net/gh/HnDK0/external-sources@jsdelivr-v2/icons/101kks.png"
 
 -- ── Helpers ─────────────────────────────────────────────────────────────────
 
