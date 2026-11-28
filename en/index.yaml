@@ -92,7 +92,7 @@ sources:
     requires: ["urls", "catalog", "fetch", "meta"]
   - id: "mvlempyr.com"
     name: "MVLEMPYR"
-    version: "1.0.7"
+    version: "1.0.8"
     url: "https://raw.githubusercontent.com/HnDK0/external-sources/refs/heads/v2/en/mvlempyr.lua"
     icon: "https://raw.githubusercontent.com/HnDK0/external-sources/refs/heads/v2/icons/mvlempyr.webp"
     language: "en"

@@ -1,6 +1,6 @@
 id       = "mvlempyr.com"
 name     = "MVLEMPYR"
-version  = "1.0.7"
+version  = "1.0.8"
 baseUrl  = "https://www.mvlempyr.io"
 language = "en"
 icon     = "https://raw.githubusercontent.com/HnDK0/external-sources/refs/heads/v2/icons/mvlempyr.webp"
@@ -243,15 +243,38 @@ local function saveCachedNovels(novels)
     set_preference(CACHE_TS_KEY, tostring(os.time()))
 end
 
+-- Каталог перерос лимит размера ответа приложения (~25MB), поэтому грузим его
+-- постранично — как это делает скрипт самого сайта (X-WP-TotalPages + per_page).
+local NOVEL_API      = chapSite .. "wp-json/wp/v2/mvl-novels"
+local NOVEL_PER_PAGE = 1000
+
 local function loadAll()
-    local url = chapSite .. "wp-json/wp/v2/mvl-novels?per_page=15000"
-    local r = http_get(url)
+    local r = http_get(NOVEL_API .. "?per_page=" .. NOVEL_PER_PAGE .. "&page=1")
     if not r.success then
         log_error("mvlempyr: failed to load novel list code=" .. tostring(r.code))
-        return {}
+        return {}, false
     end
     local data = json_parse(r.body)
-    if not data or type(data) ~= "table" then return {} end
+    if not data or type(data) ~= "table" then return {}, false end
+
+    local totalPages = 1
+    if r.headers and r.headers["x-wp-totalpages"] and r.headers["x-wp-totalpages"][1] then
+        totalPages = tonumber(r.headers["x-wp-totalpages"][1]) or 1
+    end
+
+    local complete = true
+    for page = 2, totalPages do
+        local pr = http_get(NOVEL_API .. "?per_page=" .. NOVEL_PER_PAGE .. "&page=" .. page)
+        if not pr.success then
+            log_error("mvlempyr: failed to load novel list page " .. page .. " code=" .. tostring(pr.code))
+            complete = false
+            break
+        end
+        local chunk = json_parse(pr.body)
+        if type(chunk) == "table" then
+            for _, novel in ipairs(chunk) do table.insert(data, novel) end
+        end
+    end
 
     local novels = {}
     for _, novel in ipairs(data) do
@@ -280,7 +303,7 @@ local function loadAll()
             tags         = normalizeList(tags),
         })
     end
-    return novels
+    return novels, complete
 end
 
 local function getAllNovels()
@@ -292,8 +315,10 @@ local function getAllNovels()
         return _allNovels
     end
 
-    _allNovels = loadAll()
-    if _allNovels and #_allNovels > 0 then
+    local novels, complete = loadAll()
+    _allNovels = novels
+    -- Cache only a complete list: a partial one would stick for the whole TTL.
+    if complete and #_allNovels > 0 then
         saveCachedNovels(_allNovels)
     end
     return _allNovels
